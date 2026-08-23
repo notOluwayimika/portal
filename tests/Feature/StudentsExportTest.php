@@ -1,9 +1,11 @@
 <?php
 
+use App\Enums\StudentStatusEnum;
 use App\Exports\StudentsExport;
 use App\Models\Scholarship;
 use App\Models\SportHouse;
 use App\Models\Student;
+use App\Models\StudentCurriculum;
 use App\Support\ActiveSchool;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
@@ -127,4 +129,128 @@ it('never exports another schools students', function () {
     $names = ActiveSchool::runFor($mine->id, fn () => $export->query()->pluck('first_name')->all());
 
     expect($names)->toBe(['Mine']);
+});
+
+// ---------------------------------------------------------------------------
+// The two export scopes — defect 2, and the selection export beside it
+// ---------------------------------------------------------------------------
+
+/**
+ * THE DEFECT: the export honoured `search` and nothing else, while the index it sits on also
+ * filtered by class level and arm. An operator who narrowed to one class and pressed Export
+ * silently downloaded the whole school — and a spreadsheet gives no clue that it is wider than the
+ * screen that produced it.
+ *
+ * Asserted through StudentIndexFilters, the definition both readers now share, so the two cannot
+ * drift apart again.
+ */
+it('applies the class-level filter to the export, not only the search term', function () {
+    $w = sr_world();
+
+    // In Year 8 B — the class the filter names.
+    $inCohort = $w['student'];
+
+    // In Year 9 B — same school, same term, different level. Only the class-level filter excludes
+    // this pupil; `search` alone would return them.
+    $outsider = ActiveSchool::runFor($w['school']->id, fn () => Student::create([
+        'school_id' => $w['school']->id,
+        'first_name' => 'Ada',
+        'last_name' => Str::random(6),
+        'gender' => 'female',
+        'admission_number' => 'ADM-'.Str::random(8),
+    ]));
+    ActiveSchool::runFor($w['school']->id, fn () => StudentCurriculum::create([
+        'student_id' => $outsider->id,
+        'curriculum_id' => $w['c9B']->id,
+        'status' => StudentStatusEnum::ACTIVE,
+    ]));
+
+    $request = Request::create('/api/students/export', 'GET', [
+        'class_level' => $w['y8']->uuid,
+    ]);
+
+    $ids = ActiveSchool::runFor(
+        $w['school']->id,
+        fn () => (new StudentsExport($request))->query()->pluck('students.id')->all(),
+    );
+
+    // By ID, never by name — the two pupils are deliberately similar.
+    expect($ids)->toContain($inCohort->id)
+        ->and($ids)->not->toContain($outsider->id);
+});
+
+/**
+ * SEARCH AND A FILTER COMPOSE, which they did not before: the index's search clause was ungrouped,
+ * so `A OR B OR C AND EXISTS(class level)` bound as `A OR B OR (C AND EXISTS)` and a first- or
+ * last-name search silently ignored the class filter entirely.
+ */
+it('composes the search term with the class-level filter instead of widening past it', function () {
+    $w = sr_world();
+
+    $outsider = ActiveSchool::runFor($w['school']->id, fn () => Student::create([
+        'school_id' => $w['school']->id,
+        // Matches the search term on FIRST NAME — the arm of the OR chain that escaped the filter.
+        'first_name' => 'Pupil',
+        'last_name' => Str::random(6),
+        'gender' => 'male',
+        'admission_number' => 'ADM-'.Str::random(8),
+    ]));
+    ActiveSchool::runFor($w['school']->id, fn () => StudentCurriculum::create([
+        'student_id' => $outsider->id,
+        'curriculum_id' => $w['c9B']->id,
+        'status' => StudentStatusEnum::ACTIVE,
+    ]));
+
+    $request = Request::create('/api/students/export', 'GET', [
+        'search' => 'Pupil',
+        'class_level' => $w['y8']->uuid,
+    ]);
+
+    $ids = ActiveSchool::runFor(
+        $w['school']->id,
+        fn () => (new StudentsExport($request))->query()->pluck('students.id')->all(),
+    );
+
+    expect($ids)->toContain($w['student']->id)
+        ->and($ids)->not->toContain($outsider->id);
+});
+
+/**
+ * THE SELECTION SCOPE IGNORES THE FILTERS, deliberately. The control says "Export selected (N)", so
+ * N rows come back — composing it with the filters behind the page would quietly return fewer than
+ * the label promised.
+ */
+it('exports exactly the selected ids, regardless of the filters on the request', function () {
+    $w = sr_world();
+
+    $other = se_student($w['school']->id);
+
+    $request = Request::create('/api/students/export-selected', 'POST', [
+        // A filter that would exclude the picked pupil if the two scopes composed.
+        'class_level' => $w['y9']->uuid,
+    ]);
+
+    $ids = ActiveSchool::runFor(
+        $w['school']->id,
+        fn () => (new StudentsExport($request, [$w['student']->uuid]))->query()->pluck('students.id')->all(),
+    );
+
+    expect($ids)->toBe([$w['student']->id])
+        ->and($ids)->not->toContain($other->id);
+});
+
+/** A uuid from another school contributes no row — isolation, checked by id. */
+it('drops a selected id belonging to another school', function () {
+    $w = sr_world();
+    $other = sr_school('second');
+
+    $request = Request::create('/api/students/export-selected', 'POST');
+
+    $ids = ActiveSchool::runFor(
+        $w['school']->id,
+        fn () => (new StudentsExport($request, [$w['student']->uuid, $other['student']->uuid]))
+            ->query()->pluck('students.id')->all(),
+    );
+
+    expect($ids)->toBe([$w['student']->id]);
 });

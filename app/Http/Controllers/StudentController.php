@@ -9,6 +9,7 @@ use App\Enums\GuardianRelationshipEnum;
 use App\Enums\StudentStatusEnum;
 use App\Enums\TermStatusEnum;
 use App\Exports\StudentsExport;
+use App\Http\Requests\ExportSelectedStudentsRequest;
 use App\Http\Requests\ImportStudentRequest;
 use App\Http\Requests\StudentRequest;
 use App\Http\Resources\CurriculumOptionResource;
@@ -158,11 +159,33 @@ class StudentController extends Controller
         return redirect()->route('students.index');
     }
 
+    /**
+     * The toolbar export: the CURRENT FILTER SET, computed server-side.
+     *
+     * Selection is ignored here by design — this button's scope is "what the filters select", and
+     * the footer's "Export selected (N)" is the other scope. See StudentsExport.
+     */
     public function export(Request $request)
     {
         $filename = 'students-'.now()->format('Y-m-d').'.xlsx';
 
         return Excel::download(new StudentsExport($request), $filename);
+    }
+
+    /**
+     * The footer export: EXACTLY the ticked pupils, whatever the filters behind the page say.
+     *
+     * POST rather than GET because a selection is a body, not an identity: a few hundred uuids do
+     * not belong in a query string that a proxy log will keep.
+     */
+    public function exportSelected(ExportSelectedStudentsRequest $request)
+    {
+        $filename = 'students-selected-'.now()->format('Y-m-d').'.xlsx';
+
+        return Excel::download(
+            new StudentsExport($request, $request->uuids()),
+            $filename,
+        );
     }
 
     public function import(ImportStudentRequest $request)

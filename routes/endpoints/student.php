@@ -11,6 +11,10 @@ Route::prefix('students')->group(function () {
     Route::post('/', [StudentController::class, 'store']);
     Route::get('/resources', [StudentController::class, 'resources']);
     Route::get('/export', [StudentController::class, 'export']);
+    // POST, not GET: a selection is a body of uuids, not an identity in a query string. Declared
+    // above the `/{student:uuid}` routes for the same reason `/bulk-update` is — a literal segment
+    // must not be shadowed by the wildcard.
+    Route::post('/export-selected', [StudentController::class, 'exportSelected']);
     Route::post('/import', [StudentController::class, 'import']);
 
     Route::get('/bulk-update/template', [StudentBulkUpdateController::class, 'template']);

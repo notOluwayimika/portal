@@ -3,25 +3,17 @@
 use App\Academics\BillableEnrollmentAdapter;
 use App\Enums\StudentMembershipStatus;
 use App\Enums\StudentStatusEnum;
-use App\Models\AcademicSession;
 use App\Models\Arm;
-use App\Models\ClassLevel;
-use App\Models\ClassLevelArm;
 use App\Models\Curriculum;
-use App\Models\CurriculumSubject;
-use App\Models\ExamType;
-use App\Models\Permission;
 use App\Models\School;
 use App\Models\Scopes\SchoolScope;
 use App\Models\Student;
 use App\Models\StudentCurriculum;
 use App\Models\Subject;
 use App\Models\Term;
-use App\Models\User;
 use App\Services\CohortSiblings;
 use App\Support\ActiveSchool;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
@@ -30,109 +22,6 @@ uses(RefreshDatabase::class);
 // exists for), plus a Year 9 class as the same-school NON-sibling and a whole
 // second school as the isolation subject.
 // ---------------------------------------------------------------------------
-
-function sr_admin(School $school): User
-{
-    $user = al_makeUser($school->id);
-
-    $permission = Permission::where('name', 'academic_setup.manage')->where('guard_name', 'web')->first()
-        ?? Permission::create(['name' => 'academic_setup.manage', 'guard_name' => 'web']);
-
-    setPermissionsTeamId($school->id);
-    $user->givePermissionTo($permission);
-
-    return $user;
-}
-
-function sr_arm(School $school, ClassLevel $level, string $label): ClassLevelArm
-{
-    return ClassLevelArm::forceCreate([
-        'school_id' => $school->id,
-        'class_level_id' => $level->id,
-        'arm_id' => Arm::firstOrCreate(['school_id' => $school->id, 'label' => $label])->id,
-    ]);
-}
-
-function sr_curriculum(School $school, ClassLevelArm $arm, ExamType $examType, Term $term): Curriculum
-{
-    $curriculum = Curriculum::create([
-        'school_id' => $school->id,
-        'term_id' => $term->id,
-        'class_level_arm_id' => $arm->id,
-        'exam_type_id' => $examType->id,
-        'status' => 'active',
-        'is_ccm' => false,
-        'min_subjects' => 1,
-    ]);
-
-    // A compulsory subject so the service's additive auto-attach actually runs, rather than the
-    // move being proved against a curriculum that requires nothing.
-    CurriculumSubject::create([
-        'curriculum_id' => $curriculum->id,
-        'subject_id' => Subject::create(['school_id' => $school->id, 'name' => 'Subj '.Str::random(5)])->id,
-        'is_compulsory' => true,
-    ]);
-
-    return $curriculum;
-}
-
-function sr_school(string $name): array
-{
-    $school = al_makeSchool();
-    $admin = sr_admin($school);
-
-    $session = AcademicSession::create([
-        'school_id' => $school->id,
-        'name' => '2025/2026',
-        'slug' => 'as-'.Str::random(8),
-    ]);
-    $term = Term::create([
-        'school_id' => $school->id,
-        'academic_session_id' => $session->id,
-        'name' => 'First Term',
-        'slug' => 'tm-'.Str::random(8),
-        'order' => 1,
-        // Both NOT NULL without defaults; the dates are irrelevant to reassignment but the row will
-        // not insert without them.
-        'start_date' => now()->subMonth(),
-        'end_date' => now()->addMonth(),
-    ]);
-    $examType = ExamType::create([
-        'school_id' => $school->id,
-        'name' => 'Internal',
-        'slug' => 'et-'.Str::random(8),
-    ]);
-
-    $y8 = ClassLevel::forceCreate(['school_id' => $school->id, 'name' => 'Year 8', 'order' => 8]);
-    $y9 = ClassLevel::forceCreate(['school_id' => $school->id, 'name' => 'Year 9', 'order' => 9]);
-
-    $c8B = sr_curriculum($school, sr_arm($school, $y8, 'B'), $examType, $term);
-    $c8S = sr_curriculum($school, sr_arm($school, $y8, 'S'), $examType, $term);
-    // SAME school, same term, same exam type — and a different YEAR GROUP. This is the row that
-    // isolates the sibling rule: no school guard can refuse it.
-    $c9B = sr_curriculum($school, sr_arm($school, $y9, 'B'), $examType, $term);
-
-    $student = Student::create([
-        'school_id' => $school->id,
-        'first_name' => 'Pupil',
-        'last_name' => Str::random(6),
-        'gender' => 'male',
-        'admission_number' => 'ADM-'.Str::random(8),
-    ]);
-
-    $episode = StudentCurriculum::create([
-        'student_id' => $student->id,
-        'curriculum_id' => $c8B->id,
-        'status' => StudentStatusEnum::ACTIVE,
-    ]);
-
-    return compact('school', 'admin', 'session', 'term', 'examType', 'y8', 'y9', 'c8B', 'c8S', 'c9B', 'student', 'episode');
-}
-
-function sr_world(): array
-{
-    return sr_school('primary');
-}
 
 function sr_post(array $w, string $destinationUuid, ?StudentCurriculum $episode = null)
 {

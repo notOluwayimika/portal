@@ -55,7 +55,24 @@ class StudentResource extends JsonResource
                 'stream' => $classLevelArm?->stream?->name,
                 'full_class' => $this->student_class ?? 'N/A',
             ],
+            // ── LEAKS A RAW AUTO-INCREMENT ID, AND IS LEFT ALONE ANYWAY ───────────────────────────
+            // This contradicts the convention StudentCurriculumResource states (uuids on the wire,
+            // never database ids), and it is NOT fixed here: whatever consumes it today would break
+            // silently, and finding that out is its own change with its own blast radius. The new
+            // uuid fields below sit BESIDE it rather than replacing it, and the leak is recorded as
+            // its own ticket so "we added fields next to it" does not quietly bless it forever.
             'curriculum_id' => $curriculum?->id,
+            // ── THE TWO FIELDS BULK REASSIGNMENT NEEDS ────────────────────────────────────────────
+            // `current_episode_id` is the EPISODE, not the pupil, and the bulk endpoint takes these
+            // rather than student uuids on purpose: if a pupil is moved between page load and
+            // submit, a student uuid would silently re-derive "current" and move whichever episode
+            // they now hold — the wrong one, with no error. An episode uuid mismatches instead, and
+            // names the pupil.
+            'current_episode_id' => $currentCurriculum?->uuid,
+            // The cohort lock keys on this. Two pupils can both render "Year 9 B" and sit in
+            // different curricula (different exam type, or CCM vs end-of-term), so the client cannot
+            // derive a shared cohort from the class label it displays.
+            'curriculum_uuid' => $curriculum?->uuid,
             'student_curricula' => StudentCurriculumResource::collection($this->whenLoaded('studentCurricula')),
             'admission_date' => $this->admission_date?->toDateString(),
             'address' => $this->address,

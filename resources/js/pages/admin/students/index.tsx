@@ -17,7 +17,9 @@ import {
 import { useEffect, useState } from 'react';
 import { toast } from 'react-toastify';
 import { Pagination } from '@/components/pagination';
+import { BulkReassignModal } from '@/components/students/bulk-reassign-modal';
 import { ImportStudentForm } from '@/components/students/import-student-form';
+import { StudentBulkActionBar } from '@/components/students/student-bulk-action-bar';
 import { StudentForm } from '@/components/students/student-form';
 import { StudentGuardiansPanel } from '@/components/students/student-guardians-panel';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -78,6 +80,57 @@ export default function StudentList({ student_statuses }: StudentListProps) {
         useState<Student | null>(null);
     const [currentStudent, setCurrentStudent] = useState<Student | null>(null);
 
+    // ── SELECTION IS PAGE-SCOPED, DELIBERATELY ──────────────────────────────
+    // These are STUDENT uuids because that is what the table row keys on; the
+    // episode uuid each one maps to is resolved at submit time from the same
+    // rows. There is no "select all matching" — see StudentBulkActionBar.
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    const [isReassignOpen, setIsReassignOpen] = useState(false);
+
+    const selectedStudents = students.filter((s) => selectedIds.has(s.id));
+
+    // The lock, mirrored client-side for the disabled state only. The server
+    // enforces it on curriculum_id; this compares the same uuid rather than the
+    // class label, because two pupils can render "Year 9 B" and sit in
+    // different curricula (different exam type, or CCM vs end-of-term).
+    const selectedCohorts = new Set(
+        selectedStudents.map((s) => s.curriculum_uuid ?? 'unknown'),
+    );
+
+    const selectedEpisodeIds = selectedStudents
+        .map((s) => s.current_episode_id)
+        .filter((id): id is string => Boolean(id));
+
+    const toggleOne = (id: string) =>
+        setSelectedIds((prev) => {
+            const next = new Set(prev);
+
+            if (next.has(id)) {
+                next.delete(id);
+            } else {
+                next.add(id);
+            }
+
+            return next;
+        });
+
+    const pageIds = students.map((s) => s.id);
+    const allOnPageSelected =
+        pageIds.length > 0 && pageIds.every((id) => selectedIds.has(id));
+
+    const togglePage = () =>
+        setSelectedIds((prev) => {
+            const next = new Set(prev);
+
+            if (allOnPageSelected) {
+                pageIds.forEach((id) => next.delete(id));
+            } else {
+                pageIds.forEach((id) => next.add(id));
+            }
+
+            return next;
+        });
+
     const fetchStudents = async () => {
         try {
             setLoading(true);
@@ -104,7 +157,16 @@ export default function StudentList({ student_statuses }: StudentListProps) {
     };
 
     useEffect(() => {
+        // SELECTION IS CLEARED ON EVERY FILTER OR PAGE CHANGE, and that is what
+        // makes "page-scoped" true rather than merely intended. Carrying ticks
+        // across a navigation would leave `selectedIds` holding pupils no longer
+        // rendered, so the footer's count would say 5 while only the 2 still on
+        // screen could resolve an episode id — a button whose label disagrees
+        // with what it would do. Clearing is the honest half of having no
+        // "select all matching".
         // eslint-disable-next-line react-hooks/set-state-in-effect
+        setSelectedIds(new Set());
+
         fetchStudents();
 
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -158,27 +220,70 @@ export default function StudentList({ student_statuses }: StudentListProps) {
 
     const [exporting, setExporting] = useState(false);
 
+    /** Hand the browser a blob as a download. Shared so the two exports cannot drift. */
+    const downloadBlob = (data: BlobPart, filename: string) => {
+        const url = URL.createObjectURL(
+            new Blob([data], {
+                type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            }),
+        );
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    };
+
+    /**
+     * Toolbar Export — the CURRENT FILTER SET.
+     *
+     * It used to send `search` alone while the list was also filtered by class
+     * level and arm, so narrowing to one class and pressing Export silently
+     * downloaded the whole school. Every active filter goes now, and the server
+     * applies the same definition the index paginates through.
+     *
+     * Selection is deliberately NOT consulted here: this button's scope is the
+     * filters, and the footer's "Export selected (N)" is the other scope.
+     */
     const handleExport = async () => {
         try {
             setExporting(true);
             const response = await axios.get('/api/students/export', {
                 responseType: 'blob',
-                params: { search },
+                params: {
+                    search: search || undefined,
+                    class_level: classLevel || undefined,
+                    arm: arm || undefined,
+                },
             });
-            const url = URL.createObjectURL(
-                new Blob([response.data], {
-                    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                }),
+            downloadBlob(
+                response.data,
+                `students-${new Date().toISOString().slice(0, 10)}.xlsx`,
             );
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = `students-${new Date().toISOString().slice(0, 10)}.xlsx`;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
         } catch {
             toast.error('Failed to export students');
+        } finally {
+            setExporting(false);
+        }
+    };
+
+    /** Footer Export selected (N) — exactly the ticked pupils, filters ignored. */
+    const handleExportSelected = async () => {
+        try {
+            setExporting(true);
+            const response = await axios.post(
+                '/api/students/export-selected',
+                { ids: Array.from(selectedIds) },
+                { responseType: 'blob' },
+            );
+            downloadBlob(
+                response.data,
+                `students-selected-${new Date().toISOString().slice(0, 10)}.xlsx`,
+            );
+        } catch {
+            toast.error('Failed to export the selected students');
         } finally {
             setExporting(false);
         }
@@ -399,6 +504,19 @@ export default function StudentList({ student_statuses }: StudentListProps) {
                             <table className="w-full text-xs">
                                 <thead>
                                     <tr className="border-b border-slate-100 bg-slate-50/50 dark:border-slate-800 dark:bg-slate-900/30">
+                                        {isAdmin && (
+                                            <th className="w-8 px-3 py-2">
+                                                {/* Selects this PAGE, and says so. There is no
+                                                    cross-page select-all here by design. */}
+                                                <input
+                                                    type="checkbox"
+                                                    aria-label="Select all pupils on this page"
+                                                    checked={allOnPageSelected}
+                                                    onChange={togglePage}
+                                                    className="size-3.5 cursor-pointer rounded border-slate-300"
+                                                />
+                                            </th>
+                                        )}
                                         <th className="px-3 py-2 text-left text-[10px] font-bold tracking-wide text-slate-400 uppercase">
                                             Name
                                         </th>
@@ -420,7 +538,7 @@ export default function StudentList({ student_statuses }: StudentListProps) {
                                     {loading ? (
                                         <tr>
                                             <td
-                                                colSpan={5}
+                                                colSpan={isAdmin ? 6 : 5}
                                                 className="py-10 text-center"
                                             >
                                                 <Spinner className="mx-auto" />
@@ -429,7 +547,7 @@ export default function StudentList({ student_statuses }: StudentListProps) {
                                     ) : (students?.length ?? 0) === 0 ? (
                                         <tr>
                                             <td
-                                                colSpan={5}
+                                                colSpan={isAdmin ? 6 : 5}
                                                 className="py-10 text-center text-xs text-muted-foreground"
                                             >
                                                 No students found.
@@ -441,6 +559,23 @@ export default function StudentList({ student_statuses }: StudentListProps) {
                                                 key={student.id}
                                                 className="transition-colors hover:bg-slate-50/60 dark:hover:bg-slate-900/30"
                                             >
+                                                {isAdmin && (
+                                                    <td className="px-3 py-2.5">
+                                                        <input
+                                                            type="checkbox"
+                                                            aria-label={`Select ${student.full_name}`}
+                                                            checked={selectedIds.has(
+                                                                student.id,
+                                                            )}
+                                                            onChange={() =>
+                                                                toggleOne(
+                                                                    student.id,
+                                                                )
+                                                            }
+                                                            className="size-3.5 cursor-pointer rounded border-slate-300"
+                                                        />
+                                                    </td>
+                                                )}
                                                 <td className="px-3 py-2.5 font-semibold text-slate-700 dark:text-slate-200">
                                                     <div className="flex items-center gap-2.5">
                                                         <Avatar className="size-7 shrink-0 overflow-hidden rounded-full">
@@ -664,6 +799,34 @@ export default function StudentList({ student_statuses }: StudentListProps) {
                     onCancel={() => setIsImportModalOpen(false)}
                 />
             </Modal>
+
+            {isAdmin && (
+                <StudentBulkActionBar
+                    count={selectedIds.size}
+                    cohortCount={selectedCohorts.size}
+                    exporting={exporting}
+                    onClearSelection={() => setSelectedIds(new Set())}
+                    onExportSelected={handleExportSelected}
+                    onReassign={() => setIsReassignOpen(true)}
+                />
+            )}
+
+            <BulkReassignModal
+                isOpen={isReassignOpen}
+                onClose={() => setIsReassignOpen(false)}
+                episodeIds={selectedEpisodeIds}
+                // Any episode of the cohort answers for all of them — the lock
+                // guarantees they share a curriculum, and the server recomputes
+                // the sibling set regardless.
+                sampleEpisodeId={selectedEpisodeIds[0] ?? null}
+                onReassigned={() => {
+                    // Selection is cleared because the episodes it named are now
+                    // ended: keeping the ticks would show a live selection of
+                    // rows whose ids the server would refuse as stale.
+                    setSelectedIds(new Set());
+                    fetchStudents();
+                }}
+            />
         </>
     );
 }

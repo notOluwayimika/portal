@@ -225,9 +225,22 @@ class BulkReassignStudentsRequest extends FormRequest
             // PLUS THE REFERENCE'S OWN CURRICULUM, and that addition is not a loosening. Siblings
             // are computed for ONE episode and deliberately exclude that episode's own curriculum —
             // correct for a single move, wrong for a batch, because another pupil in the selection
-            // may legitimately be moving INTO the class the reference is already sitting in. The
-            // union is exactly "the cohort", expressed through the one definition rather than by
-            // re-deriving the triple here and giving it a second place to drift.
+            // may legitimately be moving INTO the class the reference is already sitting in.
+            //
+            // THE UNION IS THE **OPEN** COHORT, NOT THE WHOLE COHORT. CohortSiblings filters
+            // `status = 'active'`, so a closed curriculum is never a destination — you do not
+            // reassign a pupil into a finished class. Said precisely because "equivalent to the
+            // cohort" reads as ALL of it, and the closed exclusion is load-bearing rather than
+            // incidental.
+            //
+            // AND IT IS REFERENCE-INVARIANT, which is what makes picking `first()` safe: verified
+            // against the query body, CohortSiblings::for carries exactly six predicates —
+            // school, status=active, is_ccm, class level, id != self, term — and nothing else. No
+            // arm predicate, no exam type, no enrollment join. So for any two episodes sharing the
+            // cohort key the sets differ only by which self is excluded, and adding self back makes
+            // them identical. That completeness is the whole basis of this union: a seventh
+            // predicate hiding in there would make it NARROWER than the cohort and silently drop a
+            // legal destination, with every existing arm still green.
             $validIds = CohortSiblings::for($reference)
                 ->pluck('id')
                 ->push($reference->curriculum_id)

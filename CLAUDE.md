@@ -104,6 +104,19 @@ operational facts an agent needs most often.
   general form: an assertion that derives from the thing it guards can only ever
   restate it. Same family as "assert the transition, not the endpoints" and "isolate
   the guard where it acts alone".
+- **A green suite after you change a rule's KEY means the old behaviour survived — not
+  that the new rule is right.** Two different claims; only the first is being tested.
+  Bit on `feat/reassignment-ui`: exam type was removed from the reassignment
+  eligibility key and all 26 M3 tests stayed green, because M3 shipped with exam type
+  IN the key and so never had an arm that crossed it. Nothing was wrong with those
+  tests — they were blind to the axis that moved. **When a key changes, the new arms
+  are the ones that cross the axis you removed or added**, and a removal needs a
+  POSITIVE arm (the newly-allowed move succeeds) as its mutation guard, or the old
+  predicate drifts back in as a "restored" match with nothing going red.
+  Corollary for the axes you KEPT: "drop X and its arm reds" proves each is
+  **necessary**, never that the key contains nothing else. Completeness is established
+  by reading the predicate list, not by mutation — a seventh filter hiding in a query
+  makes a derived set silently narrower while every existing arm stays green.
 
 ## Workflow
 

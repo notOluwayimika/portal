@@ -150,10 +150,17 @@ fi
 printf '%squality gate — base %s%s\n\n' "$DIM" "$(git rev-parse --short "$BASE" 2>/dev/null || echo "$BASE")" "$OFF"
 
 # 1. Dependency integrity BEFORE ANYTHING ELSE. Every step below measures a tree, and
-#    a tree that does not match composer.lock makes all fifteen answers meaningless —
-#    in whichever direction. It also reconciles step 14's phpstan result cache against
+#    a tree that does not match composer.lock makes all sixteen answers meaningless —
+#    in whichever direction. It also reconciles step 15's phpstan result cache against
 #    composer.lock, because that cache cannot see vendor/ moving underneath it. Full
 #    reasoning, and the two failure cases, in the lint's header.
+#
+#    BOTH NUMBERS ABOVE WERE WRONG. "fifteen" was correct at 16 steps and was broken by
+#    the vitest step; "step 14" named the arch tests and had been stale since before it —
+#    Larastan has been step 15 for longer than this comment has said 14. Same class as the
+#    step counts in format.ts and the money lint: prose stating a number that nothing can
+#    fail on. QualityStepCountTest ties the printf to the step() calls and nothing ties
+#    these; the docblock there says outright that this half stays unmechanised.
 #
 #    ABORTS the run rather than collecting — abort_check(), not check(). See check()'s
 #    comment for why this one step is the exception.

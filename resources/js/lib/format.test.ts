@@ -121,6 +121,41 @@ describe('nairaToMinor', () => {
     it('trims surrounding whitespace before parsing', () => {
         expect(nairaToMinor(' 2500.75 ')).toBe(250075);
     });
+
+    /**
+     * Object.is, not toBe, and not toEqual. Both of those would pass on -0 for an expected 0
+     * in some matcher versions and neither SAYS which value it accepted, so a test written
+     * with them cannot distinguish the bug from the fix — which is the only thing this case
+     * is for. Asserting both directions pins it: it IS 0, and it is NOT -0.
+     */
+    it('normalises negative zero to zero, so no caller ever sees -0', () => {
+        expect(Object.is(nairaToMinor('-0'), 0)).toBe(true);
+        expect(Object.is(nairaToMinor('-0'), -0)).toBe(false);
+        expect(Object.is(nairaToMinor('-0.00'), 0)).toBe(true);
+        expect(Object.is(nairaToMinor('-0.00'), -0)).toBe(false);
+    });
+
+    it('accepts the largest exactly representable amount', () => {
+        expect(nairaToMinor('90071992547409.91')).toBe(Number.MAX_SAFE_INTEGER);
+        expect(nairaToMinor('-90071992547409.91')).toBe(
+            -Number.MAX_SAFE_INTEGER,
+        );
+    });
+
+    /**
+     * One kobo past the value above is 2^53, where a double stops being able to hold every
+     * integer, and `Number(whole) * 100` has already rounded by the time anything could look
+     * at it. Refused through the same null the regex mismatch returns — an amount this
+     * function cannot represent is malformed for the same reason a malformed string is.
+     */
+    it('refuses one kobo past the largest exactly representable amount', () => {
+        expect(nairaToMinor('90071992547409.92')).toBeNull();
+        expect(nairaToMinor('-90071992547409.92')).toBeNull();
+    });
+
+    it('refuses a magnitude far past the ceiling rather than returning a wrong integer', () => {
+        expect(nairaToMinor('99999999999999999')).toBeNull();
+    });
 });
 
 describe('minorToNairaInput', () => {

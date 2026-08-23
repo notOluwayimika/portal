@@ -35,6 +35,35 @@ export function formatNaira(money: Money): string {
  * (mirrors the backend Money::fromNaira). Returns null on malformed input (for inline
  * validation) — never guesses. This lives beside formatNaira so all money conversion is
  * in one lint-exempt file; callers never do the arithmetic themselves.
+ *
+ * FLOAT-FREE HAS A CEILING, AND IT IS Number.MAX_SAFE_INTEGER (2^53 − 1 minor units, i.e.
+ * ₦90,071,992,547,409.91). Integer arithmetic in JS is exact only while the result fits a
+ * double's mantissa; above that, `Number(whole) * 100` rounds and the parse returns a
+ * number that is not the amount that was typed. The regex above constrains the SHAPE of
+ * the input and says nothing about its magnitude, so it admits as many digits as anyone
+ * cares to type. This is the INPUT path — a wrong integer here is POSTed as the operator's
+ * intended amount and accepted by a server with no reason to doubt it, with no error
+ * anywhere. Silent corruption, which is the one failure mode a validation boundary must
+ * not have.
+ *
+ * IT IS REFUSED THROUGH THE SAME `return null` THE REGEX MISMATCH USES, deliberately. The
+ * callers already render an invalid-input state for a malformed amount; an out-of-range one
+ * is malformed for the same reason (this function cannot represent it), and inventing a
+ * second failure mode would mean every caller learning about a case none of them have a
+ * screen for. `Number.isSafeInteger` is asked about the COMPUTED value rather than the
+ * digit count because that is the property that matters: any product at or above 2^53 is
+ * by definition not a safe integer, and every result below it was computed exactly.
+ *
+ * The ceiling is far above the domain — the backend's own is intdiv(PHP_INT_MAX, 100),
+ * about 9.22e16, an order of magnitude higher, and a school fee is nowhere near either.
+ * The point is not that the case arises; it is that a boundary must not be able to alter
+ * the figure it converts.
+ *
+ * NEGATIVE ZERO IS NORMALISED TO ZERO. `'-0'` and `'-0.00'` both parse to a magnitude of
+ * 0 with the sign flag set, and `-0` is a distinct IEEE value: `Object.is(-0, 0)` is false,
+ * `1 / -0` is -Infinity, and a test written with `toBe` compares with `Object.is`. There is
+ * no such quantity as minus zero naira, so the only thing that value can do downstream is
+ * surprise a sign check or an equality test that is otherwise correct.
  */
 export function nairaToMinor(input: string): number | null {
     const trimmed = input.trim();
@@ -47,7 +76,13 @@ export function nairaToMinor(input: string): number | null {
     const [whole, frac = ''] = trimmed.replace('-', '').split('.');
     const minor = Number(whole) * 100 + Number(frac.padEnd(2, '0'));
 
-    return negative ? -minor : minor;
+    // Above 2^53 the line above has already rounded — see the docblock. Same refusal as a
+    // malformed string, because it is malformed for the same reason.
+    if (!Number.isSafeInteger(minor)) {
+        return null;
+    }
+
+    return negative && minor !== 0 ? -minor : minor;
 }
 
 /**

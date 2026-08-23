@@ -94,6 +94,30 @@ The shared thing is the **walk** (`ProgressionGraph`, already shared) and the **
 (`RolloverPlanner`, being extracted). Those are two seams, not one, and collapsing them would create
 the coupling the criterion is trying to prevent.
 
+### Slice 1 acceptance — three points, and the one test that proves them together
+
+1. **`RolloverPlanner` is the one definition of "given (school, session/term, selection), what the
+   rollover will do"** — shared by the UI preview and the dispatch path. No second planning path.
+2. **`ProgressionGraph` stays the one walk, untouched.** The UI's cycle display calls it **directly**
+   and renders the returned ring. It never reaches the walk through a command's exit code.
+3. **`academics:validate-progression` is untouched** and gains **no** `RolloverPlanner` dependency.
+   *If the extraction makes that command import the planner, the extraction is wrong.*
+
+`findCycle` **already returns the named ring** — `list<string>|null`, level names in walk order with
+the entry repeated (`['Year 7','Year 8','Year 7']`). So nothing needs building to make a cycle
+nameable to a registrar; the ring exists and `RunEndOfYear` merely throws it away by going through
+the command. **The fix is a direct caller, not a new reporting path.** Do not add ring formatting to
+the planner — read it from the walk.
+
+**The contract test, one shot:** configure a ring, then assert the **same named ring** appears in
+both the validate command's output and the UI pre-flight payload — proving they share the walk and
+neither re-derives it — and assert `academics:validate-progression` reaches no `RolloverPlanner` code
+path. That is "one walk, three callers / one plan, two callers" made testable rather than asserted in
+a docblock.
+
+Mutation for it: change the ring's shape in `ProgressionGraph` and confirm **both** assertions move
+together. If only one does, they are not reading the same walk.
+
 ---
 
 ## Slice 1 — `RolloverPlanner`, no UI

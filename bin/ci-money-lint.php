@@ -8,7 +8,7 @@
  * enforced in the browser and was a convention with nothing behind it on the server, where
  * FOUR spellings of a naira figure had accumulated — a bare `1500.00`, an ISO-prefixed
  * `NGN 1500.00`, a grouped `₦3,476,400.00` hand-rolled in a Finance service, and an
- * identical grouped one in a global helper nobody ever called. The UI rule looked stronger
+ * identical grouped one in a global helper no production code ever called. The UI rule looked stronger
  * than it was precisely because half the surfaces that render money were outside the only
  * thing checking. ADR 0054 collapsed them onto Money::format(); this arm is what keeps them
  * collapsed.
@@ -41,6 +41,12 @@
  *     ungrouped machine decimal; anything that puts it in front of a human is a second
  *     formatter. Token-based, not regex — see toNairaRenderLines() for why, and for why the
  *     `Δ %d kobo` diagnostics are spared structurally rather than by an exemption list.
+ *
+ *   money-naira-symbol-outside-money-format
+ *     The ₦ character anywhere but the value object. The catch-all: a render built from toKobo()
+ *     with str_pad and a comma loop trips neither rule above — measured, by plant — and that is
+ *     exactly the deleted naira() helper's shape. Every hand-rolled render must emit the symbol
+ *     eventually, so the character is the invariant the techniques are not.
  *
  *   money-number-format-on-money
  *     `number_format(` on a line that also names money. Its declared parameter is `float`, and
@@ -110,6 +116,28 @@ function isComment(string $line): bool
 // The ONE file allowed to turn a Money into a human-readable string: the value object
 // itself, where format() and the toNaira() it punctuates both live.
 const MONEY_HOME = 'app/Support/Money.php';
+
+/**
+ * Every tree that can put a string in front of a person, server-side.
+ *
+ * WAS `app/` ALONE, and that was the gap: a render in a Blade view, a route file, a console
+ * command reachable from database/, or a seeder is exactly as much a second formatter as one in
+ * an Action, and the arm could not see any of them.
+ *
+ * resources/views is IN; resources/js is deliberately NOT — that is the JS arm's territory, it
+ * walks .ts/.tsx and holds formatNaira, and a PHP walker entering it would double-report the one
+ * file that is allowed to render.
+ *
+ * tests/ is NOT walked either, and that is a judgement rather than an oversight: a test asserting
+ * `->toBe('₦1,234.56')` is CHECKING the formatter, not being a second one, and MoneyTest cannot
+ * pin the output without naming it. Banning the character there would force the oracle to describe
+ * the string instead of stating it, which is how an oracle stops being one.
+ */
+// The naira mark, as its own constant so this file never contains a bare one either — the rule
+// would otherwise trip on the source of the rule.
+const NAIRA_SYMBOL = "\u{20A6}";
+
+const PHP_TREES = ['app', 'routes', 'database', 'config', 'bootstrap', 'resources/views'];
 
 /** Every .php file under app/, as [relativePath, absolutePath]. */
 function phpFiles(string $dir, string $root): array
@@ -307,7 +335,14 @@ foreach ($lines as [$rel, $line]) {
 }
 
 // ── The PHP arm. Same $found bag, same baseline, same shrink-lock. ──
-foreach (phpFiles($root.'/app', $root) as [$rel, $abs]) {
+$phpFiles = [];
+foreach (PHP_TREES as $tree) {
+    foreach (phpFiles($root.'/'.$tree, $root) as $entry) {
+        $phpFiles[] = $entry;
+    }
+}
+
+foreach ($phpFiles as [$rel, $abs]) {
     if ($rel === MONEY_HOME) {
         continue;
     }
@@ -332,6 +367,28 @@ foreach (phpFiles($root.'/app', $root) as [$rel, $abs]) {
         if (preg_match('/(amount|balance|kobo|minor|money|naira|currency|price|total)/i', $line)) {
             $add('money-number-format-on-money', $rel.':'.($idx + 1), $line);
         }
+    }
+
+    // money-naira-symbol-outside-money-format. THE CHARACTER RULE, and the one that actually
+    // closes the door the other two leave open.
+    //
+    // WHY A CHARACTER AND NOT A TECHNIQUE. money-render-outside-money-format watches toNaira() and
+    // money-number-format-on-money watches number_format(. A cold review planted a grouped naira
+    // string built from toKobo() — intdiv/modulo, str_pad, a hand-rolled comma loop — and it
+    // tripped NEITHER. That is not a corner case: it is precisely the shape of the naira() method
+    // this branch deleted, so the gate did not stop the deleted thing coming back through another
+    // door. Any hand-rolled render has to emit ₦ EVENTUALLY, whatever route it took to get there,
+    // so banning the character catches every synonym at once — including the ones nobody has
+    // thought of yet, which is the only kind worth gating against.
+    //
+    // The symbol is named once, as Money::SYMBOL, so the value object's own render and the single
+    // legitimate strip (StoreOpeningBalanceImportRequest, normalising what an operator typed) both
+    // refer to the constant and neither needs an exception. The baseline stays empty.
+    foreach ($source as $idx => $line) {
+        if (isComment($line) || ! str_contains($line, NAIRA_SYMBOL)) {
+            continue;
+        }
+        $add('money-naira-symbol-outside-money-format', $rel.':'.($idx + 1), $line);
     }
 }
 
@@ -361,7 +418,12 @@ $new = array_values(array_diff($found, $baseline));
 $fixed = array_values(array_diff($baseline, $found));
 
 if ($new !== []) {
-    fwrite(STDERR, "\nmoney-lint: ".count($new)." NEW money-rule violation(s) — ONE formatter per side (formatNaira() in the UI, Money::format() on the server); never compute money in JS:\n");
+    fwrite(STDERR, "\nmoney-lint: ".count($new)." NEW money-rule violation(s):\n");
+    fwrite(STDERR, "  ONE formatter per side — formatNaira() in the UI, Money::format() on the server. Never compute money in JS.\n");
+    fwrite(STDERR, "  money-render-outside-money-format has TWO fixes, and which one is right depends on what you meant:\n");
+    fwrite(STDERR, "    rendering for a human -> Money::format(). Grouped, symbol, sign before the symbol.\n");
+    fwrite(STDERR, "    a machine value       -> BIND IT: \$exact = \$money->toNaira(); format() would inject a\n");
+    fwrite(STDERR, "                             symbol and separators into a value meant to round-trip.\n");
     foreach ($new as $n) {
         fwrite(STDERR, '  '."\u{2717}".' '.str_replace("\t", '  ', $n)."\n");
     }

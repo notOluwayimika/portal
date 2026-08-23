@@ -19,13 +19,15 @@ What accumulated in that unwatched half was **four** spellings of a naira figure
 | A | `1500.00` — `Money::toNaira()` bare, no symbol, no grouping | opening-balance validator findings (4 sites) |
 | B | `NGN 1500.00` — ISO code + `toNaira()` | allocation refusals (2), credit-note approval summary (1) |
 | C | `₦3,476,400.00` — grouped, hand-rolled | `OpeningBalanceInterpretation::naira()` |
-| D | `₦1,234.56` — grouped, `number_format` | a global `formatNaira()` helper with **zero callers** |
+| D | `₦1,234.56` — grouped, `number_format` | a global `formatNaira()` helper with **no production callers** |
 
 Plus two raw-integer spellings in prose: `%d minor units` in a 422 and in a ledger narration,
 and `%d kobo` in validator findings, reconcile drift and the import console.
 
 C and D produce byte-identical output. Each was written believing it was the first. D shipped
-in the same commit as the value object itself (`946be7e`) and was never called; C's own
+in the same commit as the value object itself (`946be7e`) and had no production callers — it was
+exercised only by `MoneyTest`, whose five assertions this change rewrote onto `format()`. (An
+earlier wording here said "never called", which this commit's own diff contradicted.) C's own
 docblock explains that it exists because `toNaira()` was ungrouped — written by someone who
 did not know D was three directories away, and who therefore solved the same problem twice.
 

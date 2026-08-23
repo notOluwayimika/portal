@@ -14,13 +14,14 @@ it missed:
 | `OpeningBalanceFileValidator` — `inconsistent_student_total` finding, via `array_map` + `implode` | bare `toNaira()` |
 | `OpeningBalanceFileValidator` — `student_total_mismatch` finding, both figures | bare `toNaira()` |
 | `OpeningBalanceInterpretation::naira()` and its four callers | a THIRD grouped-₦ renderer, hand-rolled |
-| `app/Helpers/Helper.php` — global `formatNaira()`, autoloaded, **zero callers** | a FOURTH grouped-₦ renderer |
+| `app/Helpers/Helper.php` — global `formatNaira()`, autoloaded, **no production callers** (only `MoneyTest`) | a FOURTH grouped-₦ renderer |
 | `ApproveCreditNote` — the over-approval 422 | raw `%d minor units` |
 | `RecordPayment` — the ledger narration on an overpayment | raw `%d minor units` |
 
 The last two are worse than a notation difference: they put integer kobo in front of an operator
 as prose. And the fourth entry is the sharpest of them — a symbol-and-grouping formatter shipped
-in the SAME commit as the value object (`946be7e`) and never once called, while
+in the SAME commit as the value object (`946be7e`) and never called by production code — only by
+`MoneyTest`, which is why it looked alive to a test run and dead to everything else — while
 `OpeningBalanceInterpretation` wrote a byte-identical one three directories away because
 `toNaira()` looked insufficient. Two people solved the same problem twice without either finding
 the other, and the sentence below — *"`toNaira()` plus a currency code is the repository's ONLY

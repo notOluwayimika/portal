@@ -36,6 +36,19 @@ final class Money implements Arrayable, JsonSerializable
 {
     public const DEFAULT_CURRENCY = 'NGN';
 
+    /**
+     * The naira mark, named so it exists in exactly one place.
+     *
+     * A CONSTANT AND NOT A LITERAL, because the money-lint now bans this character everywhere
+     * outside this file: a hand-rolled render has to emit ₦ eventually whatever route it took —
+     * toNaira(), toKobo() + str_pad, number_format, sprintf('%s.%02d') — so the SYMBOL is the one
+     * thing every spelling of the deleted naira() helper has in common, and banning the character
+     * catches the shape rather than the technique. The single legitimate non-render use is
+     * StoreOpeningBalanceImportRequest, which STRIPS the symbol from what an operator typed; it
+     * refers to this constant, so the ban needs no exception for it.
+     */
+    public const SYMBOL = '₦';
+
     private function __construct(
         public readonly int $minorUnits,
         public readonly string $currency,
@@ -155,7 +168,7 @@ final class Money implements Arrayable, JsonSerializable
         $digits = ltrim($whole, '-');
         $grouped = strrev(implode(',', str_split(strrev($digits), 3)));
 
-        return $sign.'₦'.$grouped.'.'.$fraction;
+        return $sign.self::SYMBOL.$grouped.'.'.$fraction;
     }
 
     public function plus(self $other): self

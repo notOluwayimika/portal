@@ -114,7 +114,11 @@ class StoreOpeningBalanceImportRequest extends FormRequest
         $raw = $this->input('control_total');
 
         if (is_string($raw)) {
-            $this->merge(['control_total' => str_replace(['₦', ',', ' '], '', trim($raw))]);
+            // Money::SYMBOL, not a '₦' literal: the money-lint bans the character outside the value
+            // object, and this is a STRIP rather than a render — the one place the symbol is
+            // legitimately named on the way IN. Referring to the constant keeps the lint's baseline
+            // empty, which is the point of it being empty.
+            $this->merge(['control_total' => str_replace([Money::SYMBOL, ',', ' '], '', trim($raw))]);
         }
     }
 

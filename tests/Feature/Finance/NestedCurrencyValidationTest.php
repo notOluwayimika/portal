@@ -89,6 +89,42 @@ it('fee schedule: an item currency "ngn" is a 422 naming the field; "NGN" succee
     ])->assertCreated();
 });
 
+// ── #2c FeeSchedule items.*.currency — the WELL-FORMED wrong one ──
+
+it('fee schedule: a well-formed USD item is refused at the edge, and no schedule or item is written', function () {
+    /*
+     * THE THIRD FAILURE ON ONE RULE, after the malformed ('ngn') and the absent. `size:3` +
+     * ^[A-Z]{3}$ refuses both of those and ACCEPTS a well-formed 'USD'; the rule is now
+     * Rule::in([Money::DEFAULT_CURRENCY]), matching the payment requests and — since the F1 commit —
+     * the credit-note and invoice-line rules.
+     *
+     * CONSISTENCY, NOT A BYPASS, and worth saying plainly so nobody reads this arm as closing a hole
+     * it does not: a fee item's currency never reaches an invoice line's Money. `fee_item_id` is
+     * provenance only, and GenerateInvoiceRequest's lineSpecs() takes the amount and the currency
+     * from the wire. What this closes is the last of four otherwise-identical surfaces still
+     * carrying the weaker rule.
+     *
+     * COUNTS, NOT JUST STATUS — same reason as the F1 arms: a 422 is also what a handler returns
+     * when it writes the row and then refuses.
+     */
+    $s = School::factory()->create();
+    $u = ncvUser($s, 'accounts_officer');
+    [$term, $lvl] = ncvTermLevel($s);
+
+    $schedulesBefore = FeeSchedule::withoutGlobalScopes()->count();
+    $itemsBefore = DB::table('finance_fee_items')->count();
+
+    $this->actingAs($u)->withSession(['school_id' => $s->id])->postJson('/api/v1/finance/fee-schedules', [
+        'term_id' => $term->id, 'class_level_id' => $lvl->id, 'label' => 'USD',
+        'items' => [['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000, 'currency' => 'USD']],
+    ])->assertStatus(422)->assertJsonValidationErrors(['items.0.currency']);
+
+    expect(FeeSchedule::withoutGlobalScopes()->count())->toBe($schedulesBefore)
+        ->and(DB::table('finance_fee_items')->count())->toBe($itemsBefore,
+            'A USD fee item was written. The schedule would then report a total in a currency the '
+            .'system cannot render, and every read path through Money::format() throws on it.');
+});
+
 // ── #2b FeeSchedule items.*.currency — the ABSENT one, beside the malformed one ──
 
 it('fee schedule: an item with NO currency at all is a 422 naming the field', function () {

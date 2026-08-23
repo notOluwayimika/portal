@@ -323,11 +323,20 @@ it('index carries the schedule TOTAL, summed in PHP from the items', function ()
 
 it('a schedule whose items disagree on currency reports a NULL total rather than 500ing the list', function () {
     /*
-     * A MIXED-CURRENCY SCHEDULE IS REPRESENTABLE AND NOTHING PREVENTS IT. `items.*.currency` accepts any
-     * /^[A-Z]{3}$/ (HasFeeScheduleItemRules) and the database CHECK on finance_fee_items.amount_currency
-     * is a SHAPE check, deliberately not `= 'NGN'` (2026_08_01_120000_add_currency_shape_checks's
-     * docblock says so in as many words). So this row is reachable through the ordinary write path, not
-     * only by a raw insert — which is why the resource has to have an answer for it.
+     * A MIXED-CURRENCY SCHEDULE IS STILL REPRESENTABLE — BUT NO LONGER THROUGH HTTP, and that is why
+     * this arm now builds it through the Action instead of through the endpoint.
+     *
+     * It used to post both items and rely on `items.*.currency` accepting any /^[A-Z]{3}$/. That rule
+     * is now Rule::in([Money::DEFAULT_CURRENCY]) (the fourth surface to take the pin), so the POST is
+     * a 422 and the state cannot be reached from the wire at all.
+     *
+     * THE RESOURCE STILL NEEDS ITS ANSWER, which is the whole reason this test survives the change
+     * rather than being deleted with the door it used. Two writers remain that no FormRequest sees:
+     * CreateFeeSchedule and EditFeeScheduleDraft are called IN-PROCESS (HasFeeScheduleItemRules'
+     * own docblock counts ~100 such calls in this suite), and the database CHECK on
+     * finance_fee_items.amount_currency is a SHAPE check, deliberately not `= 'NGN'`
+     * (2026_08_01_120000_add_currency_shape_checks says so in as many words). A guard that is only
+     * load-bearing for non-HTTP callers is still load-bearing; it is just no longer the first line.
      *
      * Money::plus THROWS on a currency mismatch. Summed naively, ONE such schedule would take the whole
      * School's list down with an uncaught InvalidArgumentException — a 500 on a screen whose other
@@ -346,15 +355,29 @@ it('a schedule whose items disagree on currency reports a NULL total rather than
 
     $as = fn () => $this->actingAs(fsAdmin($school))->withSession(['school_id' => $school->id]);
 
+    // THROUGH THE ACTION, not the endpoint — the surface that can still produce this state.
+    ActiveSchool::runFor($school->id, fn () => app(CreateFeeSchedule::class)->handle(
+        $term->id,
+        $level->id,
+        'JSS1 T1',
+        [
+            ['description' => 'Tuition', 'amount_minor' => 250000, 'bank_account_id' => $accountUuid, 'currency' => 'NGN'],
+            ['description' => 'Exchange trip', 'amount_minor' => 90000, 'bank_account_id' => $accountUuid, 'currency' => 'USD'],
+        ],
+    ));
+
+    // And the endpoint now REFUSES to create the same thing, which is the pin doing its job — asserted
+    // here so this arm records both halves: the state is unreachable from the wire, and reachable
+    // in-process, which is exactly the gap the resource guard below covers.
     $as()->postJson('/api/v1/finance/fee-schedules', [
         'term_id' => $term->id,
         'class_level_id' => $level->id,
-        'label' => 'JSS1 T1',
+        'label' => 'Refused',
         'items' => [
             ['description' => 'Tuition', 'amount_minor' => 250000, 'bank_account_id' => $accountUuid, 'currency' => 'NGN'],
             ['description' => 'Exchange trip', 'amount_minor' => 90000, 'bank_account_id' => $accountUuid, 'currency' => 'USD'],
         ],
-    ])->assertCreated()->assertJsonPath('total', null);
+    ])->assertStatus(422)->assertJsonValidationErrors(['items.1.currency']);
 
     $response = $as()->getJson('/api/v1/finance/fee-schedules')->assertOk();
 

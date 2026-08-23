@@ -80,7 +80,12 @@ it('C-4 — NGN 201, USD 422 (from the Action currency check): the regex and the
         ->postJson("/api/v1/finance/invoices/{$invoice->uuid}/credit-notes", ['amount_minor' => 1000, 'currency' => 'NGN'])
         ->assertCreated();
 
-    // Well-formed but wrong currency → passes the regex, refused by SubmitCreditNote (422), NOT a 500.
+    // Well-formed but wrong currency → 422, NOT a 500. THE REASON CHANGED and this comment used to
+    // state the old one: it said the value passed the regex and was refused by SubmitCreditNote's
+    // currency-match guard. Since the F1 commit the REQUEST refuses it first, with a named
+    // `currency` error, so the Action's guard is now the second line rather than the first. Green
+    // either way, which is exactly why the stale reason could sit here unnoticed — the Action guard
+    // remains the backstop for any caller reaching it without passing this edge.
     $this->actingAs($bursar)->withSession(['school_id' => $school->id])
         ->postJson("/api/v1/finance/invoices/{$invoice->uuid}/credit-notes", ['amount_minor' => 1000, 'currency' => 'USD'])
         ->assertStatus(422);

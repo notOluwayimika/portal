@@ -4,9 +4,17 @@ use App\Finance\Actions\ApproveVoidRequest;
 use App\Finance\Actions\SubmitVoidRequest;
 use App\Finance\Models\BankAccount;
 use App\Finance\Models\Invoice;
+use App\Models\AcademicSession;
+use App\Models\Arm;
+use App\Models\ClassLevel;
+use App\Models\ClassLevelArm;
+use App\Models\ClassLevelTermParticipation;
+use App\Models\Curriculum;
+use App\Models\ExamType;
 use App\Models\Guardian;
 use App\Models\Role;
 use App\Models\School;
+use App\Models\Term;
 use App\Models\User;
 use App\Support\ActiveSchool;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -207,4 +215,113 @@ function testBankAccountUuid(?int $schoolId = null): string
 
     return (string) BankAccount::withoutGlobalScopes()
         ->where('id', testBankAccountId($schoolId))->value('uuid');
+}
+
+/*
+|--------------------------------------------------------------------------
+| Rollover fixture — sessions, terms, levels with participation slots
+|--------------------------------------------------------------------------
+|
+| Built for RolloverCommandsTest and shared with RolloverSameRingContractTest,
+| which needs the SAME cyclic world to prove the walk and the planner report
+| one ring. Moved rather than duplicated for the reason CohortSiblings gives
+| about its own query: two copies of a fixture drift, and a drifted fixture is
+| worse than a duplicated one because the tests keep passing while they stop
+| describing the same system.
+|
+*/
+
+function rc_session(School $school, string $name): AcademicSession
+{
+    return AcademicSession::create([
+        'school_id' => $school->id,
+        'name' => $name,
+        'slug' => 'sess-'.Str::random(8),
+        'is_current' => false,
+    ]);
+}
+
+function rc_term(AcademicSession $session, int $order): Term
+{
+    return Term::create([
+        'academic_session_id' => $session->id,
+        'school_id' => $session->school_id,
+        'name' => "Term {$order}",
+        'slug' => 'term-'.Str::random(8),
+        'order' => $order,
+        'start_date' => now()->addMonths($order * 3),
+        'end_date' => now()->addMonths($order * 3 + 2),
+        'status' => 'active',
+    ]);
+}
+
+function rc_level(School $school, string $name, int $order, array $slots, array $attrs = []): array
+{
+    $level = ClassLevel::forceCreate(array_merge([
+        'school_id' => $school->id, 'name' => $name, 'order' => $order,
+    ], $attrs));
+
+    foreach ($slots as $slot) {
+        ClassLevelTermParticipation::forceCreate([
+            'school_id' => $school->id,
+            'class_level_id' => $level->id,
+            'term_order' => $slot,
+            'is_ccm' => false,
+        ]);
+    }
+
+    $arm = ClassLevelArm::forceCreate([
+        'school_id' => $school->id,
+        'class_level_id' => $level->id,
+        'arm_id' => Arm::firstOrCreate(['school_id' => $school->id, 'label' => 'B'])->id,
+    ]);
+
+    return [$level, $arm];
+}
+
+function rc_curriculum(School $school, ClassLevelArm $arm, Term $term, ExamType $et, bool $isCcm = false): Curriculum
+{
+    return Curriculum::create([
+        'school_id' => $school->id,
+        'term_id' => $term->id,
+        'class_level_arm_id' => $arm->id,
+        'exam_type_id' => $et->id,
+        'status' => 'active',
+        'is_ccm' => $isCcm,
+        'min_subjects' => 1,
+    ]);
+}
+
+function rc_world(): array
+{
+    $school = al_makeSchool();
+    $admin = al_makeUser($school->id);
+    $examType = ExamType::create(['school_id' => $school->id, 'name' => 'Internal', 'slug' => 'et-'.Str::random(8)]);
+    $source = rc_session($school, '2025/2026');
+    $target = rc_session($school, '2026/2027');
+
+    return compact('school', 'admin', 'examType', 'source', 'target');
+}
+
+/**
+ * A school whose progression graph contains a ring: Year 7 -> Year 8 -> Year 7.
+ *
+ * The database trigger permits this (it guards only the self-loop), which is exactly why the gate
+ * has to exist in code — and why both the walk and the rollover pre-flight must agree about it.
+ */
+function rollover_cyclic_world(): array
+{
+    $w = rc_world();
+    $t1 = rc_term($w['source'], 1);
+    rc_term($w['target'], 1);
+
+    [$a, $armA] = rc_level($w['school'], 'Year 7', 7, [1]);
+    [$b] = rc_level($w['school'], 'Year 8', 8, [1]);
+
+    $a->update(['next_class_level_id' => $b->id]);
+    $b->update(['next_class_level_id' => $a->id]);
+
+    rc_curriculum($w['school'], $armA, $t1, $w['examType']);
+
+    return $w;
 }

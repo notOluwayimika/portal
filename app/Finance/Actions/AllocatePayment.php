@@ -242,7 +242,7 @@ final class AllocatePayment
                     // and is deliberately NOT fixed here — closing it needs its own concurrency
                     // argument, which is how the payment axis was handled.
                     throw new AllocationRefused(
-                        'That is more than invoice '.$row['display_number'].' still owes ('.$row['outstanding']->currency.' '.$row['outstanding']->toNaira().').',
+                        'That is more than invoice '.$row['display_number'].' still owes ('.$row['outstanding']->format().').',
                         "allocations.{$index}.amount_minor",
                     );
                 }
@@ -262,7 +262,7 @@ final class AllocatePayment
                 // finance_allocation_not_over_payment_amount enforces, reached before the database has
                 // to. A 1644 surfacing as a 500 tells an operator nothing they can act on.
                 throw new AllocationRefused(
-                    'That allocates more than this payment has left ('.$currency.' '.$proposal['payment']['unallocated']->toNaira().').',
+                    'That allocates more than this payment has left ('.$proposal['payment']['unallocated']->format().').',
                     'allocations',
                 );
             }

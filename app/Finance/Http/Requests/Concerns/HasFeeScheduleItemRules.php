@@ -4,6 +4,7 @@ namespace App\Finance\Http\Requests\Concerns;
 
 use App\Finance\Models\BankAccount;
 use App\Support\ActiveSchool;
+use App\Support\Money;
 use Illuminate\Validation\Rule;
 
 /**
@@ -63,7 +64,17 @@ trait HasFeeScheduleItemRules
             // {@see \App\Finance\Actions\EditFeeScheduleDraft} are also called in-process (the suite
             // alone does so ~100 times), and those callers never see a validation rule, so the `??`
             // in each Action is what keeps a direct `handle()` call working.
-            'items.*.currency' => ['required', 'string', 'size:3', 'regex:/^[A-Z]{3}$/'],
+            //
+            // Rule::in([DEFAULT_CURRENCY]) — the THIRD surface to take this pin, after the payment
+            // requests and (in the F1 commit) the credit-note and invoice-line rules. This one is
+            // CONSISTENCY, not a bypass being closed: a fee item's currency does not flow into an
+            // invoice line's Money — `fee_item_id` is provenance, and GenerateInvoiceRequest's
+            // lineSpecs() reads the amount and the currency from the wire, never from the cited
+            // item — so a USD fee item could not reach Money::format() through an invoice. It could
+            // still reach a fee-schedule read path, and a shape-only rule on the last of four
+            // otherwise-identical surfaces is the kind of asymmetry that reads as intentional to
+            // the next person and is not.
+            'items.*.currency' => ['required', 'string', Rule::in([Money::DEFAULT_CURRENCY])],
             'items.*.is_mandatory' => ['sometimes', 'boolean'],
             'items.*.is_discountable' => ['sometimes', 'boolean'],
             'items.*.sort_order' => ['sometimes', 'integer', 'min:0'],

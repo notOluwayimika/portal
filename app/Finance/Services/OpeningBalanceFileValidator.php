@@ -652,9 +652,9 @@ class OpeningBalanceFileValidator
         if (! $statedSum->equals($controlTotal)) {
             $batchFindings[] = $this->finding('control_total_mismatch', sprintf(
                 'Σ of the student totals = %s over %d student(s) but --control-total = %s (Δ %d kobo).%s%s',
-                $statedSum->toNaira(),
+                $statedSum->format(),
                 $contributing,
-                $controlTotal->toNaira(),
+                $controlTotal->format(),
                 $statedSum->toKobo() - $controlTotal->toKobo(),
                 // Named on the mismatch because it changes what the operator should go and look at:
                 // a derived figure means the file stated no total, so the discrepancy is between
@@ -814,7 +814,7 @@ class OpeningBalanceFileValidator
         }
 
         if (count($stated) > 1) {
-            $figures = implode(', ', array_map(fn (Money $m) => $m->toNaira(), $stated));
+            $figures = implode(', ', array_map(fn (Money $m) => $m->format(), $stated));
 
             return $this->finding('inconsistent_student_total', sprintf(
                 'This student\'s rows state %d different totals (%s); §2 requires the SAME total on every row of a student.',
@@ -850,7 +850,7 @@ class OpeningBalanceFileValidator
         // BOTH sides in the finding, and the group is rejected — never corrected (§1).
         return $this->finding('student_total_mismatch', sprintf(
             'Σ of this student\'s %d fee-type balance(s) = %s but student_total_balance = %s (Δ %d kobo).',
-            count($indexes), $sum->toNaira(), $total->toNaira(), $sum->toKobo() - $total->toKobo(),
+            count($indexes), $sum->format(), $total->format(), $sum->toKobo() - $total->toKobo(),
         ));
     }
 

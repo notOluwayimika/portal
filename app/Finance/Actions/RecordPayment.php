@@ -134,7 +134,7 @@ final class RecordPayment
                 (int) $payment->getKey(),
                 "Payment #{$reference} recorded against invoice #{$invoice->number}"
                 .($allocateKobo < $amount->toKobo()
-                    ? ' ('.($amount->toKobo() - $allocateKobo).' minor units banked as credit)'
+                    ? ' ('.Money::fromKobo($amount->toKobo() - $allocateKobo, $amount->currency)->format().' banked as credit)'
                     : ''),
                 // EFFECTIVE = THE DAY THE MONEY ARRIVED, not the day it was keyed. The ledger
                 // credit and the payment row must agree about which period the cash belongs to,

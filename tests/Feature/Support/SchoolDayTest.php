@@ -19,6 +19,8 @@ use App\Finance\Http\Requests\RecordPaymentRequest;
 use App\Support\SchoolDay;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
 
 /**
  * The instant: 23:30 UTC on 2026-08-09, which is 00:30 on 2026-08-10 in Lagos.
@@ -106,6 +108,138 @@ it('the payment FormRequests take their day from the school, not the server', fu
     'invoice route' => [RecordPaymentRequest::class],
     'account route' => [RecordAccountPaymentRequest::class],
 ]);
+
+it('at the boundary hour the rule REFUSES the server day and accepts the school day', function () {
+    // THE CONSEQUENCE, not just the rule text. The arm above asserts the rules array carries
+    // `required_unless:received_at,2026-08-10`; this one runs a payload through it and shows what
+    // that means for the two candidate dates at the same instant. It is the assertion the fixture
+    // defect needed: production is correct, and a value taken from the server clock is REFUSED by
+    // it — so a test posting one is measuring the wrong day, not catching a bug.
+    //
+    // Validator directly, no HTTP and no database: this is the clock file, and an arm here must not
+    // be able to fail because an enrollment fixture changed shape.
+    $this->travelTo(schoolDayBoundaryInstant());
+
+    expect(now()->toDateString())->toBe('2026-08-09')
+        ->and(SchoolDay::today())->toBe('2026-08-10');
+
+    // THE DATE RULES ONLY, and this arm used to take the whole array. The claim above said "no
+    // HTTP and no database" and was FALSE: RecordPaymentRequest's bank_account_id carries
+    // Rule::exists(BankAccount…), so validating a full payload queried finance_bank_accounts on
+    // every run. Narrowing to the two rules under test makes the sentence true rather than
+    // softening it, and the query-count assertion below makes it enforced rather than merely
+    // written — a claim about hermeticity that nothing checks decays the first time someone adds a
+    // rule to the request.
+    $rules = array_intersect_key(
+        (new RecordPaymentRequest)->rules(),
+        array_flip(['received_at', 'received_at_reason']),
+    );
+
+    $payload = fn (string $receivedAt) => ['received_at' => $receivedAt];
+
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+
+    $schoolDay = Validator::make($payload(SchoolDay::today()), $rules);
+    $serverDay = Validator::make($payload(now()->toDateString()), $rules);
+
+    // Force both to run their rules before the log is read — Validator is lazy.
+    $schoolDayErrors = $schoolDay->errors();
+    $serverDayErrors = $serverDay->errors();
+
+    $queries = DB::getQueryLog();
+    DB::disableQueryLog();
+
+    expect($queries)->toBe([],
+        'This arm touched the database. It is the clock file: it must be able to fail for a clock '
+        .'reason and no other, and a rule that reaches for a row is a rule that can fail because a '
+        .'fixture changed. '.count($queries).' query/queries ran: '
+        .implode(' | ', array_map(fn ($q) => $q['query'], $queries)));
+
+    expect($schoolDayErrors->has('received_at_reason'))->toBeFalse(
+        'The school’s own current date was treated as back-dated at 00:30 in Lagos — the defect '
+        .'SchoolDay exists to end.');
+
+    expect($serverDayErrors->has('received_at_reason'))->toBeTrue(
+        'The SERVER’s date passed without a back-dating reason at the boundary hour. It is a day '
+        .'early, so a test fixture posting it is not exercising the same-day path it believes it '
+        .'is — which is exactly how InvoiceKindOnReadPathsTest came to fail for one hour a day.');
+});
+
+it('leaves no test fixture posting a business date from the server clock', function () {
+    // THE STATIC SIBLING of the app/Finance scan below, over tests/ — and it exists because the
+    // scan below could not have caught what actually happened. Production was already correct;
+    // InvoiceKindOnReadPathsTest posted `now()->format('Y-m-d')` into a rule built from
+    // SchoolDay::today(), so for one hour a day the SUITE failed while the application was right.
+    // A red that appears and disappears with the wall clock is the worst kind: it reads as a flake,
+    // and the standing advice for a flake is to re-run it.
+    //
+    // KNOWN LIMITS, stated as limits rather than as things to fix later — same voice as the
+    // money-lint's own note, and for the same reason: a reader who believes this is exhaustive is
+    // worse off than one who knows its edges, because they will read a green run as proof.
+    //
+    //   BIND-THEN-USE is not caught.        $d = now()->toDateString();  ...  'received_at' => $d,
+    //   A MULTI-LINE SPLIT is not caught.   'received_at' =>
+    //                                           now()->toDateString(),
+    //
+    // Both need to follow a value across lines or across a binding, which is flow analysis, and
+    // this is a grep with a carve-out list. What it does buy is that the SHAPE THAT ACTUALLY
+    // HAPPENED cannot recur silently, and that the remaining routes are conspicuous rather than
+    // casual.
+    $root = dirname(__DIR__, 2);
+    $offenders = [];
+
+    $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS));
+    foreach ($it as $file) {
+        if ($file->getExtension() !== 'php') {
+            continue;
+        }
+        foreach (file($file->getPathname()) as $i => $line) {
+            // str_starts_with, NOT str_contains. This line used to read
+            // `if (str_contains(ltrim($line), '//'))`, which skips any line carrying a TRAILING
+            // comment — so a genuine offender followed by `// note` was invisible, and four of the
+            // five spellings below escaped through it. The money-lint's isComment() had it right
+            // from the start; this is the same test, spelled the same way.
+            $t = ltrim($line);
+            if (str_starts_with($t, '//') || str_starts_with($t, '*') || str_starts_with($t, '/*') || str_starts_with($t, '#')) {
+                continue;
+            }
+
+            if (! preg_match("/'received_at'\s*=>(.*)$/", $line, $m)) {
+                continue;
+            }
+            $rhs = $m[1];
+
+            // CARVE-OUT 1 — the correct spelling. SchoolDay::today() / SchoolDay::now() is the
+            // school's clock, which is the whole point.
+            if (str_contains($rhs, 'SchoolDay::')) {
+                continue;
+            }
+
+            // CARVE-OUT 2 — a DELIBERATE offset. `now()->subDays(3)` is a back-dated fixture
+            // testing the back-dating path on purpose; it is a different day on either clock, so
+            // the boundary hour cannot make it flip. Flagging it would force a baseline entry, and
+            // the baseline is empty on purpose.
+            if (preg_match('/(sub|add)(Day|Days|Week|Weeks|Month|Months|Year|Years)\s*\(/', $rhs)) {
+                continue;
+            }
+
+            // The server's clock, in every spelling that reaches a date: now()->toDateString(),
+            // now()->format('Y-m-d'), the bare today() helper, Carbon::now(), Carbon::today().
+            // The rule used to name only the first two, which is four of five missed.
+            if (preg_match('/\b(now\(\)|today\(\)|Carbon::now|Carbon::today)/', $rhs)) {
+                $offenders[] = str_replace($root.'/', '', $file->getPathname()).':'.($i + 1);
+            }
+        }
+    }
+
+    expect($offenders)->toBe([],
+        'A test fixture posts a business date taken from the server clock: '.implode(', ', $offenders)
+        .'. Use App\Support\SchoolDay::today(). Between 23:00 and 00:00 UTC the server is on the '
+        .'previous day, so this fixture and the FormRequest rule it is measured against are a day '
+        .'apart — the test fails for one hour out of every twenty-four while the application is '
+        .'entirely correct.');
+});
 
 it('leaves no business date in app/Finance taking its day from the server clock', function () {
     // THE RECONCILIATION, MADE PERMANENT. The survey that drove this change was a one-off: it was

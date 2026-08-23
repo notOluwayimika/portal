@@ -186,11 +186,15 @@ it('PROOF — an L1 failure surfaces on the screen naming the student\'s line nu
 
     // BOTH SIDES of the failed check reach the operator — that is what makes the finding actionable,
     // and 4a's docblock said this screen is where those figures would be read from.
-    // Money::toNaira() renders plain decimals, not a grouped presentation string — asserted as it
-    // actually is rather than as a reader might expect it to look.
+    //
+    // GROUPED, since ADR 0054. This assertion used to read '145000.00' with a comment explaining
+    // that Money::toNaira() renders plain decimals and that the test asserted it "as it actually is
+    // rather than as a reader might expect it to look" — an honest note about a real gap, and the
+    // gap is now closed rather than documented: the screen renders what the operator's own stat
+    // tile renders.
     expect($body['rejected_rows'][0]['findings'][0]['message'])
-        ->toContain('145000.00')
-        ->and($body['rejected_rows'][0]['findings'][0]['message'])->toContain('145000.01');
+        ->toContain('₦145,000.00')
+        ->and($body['rejected_rows'][0]['findings'][0]['message'])->toContain('₦145,000.01');
 
     // THE PRIVACY RULE, ASSERTED RATHER THAN TRUSTED. The whole payload is searched for the
     // student's NAME: the report is line numbers and admission numbers, and this screen is the same

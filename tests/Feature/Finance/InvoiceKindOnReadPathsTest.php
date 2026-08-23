@@ -10,6 +10,7 @@ use App\Models\Student;
 use App\Models\StudentCurriculum;
 use App\Models\User;
 use App\Support\ActiveSchool;
+use App\Support\SchoolDay;
 use Database\Seeders\RbacSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -218,7 +219,14 @@ it('d — the generate 201 reports the credit it just applied, and does not offe
         ->postJson("/api/v1/finance/invoices/{$termBill->json('id')}/payments", [
             'amount_minor' => 22000,
             'payer_name' => 'Guardian',
-            'received_at' => now()->format('Y-m-d'),
+            // SchoolDay::today(), NOT now() — the two are a DIFFERENT DAY for one hour every day.
+            // RecordPaymentRequest's `required_unless:received_at,<today>` builds its comparand from
+            // SchoolDay (Africa/Lagos); now() is app.timezone (UTC). Between 23:00 and 00:00 UTC this
+            // posted 2026-08-22 against a rule expecting 2026-08-23 and 422'd on received_at_reason —
+            // caught by a quality run that happened to start at 00:07. 36 of the 39 'received_at'
+            // fixtures in the suite already use SchoolDay::today(); this was one of the three that
+            // did not, and the only one asserting SAME-DAY semantics, where the skew is load-bearing.
+            'received_at' => SchoolDay::today(),
             'bank_account_id' => $account->uuid,
         ])->assertCreated();
 

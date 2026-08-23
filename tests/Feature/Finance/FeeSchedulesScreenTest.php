@@ -278,25 +278,36 @@ it('the Edit body the page sends preserves each item’s CURRENCY, not just its 
     /*
      * THE DEFECT THIS PINS. An edit replaces the item set WHOLESALE — EditFeeScheduleDraft deletes
      * and re-inserts — so a field the form does not send back is not left alone, it is REWRITTEN from
-     * whatever default the write path supplies. `items.*.currency` is `sometimes`
-     * (HasFeeScheduleItemRules), not `required` like `items.*.bank_account_id`, so an omitted
-     * currency is not a 422: CreateFeeSchedule reads `$item['currency'] ?? Money::DEFAULT_CURRENCY`
-     * and writes NGN. A USD line survives its edit with the same minor units and a different
-     * denomination — and the schedule then reports a total that is not an amount of anything.
-     *
-     * THE CHEAPER REMEDY DOES NOT CLOSE IT, which is why this arm and not a guard. Refusing the edit
-     * when `total === null` catches only the MIXED-currency schedule; `scheduleTotal()` returns a
-     * perfectly valid non-null Money for a schedule whose items are ALL USD, so the guard never fires
-     * on the more likely shape and that schedule is silently re-priced into naira by an edit to a
-     * description.
+     * whatever default the write path supplies. CreateFeeSchedule reads
+     * `$item['currency'] ?? Money::DEFAULT_CURRENCY`, so a currency the page drops does not stay as
+     * it was: the amounts survive and the denominations do not.
      *
      * THE BODY IS BUILT THE WAY THE PAGE BUILDS IT — from the fields the catalog response carries,
      * which is exactly what `openFrom()` reads into the form and `submit()` posts back. A body
      * hand-written with the currency already in it would assert that the ENDPOINT preserves what it
      * is told, which was never in doubt; what was in doubt is whether the page tells it.
      *
-     * WATCHED RED by dropping `currency` from the item map below — which IS the pre-fix page — the
-     * assertion fails with the second item's currency read back as "NGN" instead of "USD".
+     * WATCHED RED, and this recipe is the CURRENT one — drop `currency` from the item map below,
+     * which IS the pre-fix page, and the edit is refused:
+     *
+     *     Expected response status code [200] but received 422.
+     *       "items.0.currency": ["The items.0.currency field is required."]
+     *       "items.1.currency": ["The items.1.currency field is required."]
+     *
+     * THE RECIPE THIS REPLACES DID NOT REPRODUCE, and the reason is worth keeping because it is how
+     * a watched-red goes stale without anyone noticing. It read: "the assertion fails with the second
+     * item's currency read back as 'NGN' instead of 'USD'", and it rested on a sentence above it
+     * claiming `items.*.currency` was `sometimes`. That was true when the arm was written and false
+     * by the time anyone would have followed it — U1 commit 2 made the rule `required`, so an omitted
+     * currency stopped being a silent default and became a 422. Measured at the base commit of the
+     * branch that corrected this: the promised currency mismatch never appears.
+     *
+     * The consequence for the FIXTURE is why both items are NGN. The old arm used a USD second line
+     * as the detector — the one value a silent default-to-NGN would visibly overwrite. `required`
+     * took that job over, and the pin on `items.*.currency`
+     * (Rule::in([Money::DEFAULT_CURRENCY])) means USD can no longer be posted at all. The arm's
+     * subject is untouched by either change: it asks whether the page sends the field, and dropping
+     * the field still reds.
      */
     $ctx = fssSchool();
     $author = fssUser($ctx['school'], [
@@ -315,7 +326,7 @@ it('the Edit body the page sends preserves each item’s CURRENCY, not just its 
         'label' => 'JSS1 T1',
         'items' => [
             ['description' => 'Tuition', 'amount_minor' => 250000, 'bank_account_id' => $account, 'currency' => 'NGN'],
-            ['description' => 'Exchange trip', 'amount_minor' => 90000, 'bank_account_id' => $account, 'currency' => 'USD'],
+            ['description' => 'Exchange trip', 'amount_minor' => 90000, 'bank_account_id' => $account, 'currency' => 'NGN'],
         ],
     ])->assertCreated();
 
@@ -342,7 +353,7 @@ it('the Edit body the page sends preserves each item’s CURRENCY, not just its 
 
     $after = collect((array) $edited->json('items'));
 
-    expect($after->pluck('amount.currency')->all())->toBe(['NGN', 'USD'],
+    expect($after->pluck('amount.currency')->all())->toBe(['NGN', 'NGN'],
         'An edit re-denominated the schedule. The page posts the item set wholesale, so a currency it '
         .'does not send back is rewritten to Money::DEFAULT_CURRENCY — the amounts survive and the '
         .'denominations do not, which is a price change nobody made.');
@@ -352,8 +363,13 @@ it('the Edit body the page sends preserves each item’s CURRENCY, not just its 
     expect($after->pluck('amount.amount_minor')->all())->toBe([250000, 90000])
         ->and($after->pluck('description')->all())->toBe(['Tuition (revised)', 'Exchange trip']);
 
-    // And the schedule still reports the condition rather than a number: two currencies, no total.
-    expect($edited->json('total'))->toBeNull();
+    // And the schedule totals, because both lines are now NGN. This line used to assert `total` was
+    // NULL — the mixed-currency condition reported instead of a number — and that subject left with
+    // the USD fixture. It is replaced rather than deleted: the null-total behaviour still has a
+    // dedicated arm in FeeScheduleTest (which builds the mixed schedule in-process, the only surface
+    // that can still produce one), so nothing is lost by asserting the true value here, and an
+    // assertion that the sum survived a wholesale delete-and-re-insert is worth having on its own.
+    expect($edited->json('total'))->toBe(['amount_minor' => 340000, 'currency' => 'NGN']);
 });
 
 it('the page posts the currency back — the round-trip, asserted in the file that performs it', function () {

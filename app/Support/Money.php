@@ -36,6 +36,19 @@ final class Money implements Arrayable, JsonSerializable
 {
     public const DEFAULT_CURRENCY = 'NGN';
 
+    /**
+     * The naira mark, named so it exists in exactly one place.
+     *
+     * A CONSTANT AND NOT A LITERAL, because the money-lint now bans this character everywhere
+     * outside this file: a hand-rolled render has to emit ₦ eventually whatever route it took —
+     * toNaira(), toKobo() + str_pad, number_format, sprintf('%s.%02d') — so the SYMBOL is the one
+     * thing every spelling of the deleted naira() helper has in common, and banning the character
+     * catches the shape rather than the technique. The single legitimate non-render use is
+     * StoreOpeningBalanceImportRequest, which STRIPS the symbol from what an operator typed; it
+     * refers to this constant, so the ban needs no exception for it.
+     */
+    public const SYMBOL = '₦';
+
     private function __construct(
         public readonly int $minorUnits,
         public readonly string $currency,
@@ -95,6 +108,67 @@ final class Money implements Arrayable, JsonSerializable
         $minor = $kobo % 100;
 
         return ($this->minorUnits < 0 ? '-' : '').$major.'.'.str_pad((string) $minor, 2, '0', STR_PAD_LEFT);
+    }
+
+    /**
+     * THE server-side money renderer: "₦1,234.56", "-₦12.05", "₦0.00".
+     *
+     * The counterpart of the UI's formatNaira (resources/js/lib/format.ts) and shaped to
+     * match it exactly — ₦ symbol, comma-grouped naira, always two kobo digits, and the
+     * SIGN BEFORE THE SYMBOL. The two renderings of one figure sit inches apart on an
+     * operator screen (a refusal message beside the table column it refuses), so a
+     * difference in shape between them reads as a difference in amount.
+     *
+     * SYMBOL, NOT ISO CODE. `NGN 125000.00` is what the server used to emit; six unbroken
+     * digits in a sentence about money someone is about to commit irreversibly is
+     * precisely the magnitude error grouping exists to prevent.
+     *
+     * FLOAT-FREE GROUPING, deliberately NOT number_format. THE ARGUMENT IS ABOUT THE DECLARED
+     * TYPE, not about what any one engine build happens to do:
+     *
+     *   - number_format's first parameter is declared `float` (ReflectionFunction confirms it).
+     *   - The largest naira-major value this type can hold is intdiv(PHP_INT_MAX, 100) =
+     *     92,233,720,368,547,758 — about 9.22e16.
+     *   - float's exact-integer limit is 2^53 = 9,007,199,254,740,992 — about 9.01e15.
+     *
+     * The domain's top exceeds float's exact range by an order of magnitude, so at the top of
+     * the range the exactness of a grouped figure is one coercion away. Measured, that costs
+     * real digits: number_format((float) 9007199254740993) is 9,007,199,254,740,992.
+     *
+     * This is unreachable at school-fee magnitudes — a term bill is around 1.25e7 kobo, nine
+     * orders of magnitude below the boundary — so the practical stake here is small and is
+     * named as small. What is NOT small is that a formatter is the last thing that should be
+     * able to alter the figure it displays. This method takes the exact decimal string
+     * toNaira() already produced and only punctuates it: split off the sign, reverse, comma
+     * every three digits, reverse back. No float appears anywhere in the path, so the property
+     * is structural rather than contingent.
+     *
+     * A NOTE ON THE CLAIM THIS REPLACES. OpeningBalanceInterpretation::naira(), which
+     * introduced this technique, said number_format "casts to float and would lose precision".
+     * On PHP 8.3.32 no coercion is OBSERVABLE — number_format(9007199254740993) returns the
+     * exact ...993, which a coerce-then-format path could not produce, since the double for
+     * that value is ...992. That is an observation about one build, not a mechanism, and the
+     * decision above deliberately does not rest on it either way.
+     *
+     * NGN-ONLY, and that is a constraint rather than an omission: ₦ is a naira mark, so a
+     * foreign currency rendered through here would be mislabelled rather than merely
+     * mis-styled. Refuse it, the way the constructor refuses a bad currency code.
+     */
+    public function format(): string
+    {
+        if ($this->currency !== self::DEFAULT_CURRENCY) {
+            throw new InvalidArgumentException(
+                "format() expects an NGN amount, got [{$this->currency}]."
+            );
+        }
+
+        [$whole, $fraction] = explode('.', $this->toNaira());
+
+        $sign = str_starts_with($whole, '-') ? '-' : '';
+        $digits = ltrim($whole, '-');
+        $grouped = strrev(implode(',', str_split(strrev($digits), 3)));
+
+        return $sign.self::SYMBOL.$grouped.'.'.$fraction;
     }
 
     public function plus(self $other): self

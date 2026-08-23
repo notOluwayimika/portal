@@ -94,9 +94,18 @@ class GenerateInvoiceRequest extends FormRequest
             'lines.*.percent' => ['sometimes', 'integer', 'between:1,100', 'prohibits:lines.*.amount_minor'],
             'lines.*.kind' => ['sometimes', Rule::enum(InvoiceLineKind::class)],
             'lines.*.note' => ['sometimes', 'nullable', 'string', 'max:255'],
-            // regex mirrors Money's ISO-4217 invariant — a bad case/format is a 422 here, not Money::fromKobo's
-            // InvalidArgumentException → 500 inside lineSpecs() one frame later (f293358 finish).
-            'lines.*.currency' => ['sometimes', 'string', 'size:3', 'regex:/^[A-Z]{3}$/'],
+            // Rule::in([DEFAULT_CURRENCY]) — the same pin the payment requests carry. Shape-only
+            // ('size:3' + ^[A-Z]{3}$) refuses 'ngn' and accepts a well-formed 'USD', which is how a
+            // non-NGN invoice could be raised at all: this field is the ONLY thing that decides a
+            // line's currency (fee_item_id is provenance — lineSpecs() below reads the amount and
+            // the currency from the wire, never from the cited item). A USD invoice then renders
+            // through Money::format(), which throws on non-NGN, so the failure surfaces as a 500 on
+            // a read rather than a 422 on the write that caused it.
+            //
+            // A second currency is a schema-and-ledger project, not a validation rule; refusing what
+            // the system cannot process is truth, not a hardcode. Money::fromKobo in lineSpecs() and
+            // Money::plus (which throws on a mismatch while totalling) still backstop this.
+            'lines.*.currency' => ['sometimes', 'string', Rule::in([Money::DEFAULT_CURRENCY])],
             // Provenance of the price. `integer` alone was the whole rule until this commit, and that made
             // it the one wire field that escaped the principle stated two fields down and at
             // GenerateInvoice:280-282 — a client does not get to decide a fee ITEM's properties. An

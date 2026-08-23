@@ -188,7 +188,7 @@ it('rejects an invoice with no lines, and a non-positive line, at the ACTION lay
     expect(DB::table('finance_invoices')->count())->toBe(0);
 });
 
-it('makes a mixed-currency invoice impossible by construction (Money::plus throws)', function () {
+it('makes a mixed-currency invoice impossible — refused at the edge, with Money::plus still the backstop', function () {
     [$school, $admin, $student] = slice2Setup();
     $enrollment = slice2Enrollment($school, $student);
 
@@ -199,7 +199,19 @@ it('makes a mixed-currency invoice impossible by construction (Money::plus throw
                 ['description' => 'NGN line', 'amount_minor' => 1000, 'currency' => 'NGN'],
                 ['description' => 'USD line', 'amount_minor' => 1000, 'currency' => 'USD'],
             ],
-        ])->assertStatus(500); // InvalidArgumentException from the VO — never a silent bad total
+            // 422 AT THE EDGE, and this line used to assert 500. Both refuse the invoice and both
+            // leave nothing persisted, so the claim this test makes is unchanged — what changed is
+            // WHERE the refusal happens. `lines.*.currency` was shape-only (^[A-Z]{3}$), so a
+            // well-formed 'USD' passed validation and died on Money::plus's currency-mismatch
+            // throw several frames later, surfacing as a 500 an operator can do nothing with. It is
+            // now Rule::in([Money::DEFAULT_CURRENCY]) and names the offending line.
+            //
+            // The VO is STILL the backstop and is still what makes a bad total impossible rather
+            // than merely unlikely — a caller reaching the Action directly (a console command, a
+            // job) does not pass through this rule. This asserts the edge; MoneyCurrencyValidation
+            // asserts the same refusal writes nothing.
+        ])->assertStatus(422)
+        ->assertJsonValidationErrors(['lines.1.currency']);
 
     expect(DB::table('finance_invoices')->count())->toBe(0); // nothing persisted
 });

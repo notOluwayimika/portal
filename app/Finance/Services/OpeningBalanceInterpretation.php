@@ -169,8 +169,8 @@ final class OpeningBalanceInterpretation
     private function sentence(int $creditStudents, Money $creditTotal, int $arrearsStudents, Money $arrearsTotal, int $squareStudents, int $offsettingStudents, Money $net): string
     {
         $parts = [
-            sprintf('%d student(s) are in CREDIT — the school owes them %s in total.', $creditStudents, $this->naira($creditTotal)),
-            sprintf('%d student(s) are in ARREARS — they owe the school %s in total.', $arrearsStudents, $this->naira($arrearsTotal)),
+            sprintf('%d student(s) are in CREDIT — the school owes them %s in total.', $creditStudents, $creditTotal->format()),
+            sprintf('%d student(s) are in ARREARS — they owe the school %s in total.', $arrearsStudents, $arrearsTotal->format()),
             sprintf('%d student(s) have a zero balance and will post nothing.', $squareStudents),
         ];
 
@@ -188,44 +188,13 @@ final class OpeningBalanceInterpretation
         if ($net->isZero()) {
             $parts[] = 'Net: the two sides cancel exactly.';
         } elseif ($net->isNegative()) {
-            $parts[] = sprintf('Net: the school OWES FAMILIES %s.', $this->naira($net->times(-1)));
+            $parts[] = sprintf('Net: the school OWES FAMILIES %s.', $net->times(-1)->format());
         } else {
-            $parts[] = sprintf('Net: the school IS OWED %s by families.', $this->naira($net));
+            $parts[] = sprintf('Net: the school IS OWED %s by families.', $net->format());
         }
 
         $parts[] = 'If that is not what this file means, the sign convention is inverted — do not approve it.';
 
         return implode(' ', $parts);
-    }
-
-    /**
-     * A naira figure with THOUSANDS SEPARATORS, matching what `formatNaira` renders on the screen.
-     *
-     * WHY THIS EXISTS, because `Money::toNaira()` was already here and looked sufficient. It returns
-     * an ungrouped machine form — `3476400.00` — and the page renders the SAME figure through
-     * formatNaira in its stat tile as `₦3,476,400.00`. The two sat inches apart on the operator
-     * screen, and this was found by reading the rendered page rather than the console, which showed
-     * only one of them.
-     *
-     * That is not a cosmetic difference on THIS string. The sentence is the one control standing
-     * between an inverted sign convention and an irreversible post, and its whole mechanism is that a
-     * human reads a figure and either agrees with it or refuses. `₦3505400.00` is a seven-digit run
-     * a reader must count by eye; a magnitude error is exactly what it hides, and a magnitude error
-     * is exactly what this control is for. Groups are what make a number legible at a glance.
-     *
-     * STRING WORK ONLY — no arithmetic, no float, no `number_format` (which casts to float and would
-     * lose precision on a large kobo figure). Money has already done every calculation; this only
-     * punctuates the decimal string it produced. The sign goes BEFORE the symbol, as formatNaira
-     * does, so the two renderings of one figure cannot differ in shape either.
-     */
-    private function naira(Money $money): string
-    {
-        [$whole, $fraction] = explode('.', $money->toNaira());
-
-        $sign = str_starts_with($whole, '-') ? '-' : '';
-        $digits = ltrim($whole, '-');
-        $grouped = strrev(implode(',', str_split(strrev($digits), 3)));
-
-        return $sign.'₦'.$grouped.'.'.$fraction;
     }
 }

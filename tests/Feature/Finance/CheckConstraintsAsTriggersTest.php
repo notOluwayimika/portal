@@ -30,6 +30,7 @@ use App\Models\Student;
 use App\Models\Term;
 use App\Models\User;
 use App\Support\ActiveSchool;
+use App\Support\SchoolDay;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -229,7 +230,7 @@ it('BITE — the origin/bank-account pairing refuses a mismatched pair and accep
         'reference' => random_int(1, 800_000_000),
         'amount_minor' => 5000,
         'amount_currency' => 'NGN',
-        'received_at' => now()->toDateString(),
+        'received_at' => SchoolDay::today(),
         'bank_account_id' => null,
         'payer_name' => 'Raw',
         'method' => 'manual',

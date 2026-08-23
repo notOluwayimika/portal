@@ -273,6 +273,35 @@ export default function StudentCurriculaPage({
     const [items, setItems] = useState<StudentCurriculum[]>(
         student.student_curricula,
     );
+
+    /**
+     * KEEP THE TABLE IN STEP WITH FRESH SERVER PROPS.
+     *
+     * useState() reads its argument on the FIRST render only. Inertia re-renders this SAME component
+     * instance when new props arrive, so without this the table keeps the array it mounted with:
+     * router.reload() fetches correctly, the payload lands, and the screen ignores it — which is why
+     * a reassignment showed up only after a manual browser refresh.
+     *
+     * ── ADJUSTED DURING RENDER, NOT IN AN EFFECT ──────────────────────────────────────────────────
+     * An effect would work and is what this wants to be, but it re-renders the table once with the
+     * STALE rows before correcting itself, and the repo's lint refuses setState inside an effect for
+     * exactly that reason. Comparing against the previous payload during render is React's own
+     * answer: React discards this render and re-runs with the new state before touching the DOM, so
+     * the stale rows are never painted.
+     *
+     * This does not fight the optimistic updates below. handleStatusChange and handlePromoteConfirm
+     * patch `items` directly and never reload, so the prop identity does not change and this branch
+     * does not run; when it does run, the server's version is the one that should win.
+     */
+    const [renderedPayload, setRenderedPayload] = useState(
+        student.student_curricula,
+    );
+
+    if (renderedPayload !== student.student_curricula) {
+        setRenderedPayload(student.student_curricula);
+        setItems(student.student_curricula);
+    }
+
     const { auth } = usePage().props;
     const roles = auth.roles;
     const [eligible, setEligible] = useState<Curriculum[]>([]);

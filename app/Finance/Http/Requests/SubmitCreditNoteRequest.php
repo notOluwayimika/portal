@@ -3,6 +3,7 @@
 namespace App\Finance\Http\Requests;
 
 use App\Finance\Enums\CreditNoteKind;
+use App\Support\Money;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -29,10 +30,20 @@ class SubmitCreditNoteRequest extends FormRequest
     {
         return [
             'amount_minor' => ['required', 'integer', 'min:1'],
-            // regex mirrors Money's own ISO-4217 invariant, so bad case/format is a 422 here, not the
-            // constructor's InvalidArgumentException → 500 one frame later in the controller. Refuse, don't
-            // uppercase: 'ngn'/'usd' are not typos to repair silently (backstop-reachability audit).
-            'currency' => ['sometimes', 'string', 'size:3', 'regex:/^[A-Z]{3}$/'],
+            // Rule::in([DEFAULT_CURRENCY]) — the same pin RecordPaymentRequest and
+            // RecordAccountPaymentRequest already carry, and this rule is now identical to theirs.
+            // It used to be shape-only ('size:3' + ^[A-Z]{3}$), which refuses 'ngn' and 'usdd' and
+            // ACCEPTS a well-formed 'USD'. That gap became reachable when the summary moved to
+            // Money::format(), which throws on a non-NGN amount: the credit note commits, and the
+            // approval notification is built AFTER the commit (see SubmitCreditNote — "AFTER the
+            // commit, never inside it"), so the throw lands on an already-written row. A 500 with a
+            // committed credit note and no notification is strictly worse than the 422 here.
+            //
+            // Refuse, don't uppercase: 'ngn'/'usd' are not typos to repair silently. And refusing a
+            // well-formed second currency is truth rather than a hardcode — a second currency is a
+            // schema-and-ledger project, not a validation rule. The Action's invoice-currency match
+            // and Money's own constructor still backstop this.
+            'currency' => ['sometimes', 'string', Rule::in([Money::DEFAULT_CURRENCY])],
             // Defaults to credit_note in the controller when absent; a write-off is the
             // same mechanism under a distinct, reportable label.
             'kind' => ['sometimes', Rule::enum(CreditNoteKind::class)],

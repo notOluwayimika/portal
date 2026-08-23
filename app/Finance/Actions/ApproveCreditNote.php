@@ -10,6 +10,7 @@ use App\Finance\Models\CreditNote;
 use App\Finance\Models\Invoice;
 use App\Finance\Services\SubledgerPoster;
 use App\Models\User;
+use App\Support\Money;
 use App\Support\SchoolContext;
 use App\Support\SchoolDay;
 use Illuminate\Support\Facades\DB;
@@ -78,7 +79,8 @@ final class ApproveCreditNote
             if ($approved + $creditNote->amount->toKobo() > $invoice->total->toKobo()) {
                 throw new BusinessRuleException(
                     'Approving this credit note would exceed the invoice total. At most '
-                    .($invoice->total->toKobo() - $approved).' minor units can still be approved.'
+                    .Money::fromKobo($invoice->total->toKobo() - $approved, $invoice->total->currency)->format()
+                    .' can still be approved.'
                 );
             }
 

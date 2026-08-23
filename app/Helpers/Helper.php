@@ -1,6 +1,5 @@
 <?php
 
-use App\Support\Money;
 use Carbon\Carbon;
 
 if (! function_exists('normalizeDate')) {
@@ -74,29 +73,5 @@ if (! function_exists('decodeData')) {
         $id = $hashIds->decode($data);
 
         return $id;
-    }
-}
-
-if (! function_exists('formatNaira')) {
-    /**
-     * Format a Money value as a Naira string, e.g. "₦1,234.56", "-₦12.05".
-     *
-     * NGN-specific by design (the ₦ symbol): rejects non-NGN Money so a foreign
-     * currency can never be mislabelled as naira. Formatting is exact — it reads
-     * the integer minor units, never a float.
-     */
-    function formatNaira(Money $amount): string
-    {
-        if ($amount->currency !== Money::DEFAULT_CURRENCY) {
-            throw new InvalidArgumentException(
-                "formatNaira() expects an NGN amount, got [{$amount->currency}]."
-            );
-        }
-
-        $kobo = abs($amount->toKobo());
-        $major = number_format(intdiv($kobo, 100));
-        $minor = str_pad((string) ($kobo % 100), 2, '0', STR_PAD_LEFT);
-
-        return ($amount->isNegative() ? '-₦' : '₦')."{$major}.{$minor}";
     }
 }

@@ -86,10 +86,16 @@ final class SubmitCreditNote
             submittedBy: (int) $maker->id,
             // Every identifier here was verified against the schema rather than assumed.
             // The first draft used Money::format() and Invoice::$display_number — neither
-            // exists; Larastan caught both, and the Finance suite caught the first as 30
-            // red tests. Plausible-looking attribute names are exactly what static
-            // analysis is for.
-            summary: 'Credit note of '.$amount->currency.' '.$amount->toNaira()
+            // existed then; Larastan caught both, and the Finance suite caught the first as
+            // 30 red tests. Plausible-looking attribute names are exactly what static
+            // analysis is for. Money::format() exists NOW (ADR 0054 gave the value object the
+            // one server-side renderer) and this is it, so the lesson stands and the example
+            // has simply been overtaken; Invoice::$display_number still does not exist.
+            //
+            // THE SUMMARY IS STORED, not rendered on read (see NotifiesApprovalCheckers), so
+            // rows written before ADR 0054 keep their `NGN 1500.00` text forever. That is
+            // correct — a stored fallback is a record of what was said at the time.
+            summary: 'Credit note of '.$amount->format()
                 .' on invoice '.$invoice->number,
         );
 

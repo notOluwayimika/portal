@@ -195,9 +195,15 @@ it('accepts a student whose fee-type balances sum to their stated total, and rej
     // BOTH sides in the finding — a bare "L1 failed" tells the operator nothing about which line the
     // extract lost.
     $message = collect($rows[4]->findings)->firstWhere('code', 'student_total_mismatch')['message'];
-    expect($message)->toContain('145000.00')   // what the lines sum to
-        ->and($message)->toContain('145000.01') // what the file states
-        ->and($message)->toContain('-1 kobo');
+    // GROUPED (ADR 0054 — Money::format()), and the delta still in RAW KOBO beside it. The two
+    // are different jobs on one line: the operator reads the figures, and the delta is the
+    // machine's account of the gap. Rounding the delta to ₦0.01 — or to ₦0.00 — is exactly how a
+    // one-kobo drift stops being visible, which is the drift this finding exists to surface.
+    expect($message)->toContain('₦145,000.00')   // what the lines sum to
+        ->and($message)->toContain('₦145,000.01') // what the file states
+        ->and($message)->toContain('-1 kobo')
+        // The ungrouped spelling is GONE, not merely joined by a grouped one.
+        ->and($message)->not->toContain('145000.00');
 });
 
 it('rejects the whole row-group when the stated total disagrees with itself across a student\'s rows', function () {
@@ -268,9 +274,10 @@ it('raises a BATCH finding when the stated totals do not sum to --control-total,
         ->and($exit)->toBe(1);
 
     $message = collect($batch->findings)->firstWhere('code', 'control_total_mismatch')['message'];
-    expect($message)->toContain('150000.00')   // Σ of the stated totals
-        ->and($message)->toContain('140000.00') // what the operator typed
-        ->and($message)->toContain('1000000 kobo');
+    expect($message)->toContain('₦150,000.00')   // Σ of the stated totals
+        ->and($message)->toContain('₦140,000.00') // what the operator typed
+        ->and($message)->toContain('1000000 kobo') // the delta stays raw kobo — see above
+        ->and($message)->not->toContain('150000.00');
 });
 
 it('records the operator control total on the batch, on a passing run AND on a rejected one', function () {

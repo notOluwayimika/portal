@@ -1,6 +1,44 @@
 # Server-side money has no single formatter, and no lint watches it
 
-**Status:** OPEN. Raised by the cold review of `feat/u10-allocation-screen`, 2026-08-22.
+**Status: CLOSED** on `feat/server-side-money-formatter`, cut from `staging` @ `d54dbec`, 2026-08-23.
+Fixed exactly as this ticket demanded — one shared formatter, a new lint arm, and every site moved
+at once. See [ADR 0054](../../adr/0054-one-server-side-money-formatter.md).
+
+**AND THE TICKET'S OWN INVENTORY WAS WRONG, which is the ticket's own point.** The "Sites known
+today" table below lists three. A scan found fourteen: **it was incomplete by eleven.** The eleven
+it missed:
+
+| Missed site | Spelling |
+| --- | --- |
+| `OpeningBalanceFileValidator` — `control_total_mismatch` finding, both figures (2 sites) | bare `toNaira()` |
+| `OpeningBalanceFileValidator` — `inconsistent_student_total` finding, via `array_map` + `implode` | bare `toNaira()` |
+| `OpeningBalanceFileValidator` — `student_total_mismatch` finding, both figures | bare `toNaira()` |
+| `OpeningBalanceInterpretation::naira()` and its four callers | a THIRD grouped-₦ renderer, hand-rolled |
+| `app/Helpers/Helper.php` — global `formatNaira()`, autoloaded, **zero callers** | a FOURTH grouped-₦ renderer |
+| `ApproveCreditNote` — the over-approval 422 | raw `%d minor units` |
+| `RecordPayment` — the ledger narration on an overpayment | raw `%d minor units` |
+
+The last two are worse than a notation difference: they put integer kobo in front of an operator
+as prose. And the fourth entry is the sharpest of them — a symbol-and-grouping formatter shipped
+in the SAME commit as the value object (`946be7e`) and never once called, while
+`OpeningBalanceInterpretation` wrote a byte-identical one three directories away because
+`toNaira()` looked insufficient. Two people solved the same problem twice without either finding
+the other, and the sentence below — *"`toNaira()` plus a currency code is the repository's ONLY
+server-side money rendering"* — is what that looks like from inside.
+
+That is not a criticism of the ticket; it is the ticket being right. It says the list is "what was
+found while writing this, not the output of a scan — there is no scan, which is the ticket." There
+is a scan now: `bin/ci-money-lint.php`'s PHP arm, baseline empty.
+
+**What was deliberately NOT migrated:** the `%d kobo` diagnostics in the validator findings,
+`reconcile-accounts` drift and the import console. Those are machine figures for diagnosing a
+mismatch, and the mismatches worth catching are sub-naira — rounding them to `₦0.00` is how a
+one-kobo drift goes unnoticed. ADR 0054 §5 records this, and the lint spares them structurally
+(they are `toKobo()`; the rule only looks at `toNaira()`) rather than by an exemption list.
+
+---
+
+**Originally filed:** OPEN, by the cold review of `feat/u10-allocation-screen`, 2026-08-22.
 
 ## What was seen
 

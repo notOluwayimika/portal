@@ -212,7 +212,7 @@ check "boundary-lint" php bin/ci-boundary-lint.php
 step "grants-convergence lint (a pre-existing permission added to grantsMap() ships a migration)"
 check "grants-convergence-lint" php bin/ci-grants-convergence-lint.php "$BASE"
 
-step "money lint (UI: money via formatNaira, no JS money math)"
+step "money lint (UI: formatNaira, no JS money math | server: Money::format(), no number_format on money)"
 check "money-lint" php bin/ci-money-lint.php
 
 step "runtime-zero lint (S7 legacy access sources)"

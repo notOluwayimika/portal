@@ -1,11 +1,21 @@
 <?php
 
 /**
- * money-lint — the UI money-correctness gate (the frontend equivalent of a DB trigger).
+ * money-lint — the money-correctness gate, on BOTH sides of the wire.
  *
- * The money architecture is integer minor units end to end precisely because JS numbers
- * are floats. Two rules keep the UI from reintroducing the float-money bug the backend
- * exists to prevent — enforced statically and PERMANENTLY, on every future frontend change:
+ * TWO ARMS, because for a while there was one. The UI arm below was written when the rule
+ * "all money is displayed through one formatter" was believed to be enforced; it was
+ * enforced in the browser and was a convention with nothing behind it on the server, where
+ * FOUR spellings of a naira figure had accumulated — a bare `1500.00`, an ISO-prefixed
+ * `NGN 1500.00`, a grouped `₦3,476,400.00` hand-rolled in a Finance service, and an
+ * identical grouped one in a global helper nobody ever called. The UI rule looked stronger
+ * than it was precisely because half the surfaces that render money were outside the only
+ * thing checking. ADR 0054 collapsed them onto Money::format(); this arm is what keeps them
+ * collapsed.
+ *
+ * THE JS ARM — the money architecture is integer minor units end to end precisely because JS
+ * numbers are floats. Two rules keep the UI from reintroducing the float-money bug the
+ * backend exists to prevent — enforced statically and PERMANENTLY:
  *
  *   money-format-outside-formatnaira
  *     `Intl.NumberFormat` / `.toLocaleString(` used to render money. All money is displayed
@@ -22,8 +32,25 @@
  *     all exact integer minor-unit ops); that file is exempt from BOTH rules and is the single
  *     reviewed money boundary. Callers use the named helper; ad-hoc +/reduce stays banned.
  *
+ * THE PHP ARM — walks app/ and holds Money::format() as the single server-side renderer.
+ * Two rules, both exempting only app/Support/Money.php:
+ *
+ *   money-render-outside-money-format
+ *     `toNaira()` CONSUMED rather than bound — flowing straight into a concatenation, an
+ *     interpolation, a sprintf argument, an arrow-fn body or a return. toNaira() is the
+ *     ungrouped machine decimal; anything that puts it in front of a human is a second
+ *     formatter. Token-based, not regex — see toNairaRenderLines() for why, and for why the
+ *     `Δ %d kobo` diagnostics are spared structurally rather than by an exemption list.
+ *
+ *   money-number-format-on-money
+ *     `number_format(` on a line that also names money. Its declared parameter is `float`, and
+ *     the domain's top (intdiv(PHP_INT_MAX, 100) ~ 9.22e16) is an order of magnitude past
+ *     float's exact-integer limit (2^53 ~ 9.01e15). Unreachable at school-fee magnitudes; the
+ *     point is that a formatter must not be able to alter the figure it displays. ADR 0054 §3.
+ *
  * Like the sibling lints, the baseline may only shrink: CI fails on any NEW occurrence;
- * removing a baselined line is reported as progress.
+ * removing a baselined line is reported as progress. It is EMPTY, on both arms, and the
+ * intent is that it stays that way — a money render is never a reviewed exception.
  *
  * Usage:
  *   php bin/ci-money-lint.php            # check (CI): exit 1 on new findings
@@ -75,6 +102,170 @@ function isComment(string $line): bool
     return str_starts_with($t, '//') || str_starts_with($t, '*') || str_starts_with($t, '/*');
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// THE PHP ARM. Everything above this line watches resources/js; everything below
+// watches app/. See the header docblock for why the server needed its own arm.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// The ONE file allowed to turn a Money into a human-readable string: the value object
+// itself, where format() and the toNaira() it punctuates both live.
+const MONEY_HOME = 'app/Support/Money.php';
+
+/** Every .php file under app/, as [relativePath, absolutePath]. */
+function phpFiles(string $dir, string $root): array
+{
+    if (! is_dir($dir)) {
+        return [];
+    }
+    $out = [];
+    $rii = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS));
+    foreach ($rii as $file) {
+        if ($file->getExtension() !== 'php') {
+            continue;
+        }
+        $out[] = [ltrim(str_replace($root, '', $file->getPathname()), '/'), $file->getPathname()];
+    }
+    sort($out);
+
+    return $out;
+}
+
+/**
+ * money-render-outside-money-format — every line where `toNaira()` is CONSUMED rather than
+ * bound.
+ *
+ * WHY A TOKENISER AND NOT A REGEX. The renders this rule exists to catch are written across
+ * several lines:
+ *
+ *     $findings[] = $this->finding('control_total_mismatch', sprintf(
+ *         'Σ of the student totals = %s but --control-total = %s (Δ %d kobo).',
+ *         $statedSum->toNaira(),        // <- the offending line knows nothing about sprintf
+ *
+ * A line-local rule sees `$statedSum->toNaira(),` and cannot tell a sprintf argument from an
+ * array_map callback from an ordinary parameter. PHP ships the parser we need in the same
+ * runtime, so this walks tokens instead of characters and asks a question a regex cannot.
+ *
+ * THE QUESTION IS "IS IT BOUND?", NOT "DOES A QUOTE APPEAR NEARBY". A render is a toNaira()
+ * whose result flows straight into something else — a concatenation, an interpolation, a
+ * sprintf/printf argument, an arrow-fn body handed to array_map, a return. The one shape
+ * that is NOT a render is a direct assignment:
+ *
+ *     $exact = $money->toNaira();        // allowed: a machine value, bound, and visible
+ *     'owes '.$money->toNaira()          // flagged
+ *     sprintf('%s', $money->toNaira())   // flagged
+ *     fn (Money $m) => $m->toNaira()     // flagged  <- the shape "string context" misses
+ *
+ * That last one is why this is stated as binding rather than as the three string contexts:
+ * OpeningBalanceFileValidator built a findings string through array_map + implode, which is a
+ * render by any honest reading and sits inside no quote, no dot and no sprintf.
+ *
+ * A KNOWN LIMIT, STATED AS A LIMIT AND NOT AS A TODO. Bind-then-interpolate passes:
+ *
+ *     $s = $money->toNaira();
+ *     $message = "Total {$s}";      // not flagged, and never will be
+ *
+ * The binding is legal and the second line names a string, not a Money. Catching it needs flow
+ * analysis this repository should not carry for one lint. It is also the most natural way a
+ * second spelling comes back — reach for toNaira(), get refused, assign it first. The rule
+ * closes the casual route and makes the remaining one conspicuous; it is not airtight, and a
+ * reader who thinks it is would be worse off than one who knows where it ends. ADR 0054 records
+ * this in the same terms.
+ *
+ * WHY THIS CANNOT FIRE ON A KOBO DIAGNOSTIC. `Δ %d kobo` figures are toKobo() — integers, on
+ * purpose, because sub-naira drift is the thing they exist to expose and formatting them to
+ * two decimals would hide it. This rule never looks at toKobo(). The kobo diagnostics are
+ * spared STRUCTURALLY, by the rule not applying to them, rather than by an exemption list —
+ * an exemption list would be a standing invitation to add the next site to it.
+ *
+ * @return array<int, int> line numbers
+ */
+function toNairaRenderLines(string $path): array
+{
+    $tokens = token_get_all(file_get_contents($path));
+
+    // Normalise to [type, text, line]; type is an int (T_*) or a single-character string.
+    $t = [];
+    foreach ($tokens as $tok) {
+        $t[] = is_array($tok)
+            ? ['type' => $tok[0], 'text' => $tok[1], 'line' => $tok[2]]
+            : ['type' => $tok, 'text' => $tok, 'line' => $t === [] ? 1 : $t[count($t) - 1]['line']];
+    }
+
+    $skippable = [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT];
+    $prevSig = function (int $i) use ($t, $skippable): ?int {
+        for ($j = $i - 1; $j >= 0; $j--) {
+            if (! in_array($t[$j]['type'], $skippable, true)) {
+                return $j;
+            }
+        }
+
+        return null;
+    };
+
+    // Bracket pairing, both directions, so a chain can be walked over `foo()['bar']` without
+    // mistaking the inside of a subscript for the expression that precedes it.
+    $open = [];
+    $matchBack = [];
+    foreach ($t as $i => $tok) {
+        // A literal bracket has type === text (the character); T_CURLY_OPEN is the `{` of a
+        // `"{$expr}"` interpolation and closes with a literal `}` like any other.
+        if (in_array($tok['type'], ['(', '[', '{'], true) || in_array($tok['type'], [T_CURLY_OPEN, T_DOLLAR_OPEN_CURLY_BRACES], true)) {
+            $open[] = $i;
+        } elseif (in_array($tok['type'], [')', ']', '}'], true)) {
+            $o = array_pop($open);
+            if ($o !== null) {
+                $matchBack[$i] = $o;
+            }
+        }
+    }
+
+    $lines = [];
+
+    foreach ($t as $i => $tok) {
+        if ($tok['type'] !== T_STRING || $tok['text'] !== 'toNaira') {
+            continue;
+        }
+        $before = $prevSig($i);
+        if ($before === null || ! in_array($t[$before]['type'], [T_OBJECT_OPERATOR, T_NULLSAFE_OBJECT_OPERATOR], true)) {
+            continue; // a bare identifier named toNaira; not a method call on a Money
+        }
+
+        // Walk BACK to the start of the member-access chain: $x->y()['k']->toNaira().
+        $start = $before;
+        while (true) {
+            $p = $prevSig($start);
+            if ($p === null) {
+                break;
+            }
+            $type = $t[$p]['type'];
+            $text = $t[$p]['text'];
+            if (in_array($text, [')', ']'], true) && isset($matchBack[$p])) {
+                $start = $matchBack[$p];
+
+                continue;
+            }
+            if (in_array($type, [T_VARIABLE, T_STRING, T_OBJECT_OPERATOR, T_NULLSAFE_OBJECT_OPERATOR, T_DOUBLE_COLON], true)) {
+                $start = $p;
+
+                continue;
+            }
+            break;
+        }
+
+        // BOUND, and therefore allowed: the whole expression is the right-hand side of an
+        // assignment. `$exact = $money->toNaira();` keeps a machine decimal available for a
+        // machine consumer, in a form a reader can see and a reviewer can follow.
+        $lhs = $prevSig($start);
+        if ($lhs !== null && $t[$lhs]['text'] === '=' && $t[$lhs]['type'] === '=') {
+            continue;
+        }
+
+        $lines[] = $tok['line'];
+    }
+
+    return array_values(array_unique($lines));
+}
+
 $lines = scriptLines($root.'/resources/js', $root);
 
 $found = [];
@@ -115,6 +306,35 @@ foreach ($lines as [$rel, $line]) {
     }
 }
 
+// ── The PHP arm. Same $found bag, same baseline, same shrink-lock. ──
+foreach (phpFiles($root.'/app', $root) as [$rel, $abs]) {
+    if ($rel === MONEY_HOME) {
+        continue;
+    }
+
+    $source = file($abs, FILE_IGNORE_NEW_LINES);
+
+    // money-render-outside-money-format
+    foreach (toNairaRenderLines($abs) as $lineNo) {
+        $add('money-render-outside-money-format', $rel.':'.$lineNo, $source[$lineNo - 1] ?? '');
+    }
+
+    // money-number-format-on-money. number_format()'s declared parameter is `float`. PHP 8's
+    // integer fast-path happens to keep an int argument exact today, but that is an engine
+    // detail one cast away from `number_format((float) 92233720368547758) === '…,760'`, and a
+    // formatter that rounds the figure it displays is worse than none. Money::format() groups
+    // by string surgery instead, so no float is ever in the type signature. Line-local is
+    // enough here: number_format's argument is written beside it, unlike a sprintf render.
+    foreach ($source as $idx => $line) {
+        if (isComment($line) || ! str_contains($line, 'number_format(')) {
+            continue;
+        }
+        if (preg_match('/(amount|balance|kobo|minor|money|naira|currency|price|total)/i', $line)) {
+            $add('money-number-format-on-money', $rel.':'.($idx + 1), $line);
+        }
+    }
+}
+
 $found = array_keys($found);
 sort($found);
 
@@ -141,7 +361,7 @@ $new = array_values(array_diff($found, $baseline));
 $fixed = array_values(array_diff($baseline, $found));
 
 if ($new !== []) {
-    fwrite(STDERR, "\nmoney-lint: ".count($new)." NEW money-rule violation(s) — render money via formatNaira(), never compute money in JS:\n");
+    fwrite(STDERR, "\nmoney-lint: ".count($new)." NEW money-rule violation(s) — ONE formatter per side (formatNaira() in the UI, Money::format() on the server); never compute money in JS:\n");
     foreach ($new as $n) {
         fwrite(STDERR, '  '."\u{2717}".' '.str_replace("\t", '  ', $n)."\n");
     }

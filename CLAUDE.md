@@ -94,6 +94,16 @@ operational facts an agent needs most often.
   **Rebuild the frontend after any `staging` pull that touches it**, and note the
   worse cousin — a manifest that is stale but still *resolvable* passes against the
   wrong bundle instead of erroring.
+- **Never build a test's input from the value under test.** A cap test written as
+  `while (count($ids) <= MAX_BATCH) { … }` submits "cap + 1" whatever the cap is, so
+  it proves a limit exists and is _structurally incapable_ of noticing that limit
+  loosening. Bit once on `feat/reassignment-ui`: `MAX_BATCH` raised 60 → 100000, arm
+  stayed green. That is worse than an untested cap, because it reads as covered.
+  Pin the **value** (`expect(MAX_BATCH)->toBe(60)`) and use a **literal** payload
+  (61), plus the accepting side (60) so an off-by-one reds in both directions. The
+  general form: an assertion that derives from the thing it guards can only ever
+  restate it. Same family as "assert the transition, not the endpoints" and "isolate
+  the guard where it acts alone".
 
 ## Workflow
 

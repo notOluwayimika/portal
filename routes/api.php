@@ -22,6 +22,7 @@ use App\Http\Controllers\SetupController;
 use App\Http\Controllers\SportHouseController;
 use App\Http\Controllers\StudentController;
 use App\Http\Controllers\StudentCurriculumController;
+use App\Http\Controllers\StudentReassignmentController;
 use App\Http\Controllers\StudentSubjectController;
 use App\Http\Controllers\SubjectController;
 use App\Http\Controllers\SubjectResultStatusController;
@@ -204,6 +205,13 @@ Route::middleware(['auth:sanctum', 'tenant', 'permission:academic_setup.manage']
     Route::post('/students/{student:uuid}/curricula/promote', [StudentCurriculumController::class, 'promote']);
     Route::post('/students/{student:uuid}/curricula', [StudentCurriculumController::class, 'register']);
     Route::patch('/student-curricula/{studentCurriculum:uuid}', [StudentCurriculumController::class, 'updateStatus']);
+
+    // Reassignment — moving one placed pupil into a sibling arm (8B -> 8S) after the jobs have run.
+    // Gated with promote() above rather than under its own permission: both are operator corrections
+    // to where a pupil sits, and academic_setup.manage is the permission the progression screens
+    // already carry.
+    Route::get('/student-curricula/{studentCurriculum:uuid}/reassignment-options', [StudentReassignmentController::class, 'show']);
+    Route::post('/student-curricula/{studentCurriculum:uuid}/reassign', [StudentReassignmentController::class, 'store']);
 
     // student subject management
 

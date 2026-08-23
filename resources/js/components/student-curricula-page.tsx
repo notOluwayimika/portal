@@ -4,13 +4,26 @@ import { FileText } from 'lucide-react';
 import type { SetStateAction } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'react-toastify';
+import { Can } from '@/components/can';
+import { ReassignPanel } from '@/components/students/reassign-panel';
 import { handleBack } from '@/helpers';
 import type { Curriculum, Student, StudentCurriculum } from '@/types/models';
 import { Button } from './ui/button';
 
 // ---------- Types ----------
 
-type StudentCurriculumStatus = 'active' | 'promoted' | 'repeated' | 'withdrawn';
+type StudentCurriculumStatus =
+    | 'active'
+    | 'promoted'
+    | 'repeated'
+    | 'withdrawn'
+    // The episode a pupil was REASSIGNED out of. The stored value is `transferred` and the word
+    // shown is "Reassigned" — see StudentStatusEnum::displayLabel() for why the two differ.
+    //
+    // Its ABSENCE here was already a live defect, not a gap this feature opened: the service has
+    // been writing this status since it merged, and such a row rendered with an `undefined` badge
+    // class and pushed `counts.transferred` to NaN, because both lookups below are keyed by status.
+    | 'transferred';
 
 type FilterValue = 'all' | StudentCurriculumStatus;
 
@@ -19,6 +32,25 @@ const STATUS_OPTIONS: { value: StudentCurriculumStatus; label: string }[] = [
     { value: 'promoted', label: 'Promoted' },
     { value: 'repeated', label: 'Repeated' },
     { value: 'withdrawn', label: 'Withdrawn' },
+    { value: 'transferred', label: 'Reassigned' },
+];
+
+/**
+ * The statuses an operator may set BY HAND from the row's dropdown.
+ *
+ * Two of the five are outcomes of a flow rather than choices: `promoted` is written by promote()
+ * together with its promotion link (S1), and `transferred` is written by the reassignment endpoint
+ * together with the destination episode. Offering either as a plain status change would let someone
+ * produce the status WITHOUT the half that gives it meaning — a promoted row with no link, or a
+ * vacated episode with no class to have moved to.
+ *
+ * They still appear in the filter pills, so those rows stay findable, and still render as the
+ * current value of a row that already has them.
+ */
+const MANUALLY_SETTABLE: StudentCurriculumStatus[] = [
+    'active',
+    'repeated',
+    'withdrawn',
 ];
 
 const STATUS_BADGE: Record<StudentCurriculumStatus, string> = {
@@ -26,7 +58,13 @@ const STATUS_BADGE: Record<StudentCurriculumStatus, string> = {
     promoted: 'bg-indigo-50 text-indigo-800 ring-indigo-200',
     repeated: 'bg-amber-50 text-amber-800 ring-amber-200',
     withdrawn: 'bg-gray-100 text-gray-700 ring-gray-200',
+    transferred: 'bg-sky-50 text-sky-800 ring-sky-200',
 };
+
+const STATUS_LABEL: Record<StudentCurriculumStatus, string> =
+    Object.fromEntries(
+        STATUS_OPTIONS.map((option) => [option.value, option.label]),
+    ) as Record<StudentCurriculumStatus, string>;
 
 // ---------- Helpers ----------
 
@@ -55,6 +93,7 @@ function CurriculumRow({
     student,
     roles,
     setPromoteTarget,
+    setReassignTarget,
     eligible,
     err,
 }: {
@@ -67,6 +106,9 @@ function CurriculumRow({
     student: Student;
     roles: string[];
     setPromoteTarget: (value: SetStateAction<StudentCurriculum | null>) => void;
+    setReassignTarget: (
+        value: SetStateAction<StudentCurriculum | null>,
+    ) => void;
     eligible: Curriculum[];
     err: string | null;
 }) {
@@ -96,7 +138,14 @@ function CurriculumRow({
                     <span
                         className={`inline-flex w-fit items-center rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset ${STATUS_BADGE[sc.status as StudentCurriculumStatus]}`}
                     >
-                        {sc.status}
+                        {/* The server's word when it sends one, so "Reassigned" is decided in a
+                            single place; the local map is the fallback for payloads that predate
+                            status_label, and the raw value the last resort. */}
+                        {sc.status_label ??
+                            STATUS_LABEL[
+                                sc.status as StudentCurriculumStatus
+                            ] ??
+                            sc.status}
                     </span>
                     {!roles.includes('guardian') &&
                         !roles.includes('principal') && (
@@ -112,15 +161,16 @@ function CurriculumRow({
                                 disabled={busy}
                                 className="block w-40 rounded-md border border-gray-300 px-2 py-1 text-sm shadow-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none disabled:opacity-50"
                             >
-                                {/* 'Promoted' is not a manually-settable status (S1 promotion-link closure):
-                                    a student is promoted via the promote() flow, which records the link. It
-                                    stays in the list only for a row that IS already promoted, so its current
-                                    value renders; moving off it to active/repeated/withdrawn clears the link.
-                                    The filter tabs below keep the full set so promoted rows stay viewable. */}
+                                {/* Neither 'Promoted' nor 'Reassigned' is manually settable — see
+                                    MANUALLY_SETTABLE for why each is an outcome of a flow rather than a
+                                    choice. Each stays in the list only for a row that ALREADY has it, so
+                                    its current value renders; moving off it to active/repeated/withdrawn
+                                    clears the link. The filter tabs below keep the full set so those rows
+                                    stay viewable. */}
                                 {STATUS_OPTIONS.filter(
                                     (o) =>
-                                        o.value !== 'promoted' ||
-                                        sc.status === 'promoted',
+                                        MANUALLY_SETTABLE.includes(o.value) ||
+                                        sc.status === o.value,
                                 ).map((o) => (
                                     <option key={o.value} value={o.value}>
                                         {o.label}
@@ -173,6 +223,24 @@ function CurriculumRow({
                             Promote
                         </button>
                     )}
+                    {/* Gated on the PERMISSION, not on a role list. The reassign endpoint sits
+                        behind academic_setup.manage, so anything else here would show a button that
+                        403s — the neighbouring role checks predate <Can> and are left alone rather
+                        than swept into this change. */}
+                    {sc.status === 'active' && (
+                        <Can permission="academic_setup.manage">
+                            <button
+                                type="button"
+                                onClick={() => setReassignTarget(sc)}
+                                disabled={busy}
+                                title="Move this pupil to another arm of the same class"
+                                className="inline-flex items-center rounded-md bg-sky-600 px-2.5 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-sky-500 disabled:cursor-not-allowed disabled:bg-sky-300"
+                            >
+                                Reassign
+                            </button>
+                        </Can>
+                    )}
+
                     {sc.status === 'active' &&
                         (roles.includes('admin') ||
                             roles.includes('head_of_school')) && (
@@ -212,6 +280,8 @@ export default function StudentCurriculaPage({
     const [rowBusy, setRowBusy] = useState<Record<string, boolean>>({});
     const [rowError, setRowError] = useState<Record<string, string | null>>({});
     const [promoteTarget, setPromoteTarget] =
+        useState<StudentCurriculum | null>(null);
+    const [reassignTarget, setReassignTarget] =
         useState<StudentCurriculum | null>(null);
     const [registerOpen, setRegisterOpen] = useState(false);
     const [registerBusy, setRegisterBusy] = useState(false);
@@ -256,6 +326,9 @@ export default function StudentCurriculaPage({
             promoted: 0,
             repeated: 0,
             withdrawn: 0,
+            // Omitting this makes the pill read "Reassigned (NaN)" the moment one exists — the
+            // increment below is keyed by status and would land on undefined.
+            transferred: 0,
         };
 
         for (const i of items) {
@@ -507,6 +580,7 @@ export default function StudentCurriculaPage({
                                         roles={roles}
                                         sc={sc}
                                         setPromoteTarget={setPromoteTarget}
+                                        setReassignTarget={setReassignTarget}
                                         student={student}
                                         key={sc.id}
                                     />
@@ -524,6 +598,13 @@ export default function StudentCurriculaPage({
                 onClose={() => setPromoteTarget(null)}
                 onConfirm={handlePromoteConfirm}
             />
+
+            {reassignTarget && (
+                <ReassignPanel
+                    episode={reassignTarget}
+                    onClose={() => setReassignTarget(null)}
+                />
+            )}
 
             <RegisterModal
                 open={registerOpen}

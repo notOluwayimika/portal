@@ -28,9 +28,15 @@
  *     totals client-side. The API returns every figure already computed; the UI only displays.
  *     Best-effort heuristic (money-identifier adjacent to an operator, or a reduce() in the
  *     Finance UI), but standing. The ONLY sanctioned money arithmetic is the integer helpers
- *     in resources/js/lib/format.ts (formatNaira display, nairaToMinor input, sumMinor total —
- *     all exact integer minor-unit ops); that file is exempt from BOTH rules and is the single
- *     reviewed money boundary. Callers use the named helper; ad-hoc +/reduce stays banned.
+ *     in resources/js/lib/format.ts (formatNaira display, nairaToMinor input, minorToNairaInput
+ *     prefill, sumMinor total, differenceMinor headroom — all exact integer minor-unit ops); that
+ *     file is exempt from BOTH rules and is the single reviewed money boundary. Callers use the
+ *     named helper; ad-hoc +/reduce stays banned.
+ *
+ *     THIS LIST NAMED THREE OF THE FIVE until the vitest branch. It is prose enumerating another
+ *     file's exports, so nothing could fail on it going stale, and it did — the same way the count
+ *     inside format.ts's own docblock did, independently. Both are corrected together; neither is
+ *     mechanised, and a reader who needs the true set should read the `export`s.
  *
  * THE PHP ARM — walks app/ and holds Money::format() as the single server-side renderer.
  * Two rules, both exempting only app/Support/Money.php:
@@ -69,11 +75,24 @@ $mode = $argv[1] ?? 'check';
 // The ONE file allowed to touch Intl.NumberFormat/toLocaleString for money.
 const FORMATNAIRA_HOME = 'resources/js/lib/format.ts';
 
-// Finance UI paths — every displayed number here is money, so the format ban is total.
+/**
+ * Finance UI paths — every displayed number here is money, so the format ban is total (the
+ * money-identifier heuristic that governs the rest of resources/js is not needed, and a figure
+ * that dodges the heuristic does not dodge this).
+ *
+ * resources/js/lib/finance/ WAS MISSING, and the omission was not that the directory is new: it
+ * holds the feed builders the approvals screens render from, and approval-feeds.ts already emits
+ * an `amount_minor` (`:181`) that a screen puts in front of a bursar. A hand-rolled render added
+ * there would have been judged by the heuristic rather than by the total ban — i.e. it would have
+ * had to name a money identifier on the same line to be seen at all. The list enumerates
+ * directories, so every new one is a decision someone has to remember to make; this is the one
+ * that was not made.
+ */
 function isFinanceUi(string $rel): bool
 {
     return str_starts_with($rel, 'resources/js/pages/admin/finance/')
-        || str_starts_with($rel, 'resources/js/components/finance/');
+        || str_starts_with($rel, 'resources/js/components/finance/')
+        || str_starts_with($rel, 'resources/js/lib/finance/');
 }
 
 /** @return array<int, array{0: string, 1: string}> [[relativePath, line], ...] */

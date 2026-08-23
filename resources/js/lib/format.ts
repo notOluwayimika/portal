@@ -72,16 +72,22 @@ export function minorToNairaInput(money: Money): string {
 }
 
 /**
- * Sum integer minor-unit amounts (e.g. a live invoice-line running total). One of the four
- * sanctioned money ops — display→formatNaira, input→nairaToMinor, total→sumMinor,
- * headroom→differenceMinor — so a form never does ad-hoc `+`/`reduce` on amounts (banned by
- * the money-lint).
+ * Sum integer minor-unit amounts (e.g. a live invoice-line running total). One of the five
+ * sanctioned money ops — display→formatNaira, input→nairaToMinor, prefill→minorToNairaInput,
+ * total→sumMinor, headroom→differenceMinor — so a form never does ad-hoc `+`/`reduce` on amounts
+ * (banned by the money-lint).
  *
- * THIS DOCBLOCK USED TO SAY "the third and LAST sanctioned money op", and that was a prediction
- * rather than a rule. U10's allocation screen needs a live "still unallocated" figure, which is a
+ * THE COUNT IN THIS DOCBLOCK HAS NOW BEEN WRONG TWICE, in two different ways, and both are worth
+ * keeping. It first said "the third and LAST sanctioned money op", which was a prediction rather
+ * than a rule: U10's allocation screen needs a live "still unallocated" figure, which is a
  * subtraction, and the honest choices were a fourth op here or the same subtraction spelled inline
- * in a page — which is precisely what the lint exists to refuse. The count is revised rather than
- * the boundary: this file is still the only place money arithmetic happens.
+ * in a page — precisely what the lint exists to refuse. It then said FOUR and listed four while the
+ * file exported five: minorToNairaInput was added with its own docblock and never added to this
+ * list, so the enumeration silently stopped being one. A number in prose beside a list is checked
+ * by nobody; if the count and the list disagree with `export`, the list is what a reader trusts.
+ *
+ * Neither correction moved the boundary, only the count: this file is still the only place money
+ * arithmetic happens.
  *
  * Float-SAFE precisely because it is INTEGER addition: minor units are whole numbers and
  * their sum is exact for any realistic total (far below 2^53). The danger the money rule

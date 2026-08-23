@@ -254,3 +254,54 @@ it('drops a selected id belonging to another school', function () {
 
     expect($ids)->toBe([$w['student']->id]);
 });
+
+/**
+ * THE TENANT BOUNDARY, PINNED ON ITS OWN — deliberately not left to the class-level arm above.
+ *
+ * Grouping the search clause closed the live leak: post-fix the ORs are contained and AND'd with
+ * the school predicate, so there is no tenant hole today. This arm is about DURABILITY, and about
+ * the same principle every other guard in this feature got — isolation, not transitive protection.
+ *
+ * ── WHAT MUTATION-CHECKING THIS ACTUALLY SHOWED, STATED PRECISELY ────────────────────────────────
+ * Ungrouping the search clause does NOT red this arm, and that is worth recording rather than
+ * discovering again. Eloquent applies global scopes through `Builder::addNewWheresWithinGroup`,
+ * which nests the caller's wheres and the scope's wheres as two separate groups — so SchoolScope's
+ * `school_id` predicate is structurally outside any OR chain written here, and no amount of
+ * ungrouping in this class can leak across schools. That is also why the ungrouped clause was a
+ * FILTER bug and not a tenant bug.
+ *
+ * What DOES red it: dropping the school boundary from the query
+ * (`withoutGlobalScope(SchoolScope::class)`). Under that mutation this arm fails and the
+ * class-level arm above stays GREEN — which is the whole reason this pin exists separately. A
+ * filter-only assertion cannot see a tenant leak, so the boundary gets its own pin rather than
+ * transitive protection from a neighbour that happens to fail on a different mutation.
+ *
+ * So: a pupil in ANOTHER school whose name matches the search term, searched from school 1, asserted
+ * by ID. Nothing but the school predicate binding correctly can make this pass.
+ */
+it('never returns a pupil from another school for a matching search term', function () {
+    $w = sr_world();
+    $other = sr_school('second');
+
+    // Same first name as this school's pupil, in the other school. Matched by the FIRST-NAME arm of
+    // the OR chain — the one that escapes the group when the clause is ungrouped.
+    $foreign = ActiveSchool::runFor($other['school']->id, fn () => Student::create([
+        'school_id' => $other['school']->id,
+        'first_name' => 'Pupil',
+        'last_name' => Str::random(6),
+        'gender' => 'male',
+        'admission_number' => 'ADM-'.Str::random(8),
+    ]));
+
+    $request = Request::create('/api/students/export', 'GET', ['search' => 'Pupil']);
+
+    $ids = ActiveSchool::runFor(
+        $w['school']->id,
+        fn () => (new StudentsExport($request))->query()->pluck('students.id')->all(),
+    );
+
+    // By id, never by name — the two pupils share a first name on purpose.
+    expect($ids)->toContain($w['student']->id)
+        ->and($ids)->not->toContain($foreign->id)
+        ->and($ids)->not->toContain($other['student']->id);
+});

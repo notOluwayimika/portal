@@ -14,6 +14,8 @@ use App\Services\CurriculumReassignmentService;
 use App\Services\StudentSubjectService;
 use App\Support\ActiveSchool;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
@@ -201,6 +203,10 @@ it('moves nobody when one episode in the batch is not movable', function () {
 it('rolls the whole batch back when the move throws partway through', function () {
     $w = sr_world();
 
+    // Faked BEFORE the request so the assertions below observe this batch and nothing else.
+    Bus::fake();
+    Queue::fake();
+
     $episodes = bsr_pupils($w, $w['c8B'], 5);
 
     app()->instance(
@@ -241,9 +247,27 @@ it('rolls the whole batch back when the move throws partway through', function (
             ->and($fresh->curriculum_id)->toBe($w['c8B']->id);
     }
 
-    // No destination episodes survived, and no audit rows describe moves that were undone.
+    // ── THE SIDE EFFECTS ROLL BACK TOO, NOT ONLY THE PLACEMENT ──────────────────────────────────
+    // Placement and its side effects are written by different code inside the same boundary, so
+    // "nobody moved" and "nothing else survived" are separate claims. A write that sits OUTSIDE the
+    // transaction — an audit row, a revived destination episode, a dispatched job — would leave the
+    // placement correct and the record of it wrong, and this is the only arm positioned to see it.
+    //
+    // Audit rows are counted BY BATCH ID rather than by description: a description match would also
+    // pass if the rows survived under a different batch, which is the failure this is looking for.
     expect(StudentCurriculum::where('curriculum_id', $w['c8S']->id)->count())->toBe(0)
-        ->and(Activity::where('description', 'LIKE', 'Reassigned from%')->count())->toBe(0);
+        ->and(Activity::where('description', 'LIKE', 'Reassigned from%')->count())->toBe(0)
+        ->and(
+            Activity::query()
+                ->whereNotNull('properties->batch_id')
+                ->count()
+        )->toBe(0);
+
+    // Nothing was queued. `reassign` dispatches nothing today, so this is a tripwire rather than a
+    // regression test: the moment a job is added to that path, this arm decides whether it is
+    // inside the transaction boundary or leaks past a rollback.
+    Bus::assertNothingDispatched();
+    Queue::assertNothingPushed();
 });
 
 /**
@@ -437,7 +461,23 @@ it('refuses a destination the cohort is already in', function () {
         );
 });
 
-it('refuses a batch larger than the cap', function () {
+/**
+ * THE CAP IS PINNED AT ITS VALUE, NOT AT ITS OWN DEFINITION.
+ *
+ * Mutation-checked: the first version of this arm built its payload from the constant —
+ * `while (count($ids) <= MAX_BATCH)` — so it submitted "one more than whatever the cap is" and
+ * stayed GREEN with MAX_BATCH raised to 100000. It proved that SOME cap is enforced and was
+ * structurally incapable of noticing the cap being loosened or removed, which is the whole risk:
+ * at a measured class maximum of 24, nothing in normal use would ever reach it either.
+ *
+ * So the number is asserted directly, and the payload is a literal 61. Raising the constant now
+ * reds on the pin; removing the rule reds on the request.
+ */
+it('caps the batch at sixty', function () {
+    expect(BulkReassignStudentsRequest::MAX_BATCH)->toBe(60);
+});
+
+it('refuses a batch of sixty-one', function () {
     $w = sr_world();
 
     $episodes = bsr_pupils($w, $w['c8B'], 2);
@@ -445,9 +485,11 @@ it('refuses a batch larger than the cap', function () {
     // Padded with syntactically valid uuids: the cap must be refused by COUNT, before any
     // resolution, so it cannot be mistaken for a "not found" refusal.
     $ids = array_map(fn (StudentCurriculum $e) => $e->uuid, $episodes);
-    while (count($ids) <= BulkReassignStudentsRequest::MAX_BATCH) {
+    while (count($ids) < 61) {
         $ids[] = (string) Str::uuid();
     }
+
+    expect($ids)->toHaveCount(61);
 
     test()->actingAs($w['admin'])
         ->postJson('/api/students/bulk-reassign', [
@@ -459,6 +501,17 @@ it('refuses a batch larger than the cap', function () {
             'errors.episode_ids.0',
             fn (string $m) => str_contains($m, 'at once'),
         );
+});
+
+/** Sixty is accepted — the boundary is pinned from both sides, so an off-by-one reds. */
+it('accepts a batch of exactly sixty', function () {
+    $w = sr_world();
+
+    $episodes = bsr_pupils($w, $w['c8B'], 60);
+
+    bsr_post($w, $episodes, $w['c8S']->uuid)
+        ->assertOk()
+        ->assertJsonPath('moved', 60);
 });
 
 it('refuses an operator without academic_setup.manage', function () {

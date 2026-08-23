@@ -28,16 +28,21 @@ use Illuminate\Validation\Validator;
  * this screen exists to produce.
  *
  * ── THE COHORT LOCK IS THE RULE THAT MATTERS ──────────────────────────────────────────────────────
- * The index displays level + arm, and TWO PUPILS BOTH RENDERING "Year 9 B" CAN SIT IN DIFFERENT
- * CURRICULA — different exam type, or CCM vs end-of-term. CohortSiblings keys on
- * (class level, term, exam type, is_ccm), so a label-uniform selection can have different legal
- * destinations per pupil, and one destination list would be wrong for some of them.
+ * ONE destination is chosen for the whole batch, so every selected pupil must be one for whom that
+ * destination is legal. That holds iff they all share the cohort key CohortSiblings matches on:
+ * (class level, term, is_ccm). The batch is refused otherwise.
  *
- * So the batch is refused unless every selected episode shares ONE `curriculum_id`. The UI disabling
- * the button when the selection spans classes is convenience; THIS is the enforcement. A test that
- * builds its fixture from a same-level/same-arm selection passes even with the lock keyed on labels
- * and proves nothing — the isolating case is two pupils with identical labels and different exam
- * types.
+ * IT USED TO DEMAND ONE SHARED `curriculum_id`, which was right while exam type was part of the
+ * eligibility key and is too tight now that it is not: two pupils in Year 10 B/WAEC and Year 10 S/BSS
+ * share a cohort and share their legal destinations, so refusing to move them together forbade a
+ * batch exactly as safe as the single moves it decomposes into. Recorded rather than silently
+ * rewritten, because the older rule reads as more careful and is not.
+ *
+ * The UI disabling the button when the selection spans cohorts is convenience; THIS is the
+ * enforcement. Note what that means for a test: a fixture built from one arm passes against a lock
+ * keyed on almost anything, so the arms that discriminate are the ones that cross an axis — a
+ * selection spanning two LEVELS must refuse, and a selection spanning two exam types within one
+ * level must now SUCCEED.
  */
 class BulkReassignStudentsRequest extends FormRequest
 {
@@ -146,18 +151,30 @@ class BulkReassignStudentsRequest extends FormRequest
             }
 
             // ── THE COHORT LOCK ─────────────────────────────────────────────────────────────────
-            // Keyed on curriculum_id, never on the level/arm labels the screen renders. See the
-            // class docblock for why those are not the same question.
-            $curriculumIds = $episodes->pluck('curriculum_id')
-                ->map(fn ($id) => (int) $id)
-                ->unique()
-                ->values();
+            // Keyed on the COHORT — (class level, term, is_ccm) — not on curriculum_id and never on
+            // the labels the screen renders.
+            //
+            // IT USED TO REQUIRE ONE SHARED curriculum_id, and that was too tight once exam type
+            // left the eligibility key: two pupils in Year 10 B/WAEC and Year 10 S/BSS are in the
+            // same cohort and have the same legal destinations, so refusing to move them together
+            // forbade a batch that is exactly as safe as the single moves it decomposes into.
+            //
+            // WHAT THE LOCK IS ACTUALLY FOR is unchanged: one destination is chosen for the whole
+            // batch, so every selected pupil must be one for whom that destination is legal. That is
+            // true iff they share the cohort key CohortSiblings itself matches on — which is why
+            // this triple and not some other grouping.
+            $cohortKeys = $episodes->map(fn (StudentCurriculum $episode) => implode(':', [
+                // Via the arm, because class level is not a column on curricula.
+                $episode->curriculum?->classLevelArm?->class_level_id,
+                $episode->curriculum?->term_id,
+                (int) (bool) $episode->curriculum?->is_ccm,
+            ]))->unique()->values();
 
-            if ($curriculumIds->count() !== 1) {
+            if ($cohortKeys->count() !== 1) {
                 $validator->errors()->add(
                     'episode_ids',
-                    'Reassign moves one class at a time; your selection spans '
-                    .$curriculumIds->count().' classes. Select pupils from a single class.'
+                    'Reassign works within one class level and term; your selection spans '
+                    .$cohortKeys->count().' cohorts. Select pupils from a single year group and term.'
                 );
 
                 return;
@@ -180,10 +197,19 @@ class BulkReassignStudentsRequest extends FormRequest
                 return;
             }
 
-            // Checked BEFORE the sibling rule, because the cohort's own class is excluded from the
-            // sibling set and would otherwise be reported as "not in the same level and term" —
-            // both false and useless.
-            if ((int) $destination->id === $curriculumIds->first()) {
+            // ── ALREADY THERE IS ONLY A REFUSAL WHEN IT IS TRUE OF EVERYONE ─────────────────────
+            // It used to be `destination === the one shared curriculum`, which was exact while the
+            // lock demanded a single curriculum_id. With mixed sources allowed it would refuse a
+            // legitimate batch: selecting 10B and 10S pupils and moving them all into 10B is real
+            // work for the 10S half, and the 10B half no-ops in the service (idempotent, by design).
+            //
+            // So this fires only when the batch would move NOBODY — which is the case actually worth
+            // a message, because it is the one where a success toast would be a lie.
+            $alreadyThere = $episodes->every(
+                fn (StudentCurriculum $episode) => (int) $episode->curriculum_id === (int) $destination->id
+            );
+
+            if ($alreadyThere) {
                 $validator->errors()->add(
                     'destination_curriculum_id',
                     'These pupils are already in that class.'
@@ -192,18 +218,28 @@ class BulkReassignStudentsRequest extends FormRequest
                 return;
             }
 
-            // ── THE SIBLING RULE, READ FROM M3's DEFINITION VERBATIM ────────────────────────────
-            // Computed ONCE from the shared cohort rather than per pupil — which is only sound
-            // because the lock above guarantees a single curriculum_id. Reusing CohortSiblings
-            // rather than restating it is what stops single and bulk reassignment drifting into two
-            // different ideas of which move is legal.
-            $siblingIds = CohortSiblings::for($reference)->pluck('id')->map(fn ($id) => (int) $id)->all();
+            // ── THE ELIGIBILITY RULE, READ FROM M3's DEFINITION ─────────────────────────────────
+            // Reusing CohortSiblings rather than restating it is what stops single and bulk
+            // reassignment drifting into two different ideas of which move is legal.
+            //
+            // PLUS THE REFERENCE'S OWN CURRICULUM, and that addition is not a loosening. Siblings
+            // are computed for ONE episode and deliberately exclude that episode's own curriculum —
+            // correct for a single move, wrong for a batch, because another pupil in the selection
+            // may legitimately be moving INTO the class the reference is already sitting in. The
+            // union is exactly "the cohort", expressed through the one definition rather than by
+            // re-deriving the triple here and giving it a second place to drift.
+            $validIds = CohortSiblings::for($reference)
+                ->pluck('id')
+                ->push($reference->curriculum_id)
+                ->map(fn ($id) => (int) $id)
+                ->all();
 
-            if (! in_array((int) $destination->id, $siblingIds, true)) {
+            if (! in_array((int) $destination->id, $validIds, true)) {
                 $validator->errors()->add(
                     'destination_curriculum_id',
-                    'That class is not an alternative arm of this cohort. Pupils can only be '
-                    .'reassigned within the same year group, term and exam type.'
+                    'That class is not in this cohort. Pupils can only be reassigned within the '
+                    .'same year group and term. Exam type and arm may change; moving between CCM '
+                    .'and non-CCM cannot be done here.'
                 );
 
                 return;

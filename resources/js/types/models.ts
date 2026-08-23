@@ -243,8 +243,10 @@ export interface Student {
     curriculum_id?: number;
     /** The pupil's current enrolment episode, by uuid. Bulk reassignment sends these, not `id`. */
     current_episode_id?: string | null;
-    /** The current curriculum by uuid — the key the cohort lock compares, never the class label. */
+    /** The current curriculum by uuid. Not the lock key — see `cohort_key`. */
     curriculum_uuid?: string | null;
+    /** (class level, term, is_ccm) as an opaque equality token. The bulk lock compares THIS. */
+    cohort_key?: string | null;
     guardians?: Guardian[];
     student_curricula: StudentCurriculum[];
     admission_date?: string | null;

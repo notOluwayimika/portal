@@ -1,6 +1,6 @@
 # Drive runbook — bulk selection & reassignment on the students index
 
-**Branch:** `feat/reassignment-ui` @ `5914d654` (re-derive with `git rev-parse --short HEAD`).
+**Branch:** `feat/reassignment-ui` (re-derive the sha with `git rev-parse --short HEAD`).
 **Why this exists:** the whole feature is lint-green, type-green and suite-green, and **none of it
 has been rendered**. The three behaviours below are the exact category a passing backend suite
 cannot see — a 200 with the right list, a 200 with an empty list, and a 200 rendering an error where
@@ -20,20 +20,23 @@ The cohort lock is invisible unless the data can defeat the display. You need, i
 | --- | --- |
 | ≥ 6 pupils in **one** curriculum (e.g. Year 8 B) | the happy path, and a batch worth watching |
 | ≥ 1 pupil in a **sibling arm** (Year 8 S) | so a destination exists in the picker |
-| ≥ 2 pupils rendering the **same class label** but in **different curricula** | the disabled-state reason — different `exam_type_id`, same `class_level_arm` |
+| pupils in **two different year groups** | the disabled-state reason — this is the cohort-spanning case, and any real data has it |
+| ≥ 2 pupils on **one arm** in **different exam types** | the cross-exam-type move, which must now SUCCEED (seeded, see below) |
 | ≥ 1 pupil in a **single-arm year group** | the modal's empty-state |
 | a second school with pupils | isolation, checked by id |
 
-If the same-label/different-curriculum pair does not exist, **stop and build it** — without it,
-step 3 renders the enabled state and proves nothing. This is the fixture half of the same lesson the
-lock test carries.
+**§2 no longer needs a fixture.** Exam type has left the eligibility key, so the disabled state now
+fires on a selection spanning **cohorts** — (class level, term, is_ccm) — and two pupils from
+different year groups is available in any real data. That is a deliberate simplification: the case
+that discriminates is now the ordinary one.
 
-**It will not exist by default.** Measured on the working database: **zero** active class-level-arms
-carry more than one exam type, so §2 is unreachable by clicking until the pair is stood up. Use:
+**§2b does need one, for the opposite reason.** A cross-exam-type move must now SUCCEED, and
+measured on the working database **zero** active class-level-arms carry more than one exam type, so
+it is unreachable by clicking until the pair is stood up:
 
 ```bash
-php artisan academics:seed-cohort-lock-pair            # prints the two ids to tick
-php artisan academics:seed-cohort-lock-pair --undo     # removes only what it created
+php artisan academics:seed-cross-exam-pair            # prints the two ids
+php artisan academics:seed-cross-exam-pair --undo     # removes only what it created
 ```
 
 Additive and idempotent — it does **not** `migrate:fresh`, so it is safe to run against an
@@ -78,26 +81,42 @@ label promises. **A footer whose count disagrees with what the button would do.*
 
 ---
 
-## 2. The two-curricula disabled-state reason — the usability half of the lock
+## 2. The cohort-spanning disabled state — the usability half of the lock
 
-**Steps** — tick the two same-label/different-curriculum pupils from the fixture.
+**Steps** — tick one pupil from Year 8 and one from Year 9.
 
 **Watch for:**
 
 - the **Reassign** button is **disabled**;
-- an amber line reads *"Reassign moves one class at a time; your selection spans 2 classes."*;
-- hovering Reassign shows the title *"…Select pupils from a single class."*;
+- an amber line reads *"Reassign works within one class level and term; your selection spans 2
+  cohorts."*;
+- hovering shows *"…Select pupils from a single year group and term."*;
 - **Export selected (2)** stays **enabled** — the lock constrains reassignment only.
 
-**Fail looks like:** the button disabled with **no reason rendered**. An operator then ticks a
-mixed set, finds a dead button, and cannot tell whether the feature is broken or they are holding it
-wrong. A disabled control with no explanation is the failure, not the disabling.
+**Fail looks like:** the button disabled with **no reason rendered**. An operator ticks a mixed set,
+finds a dead button, and cannot tell whether the feature is broken or they are holding it wrong.
+A disabled control with no explanation is the failure, not the disabling.
 
-**Also fail:** the button **enabled** for that pair — meaning the client is comparing class labels
-rather than `curriculum_uuid`. The server would still refuse with a 422, so the data stays safe;
-what breaks is the promise the screen made.
+**Also fail:** the message still saying *"spans 2 classes"*. That is the pre-change wording and it is
+now wrong in a way that matters — a selection spanning two arms, or two exam types in one level, is
+legitimate, and an operator doing exactly what the eligibility change enabled would read a message
+telling them it is not allowed.
 
-Then untick one and tick a same-curriculum pupil instead: button **enables**, amber line **clears**.
+Then untick the Year 9 pupil and tick another Year 8 one: button **enables**, amber line **clears**.
+
+## 2b. Cross-exam-type must SUCCEED
+
+Run `academics:seed-cross-exam-pair` and use the two ids it prints — same arm, different exam type,
+identical class label.
+
+**Steps** — tick **both**, press Reassign, and send them into either class.
+
+**Watch for:** the button **enabled** (they are one cohort); the destination list **offering** the
+other-exam class; the move succeeding; both pupils showing the destination afterwards.
+
+**Fail looks like:** the button disabled, or the destination list omitting the other-exam class.
+Either means the client or `CohortSiblings` still has exam type in the key — the exact regression
+the inverted lock test exists to catch, seen from the screen.
 
 ---
 
@@ -129,7 +148,8 @@ Count the rows; do not eyeball the file.
 
 - the modal names the current class and says *"All 5 move together. If any one of them cannot be
   moved, none of them are."*;
-- destination list contains **only sibling arms** — no other year group, no other exam type;
+- destination list contains **every class in this cohort** — other arms AND other exam types —
+  but **no other year group**, no other term, and nothing across the CCM boundary;
 - success toast reads *"5 pupils reassigned from Year 8 B to Year 8 S"*;
 - the list **refreshes** and those pupils now show Year 8 S;
 - selection is **cleared** afterwards (their episodes are ended; keeping the ticks would show a live

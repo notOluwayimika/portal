@@ -4,7 +4,9 @@ use App\Academics\BillableEnrollmentAdapter;
 use App\Enums\StudentMembershipStatus;
 use App\Enums\StudentStatusEnum;
 use App\Models\Arm;
+use App\Models\ClassLevelArm;
 use App\Models\Curriculum;
+use App\Models\ExamType;
 use App\Models\School;
 use App\Models\Scopes\SchoolScope;
 use App\Models\Student;
@@ -14,6 +16,7 @@ use App\Models\Term;
 use App\Services\CohortSiblings;
 use App\Support\ActiveSchool;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
@@ -397,4 +400,118 @@ it('cannot reach another school’s episode through the route binding', function
             ->whereKey($other['episode']->id)
             ->value('status')
     )->toBe(StudentStatusEnum::ACTIVE);
+});
+
+// ---------------------------------------------------------------------------
+// Exam type left the eligibility key — the single-move half
+// ---------------------------------------------------------------------------
+
+/**
+ * CROSS-EXAM-TYPE IS ALLOWED, AND NOTHING PINNED IT ON THIS PATH UNTIL NOW.
+ *
+ * M3 shipped with exam type IN the key, so it never needed an arm for crossing it; when the key
+ * changed, all 26 of these tests stayed green while the behaviour underneath them changed. Green
+ * here meant "M3 still does what it did", not "the new rule is right", and the two are different
+ * claims. This is the arm that makes the second one testable on the single path.
+ *
+ * It is also the mutation guard for the single move: re-add `exam_type_id` to CohortSiblings and
+ * this reds.
+ *
+ * The destination shares c8B's ARM and differs only on exam type, which exercises both halves of
+ * the change at once — the dropped exam-type match, and the exclusion moving from arm to
+ * curriculum. Under the old arm-exclusion this destination was unreachable even with exam type gone.
+ */
+it('reassigns into a different exam type within the same level and term', function () {
+    $w = sr_world();
+
+    $otherExamType = ExamType::create([
+        'school_id' => $w['school']->id,
+        'name' => 'External',
+        'slug' => 'et-'.Str::random(8),
+    ]);
+
+    $sameArmOtherExam = sr_curriculum(
+        $w['school'],
+        ClassLevelArm::find($w['c8B']->class_level_arm_id),
+        $otherExamType,
+        $w['term'],
+    );
+
+    // The picker must OFFER it, not merely accept it — an offer/guard disagreement is the failure
+    // CohortSiblings' one-definition rule exists to prevent.
+    sr_options($w)
+        ->assertOk()
+        ->assertJsonPath('destinations', fn (array $d) => collect($d)->pluck('id')->contains($sameArmOtherExam->uuid));
+
+    sr_post($w, $sameArmOtherExam->uuid)->assertOk();
+
+    expect($w['episode']->fresh()->status)->toBe(StudentStatusEnum::TRANSFERRED)
+        ->and(StudentCurriculum::where('student_id', $w['student']->id)
+            ->where('curriculum_id', $sameArmOtherExam->id)
+            ->whereNull('ended_at')
+            ->exists())->toBeTrue();
+});
+
+/**
+ * BILLING FOLLOWS THE EPISODE ACROSS AN EXAM-TYPE CHANGE.
+ *
+ * The four-point transition already proved billability moves across an ARM change. Crossing exam
+ * type changes the marking scheme and the compulsory subject set, so it is the case where a
+ * billing adapter keyed on anything but the episode's status would diverge — and it was not
+ * reachable at all while the eligibility rule forbade the move.
+ *
+ * Same fixture discipline as the arm version: the destination episode EXISTS throughout, ended and
+ * TRANSFERRED, holding the higher id, so "not billable before" is a real decision about the status
+ * filter rather than a statement about a row that did not exist yet.
+ */
+it('moves billability across an exam-type change, not only across arms', function () {
+    $w = sr_world();
+
+    $otherExamType = ExamType::create([
+        'school_id' => $w['school']->id,
+        'name' => 'External',
+        'slug' => 'et-'.Str::random(8),
+    ]);
+
+    $destination = sr_curriculum(
+        $w['school'],
+        ClassLevelArm::find($w['c8B']->class_level_arm_id),
+        $otherExamType,
+        $w['term'],
+    );
+
+    $prior = StudentCurriculum::create([
+        'student_id' => $w['student']->id,
+        'curriculum_id' => $destination->id,
+        'status' => StudentStatusEnum::ACTIVE,
+    ]);
+    $prior->update(['status' => StudentStatusEnum::TRANSFERRED, 'ended_at' => now()]);
+
+    expect($prior->id)->toBeGreaterThan($w['episode']->id);
+
+    $billableUuids = fn (): array => ActiveSchool::runFor($w['school']->id, fn () => array_map(
+        fn ($enrollment) => $enrollment->enrollmentUuid,
+        app(BillableEnrollmentAdapter::class)->listForCohort(
+            (int) $w['school']->id,
+            (int) $w['term']->id,
+            (int) $w['y8']->id,
+        )
+    ));
+
+    $before = $billableUuids();
+
+    expect($before)->toContain($w['episode']->uuid)
+        ->and($before)->not->toContain($prior->uuid);
+
+    sr_post($w, $destination->uuid)->assertOk();
+
+    $after = $billableUuids();
+
+    expect($after)->not->toContain($w['episode']->uuid)
+        ->and($after)->toContain($prior->uuid);
+
+    // Revived, not duplicated — the same row, across an exam-type boundary.
+    expect(StudentCurriculum::where('student_id', $w['student']->id)
+        ->where('curriculum_id', $destination->id)
+        ->count())->toBe(1);
 });

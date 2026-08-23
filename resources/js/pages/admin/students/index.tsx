@@ -89,12 +89,14 @@ export default function StudentList({ student_statuses }: StudentListProps) {
 
     const selectedStudents = students.filter((s) => selectedIds.has(s.id));
 
-    // The lock, mirrored client-side for the disabled state only. The server
-    // enforces it on curriculum_id; this compares the same uuid rather than the
-    // class label, because two pupils can render "Year 9 B" and sit in
-    // different curricula (different exam type, or CCM vs end-of-term).
+    // The lock, mirrored client-side for the disabled state only. It compares
+    // `cohort_key` — (class level, term, is_ccm), assembled server-side — and
+    // NOT `curriculum_uuid`: two pupils in different curricula of one cohort
+    // (different arm, or different exam type) are reassignable together, so
+    // keying on curriculum would disable the button for a selection the server
+    // would accept. Nor the class label, which collapses exam type and CCM.
     const selectedCohorts = new Set(
-        selectedStudents.map((s) => s.curriculum_uuid ?? 'unknown'),
+        selectedStudents.map((s) => s.cohort_key ?? 'unknown'),
     );
 
     const selectedEpisodeIds = selectedStudents

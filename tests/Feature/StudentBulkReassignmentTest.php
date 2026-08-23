@@ -9,6 +9,7 @@ use App\Models\Curriculum;
 use App\Models\ExamType;
 use App\Models\Student;
 use App\Models\StudentCurriculum;
+use App\Models\Term;
 use App\Models\User;
 use App\Services\CurriculumReassignmentService;
 use App\Services\StudentSubjectService;
@@ -71,57 +72,192 @@ function bsr_post(array $w, array $episodes, string $destinationUuid, array $ove
 // ---------------------------------------------------------------------------
 
 /**
- * THE LOCK, ISOLATED BY THE CASE THAT DEFEATS THE DISPLAY.
+ * CROSS-EXAM-TYPE IS NOW ALLOWED, AND THIS ARM IS WHAT PINS IT OUT OF THE KEY.
  *
- * Both pupils here render "Year 8 B" on the index — same class level, same arm, same label, right
- * down to the string the screen prints. They differ ONLY in exam type, which the list does not show
- * and cannot show. CohortSiblings keys on (class level, term, exam type, is_ccm), so these two have
- * DIFFERENT legal destinations, and one destination list is wrong for one of them.
+ * This test previously asserted the OPPOSITE — two pupils sharing a class label and differing on
+ * exam type were REFUSED — and it was a good test of a rule that has since been decided against.
+ * Exam type left the eligibility key deliberately: promotion places pupils provisionally
+ * (MoveToNextYearJob carries the source exam type, or the level default), so Year 10 B/WAEC ->
+ * Year 10 S/BSS is the ordinary correction, and a rule forbidding it left the operator holding a
+ * misplaced pupil on the screen built to fix misplacements.
  *
- * A fixture built from a same-level/same-arm selection — the obvious way to write this test — passes
- * with the lock keyed on labels, on `class_level_arm_id`, or on the rendered class string, and
- * therefore proves nothing. This is M3's guard-shadowing lesson applied to a new guard: the only
- * fixture worth having is the one where every cheaper implementation goes green and the correct one
- * goes red.
+ * INVERTED RATHER THAN DELETED, because this is now the mutation guard: re-add `exam_type_id` to
+ * CohortSiblings and this goes red. That is what keeps the removal deliberate instead of drifting
+ * back in as a "restored" match.
+ *
+ * The pair still shares the SAME class_level_arm row, so nothing but the curriculum distinguishes
+ * them — which also exercises the second half of the change, the exclusion moving from arm to
+ * curriculum. Under the old arm-exclusion this destination was unreachable.
  */
-it('refuses a selection whose pupils share a class label but sit in different curricula', function () {
+it('allows a batch whose pupils differ only by exam type', function () {
     $w = sr_world();
 
-    // A second exam type in the SAME school, term, level and arm. Everything the operator can see
-    // is identical; everything CohortSiblings keys on is not.
     $otherExamType = ExamType::create([
         'school_id' => $w['school']->id,
         'name' => 'External',
         'slug' => 'et-'.Str::random(8),
     ]);
 
-    $sameLabelDifferentCohort = sr_curriculum(
+    $sameArmOtherExam = sr_curriculum(
         $w['school'],
-        // The SAME class_level_arm row as c8B — so the label is not merely equal, it is the same
-        // arm. Nothing short of comparing curriculum_id can tell these apart.
         ClassLevelArm::find($w['c8B']->class_level_arm_id),
         $otherExamType,
         $w['term'],
     );
 
     [$inB] = bsr_pupils($w, $w['c8B'], 1);
-    [$inLookalike] = bsr_pupils($w, $sameLabelDifferentCohort, 1);
+    [$inOtherExam] = bsr_pupils($w, $sameArmOtherExam, 1);
 
-    // The labels really are identical — pinned, so a future change to describeCurriculum that made
-    // them differ would show up here rather than silently weakening the fixture.
-    expect($inB->curriculum->classLevelArm->id)
-        ->toBe($inLookalike->curriculum->classLevelArm->id)
-        ->and($inB->curriculum_id)->not->toBe($inLookalike->curriculum_id);
+    // Same arm, different curriculum — the shape the old rule refused twice over.
+    expect($inB->curriculum->class_level_arm_id)
+        ->toBe($inOtherExam->curriculum->class_level_arm_id)
+        ->and($inB->curriculum_id)->not->toBe($inOtherExam->curriculum_id);
 
-    bsr_post($w, [$inB, $inLookalike], $w['c8S']->uuid)
+    // ── THE DESTINATION MUST CROSS EXAM TYPE, NOT JUST THE SOURCES ───────────────────────────────
+    // Mutation-checked, and the first version of this arm FAILED that check: it sent both pupils to
+    // c8S, which shares the reference episode's exam type. Bulk validates the destination against
+    // the reference, so re-adding `exam_type_id` to CohortSiblings left this green — it was proving
+    // mixed-source acceptance and nothing whatever about the exam-type key.
+    //
+    // Sending them INTO the other-exam curriculum is what discriminates: under the old key that
+    // destination is not a sibling of c8B (different exam) and not reachable under the old
+    // arm-exclusion either (same arm), so both halves of the change are pinned here.
+    [$alsoInB] = bsr_pupils($w, $w['c8B'], 1);
+
+    bsr_post($w, [$inB, $alsoInB], $sameArmOtherExam->uuid)
+        ->assertOk()
+        ->assertJsonPath('moved', 2);
+
+    foreach ([$inB, $alsoInB] as $episode) {
+        expect($episode->fresh()->status)->toBe(StudentStatusEnum::TRANSFERRED);
+    }
+
+    // And the pupil already sitting in the destination was left alone.
+    expect($inOtherExam->fresh()->status)->toBe(StudentStatusEnum::ACTIVE)
+        ->and($inOtherExam->fresh()->ended_at)->toBeNull();
+});
+
+/**
+ * THE LEVEL AXIS, ISOLATED. Year 9 shares the school, term and is_ccm, so only the class-level
+ * clause can refuse it — and it must, because a batch spanning levels has no single legal
+ * destination.
+ */
+it('refuses a selection spanning two class levels', function () {
+    $w = sr_world();
+
+    [$inY8] = bsr_pupils($w, $w['c8B'], 1);
+    [$inY9] = bsr_pupils($w, $w['c9B'], 1);
+
+    bsr_post($w, [$inY8, $inY9], $w['c8S']->uuid)
         ->assertStatus(422)
-        ->assertJsonPath('errors.episode_ids.0', fn (string $m) => str_contains($m, 'spans 2 classes'));
+        ->assertJsonPath('errors.episode_ids.0', fn (string $m) => str_contains($m, 'spans 2 cohorts'));
 
-    // NOTHING MOVED. The refusal is only worth having if it happened before any write.
-    expect($inB->fresh()->status)->toBe(StudentStatusEnum::ACTIVE)
-        ->and($inB->fresh()->ended_at)->toBeNull()
-        ->and($inLookalike->fresh()->status)->toBe(StudentStatusEnum::ACTIVE)
-        ->and($inLookalike->fresh()->ended_at)->toBeNull();
+    expect($inY8->fresh()->status)->toBe(StudentStatusEnum::ACTIVE)
+        ->and($inY9->fresh()->status)->toBe(StudentStatusEnum::ACTIVE);
+});
+
+/**
+ * THE TERM AXIS, ISOLATED. Same level, same arm, same is_ccm — a second term is the only
+ * difference, and term is what pins the academic session.
+ */
+it('refuses a selection spanning two terms', function () {
+    $w = sr_world();
+
+    $secondTerm = Term::create([
+        'school_id' => $w['school']->id,
+        'academic_session_id' => $w['session']->id,
+        'name' => 'Second Term',
+        'slug' => 'tm-'.Str::random(8),
+        'order' => 2,
+        'start_date' => now()->addMonths(2),
+        'end_date' => now()->addMonths(4),
+    ]);
+
+    $otherTerm = sr_curriculum(
+        $w['school'],
+        ClassLevelArm::find($w['c8B']->class_level_arm_id),
+        $w['examType'],
+        $secondTerm,
+    );
+
+    [$inFirst] = bsr_pupils($w, $w['c8B'], 1);
+    [$inSecond] = bsr_pupils($w, $otherTerm, 1);
+
+    bsr_post($w, [$inFirst, $inSecond], $w['c8S']->uuid)
+        ->assertStatus(422)
+        ->assertJsonPath('errors.episode_ids.0', fn (string $m) => str_contains($m, 'spans 2 cohorts'));
+
+    expect($inFirst->fresh()->status)->toBe(StudentStatusEnum::ACTIVE)
+        ->and($inSecond->fresh()->status)->toBe(StudentStatusEnum::ACTIVE);
+});
+
+/**
+ * THE is_ccm AXIS, ISOLATED — and it is doing more work than it used to.
+ *
+ * With exam type out of the key, is_ccm is the ONLY clause standing between this screen and a CCM
+ * crossing, which belongs to MoveFromCcmJob rather than to a manual move. Everything else about
+ * these two curricula matches.
+ */
+it('refuses a selection spanning CCM and non-CCM', function () {
+    $w = sr_world();
+
+    // Created AS CCM, not created-then-flipped: `curricula` is UNIQUE on
+    // (school, term, class_level_arm, exam_type, is_ccm), so a non-CCM twin of c8B collides on
+    // insert before the flip can happen. is_ccm is part of that key, which is why building it
+    // directly works and is also a small confirmation that the axis is real in the schema.
+    $ccm = Curriculum::create([
+        'school_id' => $w['school']->id,
+        'term_id' => $w['term']->id,
+        'class_level_arm_id' => $w['c8B']->class_level_arm_id,
+        'exam_type_id' => $w['examType']->id,
+        'status' => 'active',
+        'is_ccm' => true,
+        'min_subjects' => 1,
+    ]);
+
+    [$inNormal] = bsr_pupils($w, $w['c8B'], 1);
+    [$inCcm] = bsr_pupils($w, $ccm, 1);
+
+    bsr_post($w, [$inNormal, $inCcm], $w['c8S']->uuid)
+        ->assertStatus(422)
+        ->assertJsonPath('errors.episode_ids.0', fn (string $m) => str_contains($m, 'spans 2 cohorts'));
+
+    expect($inNormal->fresh()->status)->toBe(StudentStatusEnum::ACTIVE)
+        ->and($inCcm->fresh()->status)->toBe(StudentStatusEnum::ACTIVE);
+});
+
+/**
+ * MIXED SOURCES, ONE DESTINATION — the batch shape the old lock forbade outright.
+ *
+ * Pupils drawn from two different source arms move together into one destination, and the
+ * destination is one of the sources — so half the batch is a real move and half is a no-op the
+ * service absorbs idempotently. That combination is what the "already in that class" refusal used
+ * to reject wholesale.
+ */
+it('moves a mixed-arm selection into one destination, no-opping those already there', function () {
+    $w = sr_world();
+
+    $fromB = bsr_pupils($w, $w['c8B'], 2);
+    $alreadyInS = bsr_pupils($w, $w['c8S'], 2);
+
+    bsr_post($w, [...$fromB, ...$alreadyInS], $w['c8S']->uuid)
+        ->assertOk()
+        ->assertJsonPath('moved', 4);
+
+    // The movers vacated their 8B episodes.
+    foreach ($fromB as $episode) {
+        expect($episode->fresh()->status)->toBe(StudentStatusEnum::TRANSFERRED);
+    }
+
+    // The no-ops were untouched — still live in 8S, never ended and revived.
+    foreach ($alreadyInS as $episode) {
+        expect($episode->fresh()->status)->toBe(StudentStatusEnum::ACTIVE)
+            ->and($episode->fresh()->ended_at)->toBeNull();
+    }
+
+    // Every pupil ends up in 8S exactly once.
+    expect(StudentCurriculum::where('curriculum_id', $w['c8S']->id)->whereNull('ended_at')->count())
+        ->toBe(4);
 });
 
 it('accepts a selection that genuinely shares one curriculum', function () {
@@ -440,7 +576,7 @@ it('refuses a destination in a different year group', function () {
         ->assertStatus(422)
         ->assertJsonPath(
             'errors.destination_curriculum_id.0',
-            fn (string $m) => str_contains($m, 'alternative arm'),
+            fn (string $m) => str_contains($m, 'not in this cohort'),
         );
 
     foreach ($episodes as $episode) {

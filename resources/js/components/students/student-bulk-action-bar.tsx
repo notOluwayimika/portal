@@ -22,10 +22,15 @@ interface StudentBulkActionBarProps {
  * neither implied by where the button sits.
  *
  * ── THE DISABLED REASON IS THE USABILITY HALF OF THE COHORT LOCK ─────────────────────────────────
- * A reassignment moves one class into a sibling arm, so a selection spanning two classes has no
- * single legal destination. Without the reason rendered next to it, an operator ticks a mixed set,
- * finds the button dead, and cannot tell whether the feature is broken or they are holding it wrong.
- * The server enforces the same rule; this only explains it.
+ * One destination is chosen for the whole batch, so a selection spanning two COHORTS —
+ * (class level, term, is_ccm) — has no single legal destination. Without the reason rendered next to
+ * it, an operator ticks a mixed set, finds the button dead, and cannot tell whether the feature is
+ * broken or they are holding it wrong. The server enforces the same rule; this only explains it.
+ *
+ * THE WORDING MUST TRACK THE KEY. It used to say "spans 2 classes", which was right when the lock
+ * demanded one shared curriculum and is WRONG now: a selection spanning two arms, or two exam types
+ * within one level, is legitimate and reassignable. Left unchanged, the message would read as broken
+ * to the operator doing the very thing the eligibility change was made to allow.
  */
 export function StudentBulkActionBar({
     count,
@@ -56,8 +61,8 @@ export function StudentBulkActionBar({
 
                 {spansCohorts && (
                     <span className="text-xs text-amber-600 dark:text-amber-500">
-                        Reassign moves one class at a time; your selection spans{' '}
-                        {cohortCount} classes.
+                        Reassign works within one class level and term; your
+                        selection spans {cohortCount} cohorts.
                     </span>
                 )}
 
@@ -83,7 +88,7 @@ export function StudentBulkActionBar({
                         disabled={spansCohorts}
                         title={
                             spansCohorts
-                                ? `Your selection spans ${cohortCount} classes. Select pupils from a single class.`
+                                ? `Your selection spans ${cohortCount} cohorts. Select pupils from a single year group and term.`
                                 : undefined
                         }
                     >

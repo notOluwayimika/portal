@@ -69,10 +69,30 @@ class StudentResource extends JsonResource
             // they now hold — the wrong one, with no error. An episode uuid mismatches instead, and
             // names the pupil.
             'current_episode_id' => $currentCurriculum?->uuid,
-            // The cohort lock keys on this. Two pupils can both render "Year 9 B" and sit in
-            // different curricula (different exam type, or CCM vs end-of-term), so the client cannot
-            // derive a shared cohort from the class label it displays.
             'curriculum_uuid' => $curriculum?->uuid,
+            // ── THE COHORT KEY THE BULK LOCK COMPARES ─────────────────────────────────────────────
+            // (class level, term, is_ccm) — the same triple CohortSiblings matches on, assembled
+            // server-side so the client cannot re-derive it differently. It is NOT `curriculum_uuid`:
+            // two pupils in different curricula of one cohort (different arm, or different exam type)
+            // are reassignable together, and keying the client on curriculum would disable the button
+            // for a selection the server would happily accept.
+            //
+            // Nor is it the class LABEL, which is the other tempting shortcut: a label collapses exam
+            // type and CCM entirely, so two pupils rendering "Year 9 B" can sit in different cohorts.
+            // Opaque on purpose — it is an equality token, and nothing should parse it.
+            // `$classLevelArm` is reached through `$curriculum?->classLevelArm`, so a non-null arm
+            // proves a non-null curriculum — hence plain `->` inside the branch, which is what
+            // Larastan requires rather than merely permits.
+            'cohort_key' => $classLevelArm?->class_level_id === null
+                ? null
+                : implode(':', [
+                    $classLevelArm->class_level_id,
+                    // Nullable, and the placeholder matters: two term-less curricula in one level
+                    // must compare EQUAL, which `null` interpolated as '' would also achieve — but
+                    // only by accident. Stated so it survives a refactor.
+                    $curriculum->term_id ?? '-',
+                    (int) (bool) $curriculum->is_ccm,
+                ]),
             'student_curricula' => StudentCurriculumResource::collection($this->whenLoaded('studentCurricula')),
             'admission_date' => $this->admission_date?->toDateString(),
             'address' => $this->address,

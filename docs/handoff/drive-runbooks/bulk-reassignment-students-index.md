@@ -28,6 +28,21 @@ If the same-label/different-curriculum pair does not exist, **stop and build it*
 step 3 renders the enabled state and proves nothing. This is the fixture half of the same lesson the
 lock test carries.
 
+**It will not exist by default.** Measured on the working database: **zero** active class-level-arms
+carry more than one exam type, so §2 is unreachable by clicking until the pair is stood up. Use:
+
+```bash
+php artisan academics:seed-cohort-lock-pair            # prints the two ids to tick
+php artisan academics:seed-cohort-lock-pair --undo     # removes only what it created
+```
+
+Additive and idempotent — it does **not** `migrate:fresh`, so it is safe to run against an
+already-seeded drive fixture mid-drive. Guarded by the same drive-DB allowlist as
+`finance:seed-drive-fixture`: it refuses any database whose name lacks an explicit `drive` token
+(`finance_demo`, `school_uat` and even `driveway_db` are refused). `--undo` keeps any curriculum
+that has since acquired a live enrolment, because a pupil someone else placed there is not the
+command's to discard.
+
 Confirm by id, not by label:
 
 ```sql

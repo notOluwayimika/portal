@@ -69,6 +69,38 @@ it('lands the ledger row and the account projection in ONE CLOCK FRAME, under pr
         $sqlClock = strtotime(DB::selectOne('SELECT NOW() AS n')->n);
         expect($sqlClock - now()->getTimestamp())->toBeGreaterThan(19700); // ≈ +19,800s (+05:30 vs UTC)
 
+        // FREEZE BEFORE THE FIRST POST, and the reason is a THIRD frame — not either of the two
+        // this test exists to compare. The two it names are MySQL's session zone and the
+        // application's; the one that races here is Laravel's TEST clock against the real wall
+        // clock, and it lives entirely inside the staging below.
+        //
+        // `travel(90)` is `Carbon::setTestNow(Carbon::now()->addSeconds(90))`
+        // (Wormhole.php:105) — ninety seconds after REAL now at the moment travel() runs, and only
+        // from then on is the clock frozen. So the first post writes posted_at at real instant T1
+        // on a clock still moving, and travel() runs at T2, after two DB::selectOne round trips
+        // and five expectations. The imposed gap is 90 + (T2 − T1), and strtotime() truncates to
+        // whole seconds: 90 when T1 and T2 fall in the same wall-clock second, 91 when they
+        // straddle one. `toBe(90)` is then unmeetable, and the failure rate is just the width of
+        // that window — invisible on an idle machine, real under a full suite's DB contention.
+        //
+        // MEASURED, not inferred: with `usleep(600_000)` inserted before travel(90) and nothing
+        // else changed, the assertion failed 3 of 6 runs with exactly `Failed asserting that 91 is
+        // identical to 90` — the same string a gate run produced on 2026-08-23. In isolation, with
+        // the window at its natural few milliseconds, it passed 12 of 12, which is why it reads as
+        // flake rather than as a defect.
+        //
+        // FREEZING CLOSES IT because travel() is relative to Carbon::now(), and once the clock is
+        // frozen Carbon::now() IS the frozen instant. T1 becomes F, travel(90) computes F + 90 from
+        // the frozen value rather than from a moved real clock, and the gap is exactly 90 on any
+        // machine at any load. The `travel(-150)` arm further down was already deterministic for
+        // this same reason — it runs after the first travel, so it subtracts from a frozen value.
+        // This makes the first one behave like the second, rather than adding a new mechanism.
+        //
+        // NO ASSERTION IS WEAKENED. `toBe(90)` stays exact; the race that made it unmeetable is
+        // what goes. travelBack() in withProductionSessionZone's finally undoes this along with the
+        // travel, so nothing leaks into the next test.
+        test()->freezeTime();
+
         $poster = app(SubledgerPoster::class);
 
         $first = ActiveSchool::runFor($school->id, fn () => $poster->post(

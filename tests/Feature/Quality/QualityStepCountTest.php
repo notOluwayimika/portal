@@ -9,10 +9,11 @@
  * prose sites had to be moved by hand, six of them were missed on the first pass with no red
  * anywhere in the repo, and the whole set had to be moved back when the step that caused it was
  * split out. A number that only a human can check is a number that drifts. The split-out step
- * has since landed on its own and the count is 15 for real.
+ * has since landed on its own and the count is 15 for real. It is 17 now, which is the point:
+ * this docblock is prose and had to be moved by hand, while the assertion below moved itself.
  *
- * The assertion is RELATIONAL, not a pinned count — it held at 14, holds at 15, and will hold at
- * whatever comes next. It is the one piece of that branch's gate work that survives on its own.
+ * The assertion is RELATIONAL, not a pinned count — it held at 14, held at 15, holds at 17, and will
+ * hold at whatever comes next. It is the one piece of that branch's gate work that survives on its own.
  *
  * WHAT IT DOES NOT COVER, and this matters more than what it does. It catches the FILE disagreeing
  * with ITSELF. It cannot catch documentation drift — the ADRs, tickets, briefs and test comments

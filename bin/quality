@@ -14,9 +14,16 @@
 #
 #   lint.yml (job: quality)          -> steps 2..15 below
 #   tests.yml (job: ci)              -> step 16 below
+#   (neither workflow)               -> step 17, the JavaScript tests
 #
-# (The two numbers above are re-derived, not carried: the step count is 16 as of the
-# citation lint. They were already one behind at 12 steps, then 13, then 14, then 15.)
+# (The numbers above are re-derived, not carried: the step count is 17 as of the vitest
+# step. They were already one behind at 12 steps, then 13, then 14, then 15, then 16.)
+#
+# STEP 17 MIRRORS NOTHING, and that is not a fork of the kind the paragraph above warns
+# about. Neither workflow has a JavaScript test job because until this step landed the
+# repository had no JavaScript test runner at all (the ticket:
+# docs/handoff/tickets/no-javascript-test-runner.md). There is no CI counterpart to drift
+# from — Actions has never executed a job here and is not being restored (ADR 0053).
 #
 # STEP 1 IS THE ONE EXCEPTION TO THE MIRROR, and deliberately: CI runs `composer install`
 # in the job immediately before, so a lock-vs-vendor check there is vacuous by construction.
@@ -56,7 +63,7 @@ STEP=0
 
 step() {
     STEP=$((STEP + 1))
-    printf '%s[%d/16]%s %s\n' "$BOLD" "$STEP" "$OFF" "$1"
+    printf '%s[%d/17]%s %s\n' "$BOLD" "$STEP" "$OFF" "$1"
 }
 
 # Run a command; record failure but keep going so one push surfaces every problem
@@ -64,7 +71,7 @@ step() {
 # locally is strictly more useful and cannot make the gate weaker — any failure
 # still fails the whole run.)
 #
-# THAT ARGUMENT HOLDS FOR A DETECTOR, AND ONLY FOR A DETECTOR. Steps 2-16 each measure a
+# THAT ARGUMENT HOLDS FOR A DETECTOR, AND ONLY FOR A DETECTOR. Steps 2-17 each measure a
 # property of the code. Step 1 measures whether the code being measured is the code that
 # was declared. When step 1 is red the later steps are not extra findings — they are
 # readings from an instrument that has just reported itself untrustworthy, and fourteen
@@ -143,10 +150,17 @@ fi
 printf '%squality gate — base %s%s\n\n' "$DIM" "$(git rev-parse --short "$BASE" 2>/dev/null || echo "$BASE")" "$OFF"
 
 # 1. Dependency integrity BEFORE ANYTHING ELSE. Every step below measures a tree, and
-#    a tree that does not match composer.lock makes all fifteen answers meaningless —
-#    in whichever direction. It also reconciles step 14's phpstan result cache against
+#    a tree that does not match composer.lock makes all sixteen answers meaningless —
+#    in whichever direction. It also reconciles step 15's phpstan result cache against
 #    composer.lock, because that cache cannot see vendor/ moving underneath it. Full
 #    reasoning, and the two failure cases, in the lint's header.
+#
+#    BOTH NUMBERS ABOVE WERE WRONG. "fifteen" was correct at 16 steps and was broken by
+#    the vitest step; "step 14" named the arch tests and had been stale since before it —
+#    Larastan has been step 15 for longer than this comment has said 14. Same class as the
+#    step counts in format.ts and the money lint: prose stating a number that nothing can
+#    fail on. QualityStepCountTest ties the printf to the step() calls and nothing ties
+#    these; the docblock there says outright that this half stays unmechanised.
 #
 #    ABORTS the run rather than collecting — abort_check(), not check(). See check()'s
 #    comment for why this one step is the exception.
@@ -322,6 +336,31 @@ ls -1t "$QUALITY_ARTEFACTS"/junit-*.xml 2>/dev/null | tail -n +21 | xargs -r rm 
 ls -1t "$QUALITY_ARTEFACTS"/pest-*.log 2>/dev/null | tail -n +21 | xargs -r rm -f
 
 check "test-ratchet" php bin/ci-test-ratchet.php "$QUALITY_JUNIT"
+
+# 17. JavaScript tests (vitest). The first step in this gate that EXECUTES a line of
+#     application JavaScript. Four steps above read resources/js — Prettier/ESLint see
+#     style, tsc sees types, the vite build sees that it parses — and not one of them can
+#     tell a correct function from a wrong one. 63k lines of hand-written TS/TSX had no
+#     runner that could assert a single behaviour; the money boundary in
+#     resources/js/lib/format.ts is exempted from the money lint on review alone, which is
+#     the surface that most deserved one. docs/handoff/tickets/no-javascript-test-runner.md.
+#
+#     NOT RATCHETED, unlike tsc and the Pest suite. Both of those are baselined because they
+#     inherited failures that predate the gate; this starts at zero and stays at zero. A
+#     green here is "every JavaScript test passes", with no baseline to be behind — the
+#     claim the tsc ratchet structurally cannot make. If that ever has to change, it is a
+#     decision to record, not a default to slide into.
+#
+#     IT IS LAST, AND THAT IS A COST, STATED. It runs in about a second, so on feedback
+#     alone it belongs beside the other resources/js steps at 4-5; a JS red is now found
+#     after the ~6-minute suite. It sits here because inserting a step mid-list renumbers
+#     every `step N` in this file AND five `bin/quality:LINE` citations in tests/ and
+#     .claude/skills/ that no lint can fail on (they are baselined, so they would go stale
+#     SILENTLY) — prose the QualityStepCountTest docblock says outright must be moved by
+#     hand. Appending moves none of it. Reordering is a clean mechanical change on its own
+#     branch, and this comment is the note that it is worth doing.
+step "javascript tests (vitest — the only step that executes application JS)"
+check "vitest" pnpm run test:js
 
 # ---------------------------------------------------------------------- verdict
 echo

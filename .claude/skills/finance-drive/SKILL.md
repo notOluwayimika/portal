@@ -76,7 +76,7 @@ while everything looks fine. The whole argument, and the alternatives rejected, 
 [`docs/handoff/tickets/fresh-clone-review-needs-a-built-manifest.md`](../../../docs/handoff/tickets/fresh-clone-review-needs-a-built-manifest.md).
 
 **`pnpm`, not `npm`.** The committed lockfile is `pnpm-lock.yaml` (there is no `package-lock.json`),
-and `bin/quality` shells `pnpm` throughout (`bin/quality:195`). Two committed files still say `npm`
+and `bin/quality` shells `pnpm` throughout — `bin/quality:209 (build)` is `pnpm run build`. Two committed files still say `npm`
 — `composer.json:54-61`'s `setup` script and `docs/finance/drive-environment.md:51` — and both work,
 since they resolve the same `package.json` scripts. Prefer `pnpm` so you are installing against the
 lockfile the gate installs against.

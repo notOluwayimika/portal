@@ -33,7 +33,7 @@
  * but its directory gone from disk (deleted or a botched install), or installed at a
  * version the lock no longer names (installed from an older lock).
  *
- * PHPSTAN RESULT CACHE. The same wrong-tree run also poisons step 13's result cache,
+ * PHPSTAN RESULT CACHE. The same wrong-tree run also poisons step 15's result cache,
  * which is keyed on analysed sources and knows nothing about vendor/ moving underneath
  * it — that is why the 8 failures survived a `composer install`. The cache is not cleared
  * every run (it is the reason that step is bearable); it is cleared exactly when the input

@@ -187,6 +187,9 @@ class RolloverController extends Controller
                 'id' => $c->uuid,
                 'label' => $this->describe($c),
             ])->values(),
+            // Which selected classes have nowhere to go, and why. Named rather than counted: "3
+            // classes will not move" is not actionable on a screen listing twelve.
+            'no_next_slot' => $plan->noNextSlot,
             'warnings' => $plan->warnings,
         ];
     }

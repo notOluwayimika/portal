@@ -393,6 +393,7 @@ function rollover_plan(
         progressionCheckRan: $progressionCheckRan,
         progressionCycle: $progressionCycle,
         ccmBlockers: collect(),
+        noNextSlot: [],
         warnings: [],
         blockedBy: $blockedBy,
     );

@@ -393,6 +393,7 @@ it('refuses to dispatch a plan through the wrong kind of path', function () {
         progressionCheckRan: false,
         progressionCycle: null,
         ccmBlockers: collect(),
+        noNextSlot: [],
         warnings: [],
         blockedBy: [],
     );
@@ -500,6 +501,82 @@ it('cannot reach another schools term by uuid', function () {
         ->postJson('/api/rollover/end-of-term/preview', ['term_id' => $foreignTerm->uuid])
         ->assertStatus(422)
         ->assertJsonValidationErrors(['term_id']);
+
+    Bus::assertNothingBatched();
+});
+
+// ---------------------------------------------------------------------------
+// 10. THE LAST TERM — a rollover that would move nobody while reporting success
+// ---------------------------------------------------------------------------
+
+/**
+ * AN END-OF-TERM ROLLOVER ON THE SESSION'S LAST TERM IS REFUSED.
+ *
+ * The defect this closes was invisible to every existing arm: the planner selected on
+ * (school, term, status=active) and never asked where the pupils would GO. MoveFromTermJob resolves
+ * the class level's next participating slot and no-ops when there is none — correct per level — so
+ * on the last term the screen promised "N classes, M pupils", queued N jobs, every one no-opped, and
+ * the batch reported N/N succeeded.
+ *
+ * PREVIEW/COMMIT COUNT-HONESTY CANNOT CATCH THIS. The plan and the commit agree exactly; they are
+ * both wrong in the same way. The only fix is for the plan to ask the same question the job asks,
+ * which is why NextTermSlot exists and why both call it.
+ */
+it('refuses an end-of-term rollover when no selected class has a next term slot', function () {
+    Bus::fake();
+
+    $w = rc_world();
+    $t1 = rc_term($w['source'], 1);
+    // The level participates in slot 1 ONLY — so slot 1 is its last, and there is nowhere to go.
+    [, $arm] = rc_level($w['school'], 'Year 7', 7, [1]);
+    rc_curriculum($w['school'], $arm, $t1, $w['examType']);
+    rollover_grant($w['admin'], $w['school']);
+
+    $response = test()->actingAs($w['admin'])
+        ->postJson('/api/rollover/end-of-term', ['term_id' => $t1->uuid])
+        ->assertStatus(422);
+
+    expect($response->json('plan.blocked_by'))->toContain('no-next-slot')
+        ->and($response->json('plan.is_runnable'))->toBeFalse()
+        // NAMED, not counted — and it says what to do instead.
+        ->and(array_keys($response->json('plan.no_next_slot')))->toContain('Year 7 B')
+        ->and(implode(' ', $response->json('plan.warnings')))->toContain('end-of-year');
+
+    Bus::assertNothingBatched();
+});
+
+/**
+ * A MIXED TERM IS LEGITIMATE AND MUST NOT BLOCK.
+ *
+ * Class levels have different final slots, so some finishing while others continue is the normal
+ * shape of a school — not an error. Blocking it would refuse the ordinary case to catch the
+ * exceptional one.
+ */
+it('warns but still runs when only some classes have no next term slot', function () {
+    Bus::fake();
+
+    $w = rc_world();
+    $t1 = rc_term($w['source'], 1);
+    rc_term($w['source'], 2);
+
+    // Year 7 runs slots 1-2 → it can move. Year 11 runs slot 1 only → it finishes here.
+    [, $armMoves] = rc_level($w['school'], 'Year 7', 7, [1, 2]);
+    [, $armStops] = rc_level($w['school'], 'Year 11', 11, [1]);
+    rc_curriculum($w['school'], $armMoves, $t1, $w['examType']);
+    rc_curriculum($w['school'], $armStops, $t1, $w['examType']);
+    rollover_grant($w['admin'], $w['school']);
+
+    // PREVIEW, not commit: the claim is about what the PLAN says, and a preview asserts it without
+    // queueing anything — so this arm cannot accidentally depend on dispatch succeeding.
+    $response = test()->actingAs($w['admin'])
+        ->postJson('/api/rollover/end-of-term/preview', ['term_id' => $t1->uuid])
+        ->assertOk();
+
+    expect($response->json('is_runnable'))->toBeTrue()
+        ->and($response->json('blocked_by'))->not->toContain('no-next-slot')
+        ->and(array_keys($response->json('no_next_slot')))->toContain('Year 11 B')
+        ->and(array_keys($response->json('no_next_slot')))->not->toContain('Year 7 B')
+        ->and(implode(' ', $response->json('warnings')))->toContain('will not move');
 
     Bus::assertNothingBatched();
 });

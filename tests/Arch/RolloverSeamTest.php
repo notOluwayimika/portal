@@ -96,6 +96,7 @@ it('pins the plan result shape', function () {
         'ccmBlockers',
         'curricula',
         'kind',
+        'noNextSlot',
         // Distinct from `progressionCycle`, and the reason is the whole point of the pair: null on
         // the cycle means ACYCLIC, while an end-of-term plan never runs the check at all. One field
         // could not say both without the reader branching on `kind`.

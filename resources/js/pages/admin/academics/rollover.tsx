@@ -26,6 +26,7 @@ interface RolloverPlan {
     progression_is_acyclic: boolean;
     progression_cycle: string[] | null;
     ccm_blockers: Named[];
+    no_next_slot: Record<string, string>;
     warnings: string[];
 }
 
@@ -455,6 +456,27 @@ function PlanPanel({ plan, onRun }: { plan: RolloverPlan; onRun: () => void }) {
                         {plan.ccm_blockers.map((c) => (
                             <li key={c.id}>{c.label}</li>
                         ))}
+                    </ul>
+                </div>
+            )}
+
+            {/* ── NOWHERE TO GO ────────────────────────────────────────────────────────────────
+                Named, with the reason, because "3 classes will not move" is not actionable on a
+                panel listing twelve. When EVERY class is stuck the plan is blocked and the warning
+                says to run an end-of-year rollover instead — the operator picked the wrong kind. */}
+            {Object.keys(plan.no_next_slot).length > 0 && (
+                <div className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                    <p className="font-semibold">
+                        These classes have no next term slot and will not move:
+                    </p>
+                    <ul className="mt-1 list-inside list-disc">
+                        {Object.entries(plan.no_next_slot).map(
+                            ([label, why]) => (
+                                <li key={label}>
+                                    {label} — {why}
+                                </li>
+                            ),
+                        )}
                     </ul>
                 </div>
             )}

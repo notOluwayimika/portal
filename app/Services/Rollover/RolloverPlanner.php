@@ -67,6 +67,36 @@ class RolloverPlanner
 
         $warnings = [];
 
+        // ── WHERE WOULD THESE ACTUALLY GO? ────────────────────────────────────────────────────────
+        // Asked through NextTermSlot, the SAME resolver MoveFromTermJob uses to decide. Before this
+        // the planner selected on (school, term, active) alone and never asked — so an end-of-term
+        // rollover on the session's LAST term promised a move for every class, queued a job each,
+        // every one no-opped, and the batch reported complete success. Preview/commit count-honesty
+        // cannot catch that: the plan and the commit agree, and both are wrong the same way.
+        $noNextSlot = [];
+
+        foreach ($curricula as $curriculum) {
+            $slot = NextTermSlot::for($curriculum, $schoolId);
+
+            if (! $slot->resolved()) {
+                $noNextSlot[$this->describe($curriculum)] = $slot->explain();
+            }
+        }
+
+        $stuck = count($noNextSlot);
+
+        // BLOCK only when NOTHING can move — that is "you picked the wrong operation", and the
+        // answer is an end-of-YEAR rollover. A mixed term is legitimate and merely warned: class
+        // levels have different final slots, so some finishing while others continue is the normal
+        // shape of a school, not an error.
+        if ($stuck > 0 && $stuck === $curricula->count()) {
+            $warnings[] = "None of the {$stuck} selected class(es) has a next term slot — this is the "
+                .'last term for every one of them. Run an end-of-year rollover instead.';
+        } elseif ($stuck > 0) {
+            $warnings[] = "{$stuck} of the {$curricula->count()} selected class(es) have no next term "
+                .'slot and will not move; the rest will.';
+        }
+
         if ($draining = $this->drainingBatchCount($schoolId)) {
             $warnings[] = $this->drainingWarning($draining);
         }
@@ -85,8 +115,13 @@ class RolloverPlanner
             progressionCheckRan: false,
             progressionCycle: null,
             ccmBlockers: $ccmBlockers,
+            noNextSlot: $noNextSlot,
             warnings: $warnings,
-            blockedBy: $ccmBlockers->isEmpty() ? [] : ['ccm-active'],
+            blockedBy: array_values(array_filter([
+                $ccmBlockers->isEmpty() ? null : 'ccm-active',
+                // Every selected class stuck — the rollover would move nobody while reporting success.
+                ($stuck > 0 && $stuck === $curricula->count()) ? 'no-next-slot' : null,
+            ])),
         );
     }
 
@@ -136,6 +171,9 @@ class RolloverPlanner
             progressionCheckRan: true,
             progressionCycle: $cycle,
             ccmBlockers: $ccmBlockers,
+            // End-of-year resolves each level's FINAL slot by design, so "no next slot" is not a
+            // failure mode there — it is the selection criterion.
+            noNextSlot: [],
             warnings: $warnings,
             blockedBy: $blockedBy,
         );
@@ -221,6 +259,24 @@ class RolloverPlanner
     /**
      * @param  Collection<int, Curriculum>  $curricula
      */
+    /** "Year 8 B" — the operator-facing name of a class in the plan. */
+    private function describe(Curriculum $curriculum): string
+    {
+        $arm = $curriculum->classLevelArm;
+
+        if ($arm === null) {
+            return 'curriculum#'.$curriculum->id;
+        }
+
+        $label = trim(implode(' ', array_filter([
+            $arm->classLevel?->name,
+            $arm->arm?->label,
+            $arm->stream?->name,
+        ])));
+
+        return $label !== '' ? $label : 'curriculum#'.$curriculum->id;
+    }
+
     private function countNonWithdrawnPupils(Collection $curricula): int
     {
         if ($curricula->isEmpty()) {

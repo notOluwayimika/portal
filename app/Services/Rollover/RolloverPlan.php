@@ -56,6 +56,14 @@ final class RolloverPlan
         public readonly bool $progressionCheckRan,
         public readonly ?array $progressionCycle,
         public readonly Collection $ccmBlockers,
+        /**
+         * Selected curricula with nowhere to go, as [label => reason]. NOT a gate on its own: a
+         * level finishing early is normal, and only "every selected class is stuck" means the
+         * operator picked the wrong rollover kind.
+         *
+         * @var array<string, string>
+         */
+        public readonly array $noNextSlot,
         public readonly array $warnings,
         public readonly array $blockedBy,
     ) {}

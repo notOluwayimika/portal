@@ -84,6 +84,29 @@ operational facts an agent needs most often.
   getOrFail()` returns the **School model**, so `where('school_id', $model)` matches
   nothing while reading as correct — use `->id`, and `ActiveSchool::id()` when null is
   acceptable. Both are the reading-cannot-catch family: only running it finds them.
+- **Re-arming a tripwire means grepping for every SIBLING carrying the same
+  assertion — not just the one that fired.** A version tripwire fires on one test
+  first; fix that one alone and the rest surface later, one server bump at a time,
+  each looking like a fresh environment problem rather than the same incomplete
+  sweep. Bit once (2026-08-24): `PaymentAxisConcurrencyTest` was re-armed for MySQL
+  9.7.1 while `AllocatePaymentConcurrencyTest` kept `toStartWith('8.0.')`, fired
+  weeks later on an unrelated branch, read as "the environment is wrong", and was one
+  hurried decision from being **baselined** — which would have frozen a working
+  tripwire as permanently-failing, the exact anti-pattern the ratchet's own message
+  invites. `grep -rn toStartWith tests/` before closing the fix.
+  When you do re-arm one: **re-measure and add the specific prefix, never widen to a
+  bare major.** `9.` blesses 9.8 and everything after it sight unseen — switching the
+  alarm off while appearing to update it.
+- **A red is not a regression until you have seen the same code green somewhere.**
+  The ratchet compares against a baseline, not against a clean run, so any drift
+  between when the baseline was written and now reads as a regression it cannot tell
+  from a real one. Bit once: 11 Finance screen tests failed as "NEW regressions" on a
+  branch that touches no Finance code — a stale Vite manifest after a `staging` pull
+  that added new pages, so every Inertia test rendering them 500'd. The check is
+  cheap: run the failing files on the base branch with none of your work present.
+  **Rebuild the frontend after any `staging` pull that touches it**, and note the
+  worse cousin — a manifest that is stale but still *resolvable* passes against the
+  wrong bundle instead of erroring.
 
 ## Workflow
 

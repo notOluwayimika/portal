@@ -983,12 +983,6 @@
     "GET /sanctum/csrf-cookie": [
         "web"
     ],
-    "GET /school-setup": [
-        "web",
-        "auth",
-        "tenant",
-        "permission:admin_area.access"
-    ],
     "GET /select-school": [
         "web",
         "auth"

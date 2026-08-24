@@ -4,9 +4,7 @@ namespace App\Jobs;
 
 use App\Enums\StudentStatusEnum;
 use App\Enums\StudentSubjectStatus;
-use App\Enums\TermStatusEnum;
 use App\Jobs\Middleware\SchoolAware;
-use App\Models\ClassLevelTermParticipation;
 use App\Models\Curriculum;
 use App\Models\CurriculumSubject;
 use App\Models\MarkingScheme;
@@ -15,6 +13,8 @@ use App\Models\StudentCurriculum;
 use App\Models\StudentSubject;
 use App\Models\Term;
 use App\Models\User;
+use App\Services\Rollover\NextTermSlot;
+use Illuminate\Bus\Batchable;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -81,7 +81,12 @@ use Spatie\Activitylog\CauserResolver;
  */
 class MoveFromTermJob implements ShouldQueue
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+    // Batchable is REQUIRED, not decorative: both rollover commands and the M4
+    // controller dispatch these through Bus::batch, and PendingBatch refuses any job
+    // without the trait. It was missing since the commands were written — every test
+    // fakes the bus, and BusFake::batch() returns a PendingBatchFake that skips the
+    // check entirely, so --commit had never actually run.
+    use Batchable, Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public int $tries = 3;
 
@@ -187,60 +192,42 @@ class MoveFromTermJob implements ShouldQueue
      *
      * @return array{0: Term, 1: bool}|null
      */
+    /**
+     * Delegates to {@see NextTermSlot} — the SAME resolution RolloverPlanner uses to decide whether
+     * a class has anywhere to go.
+     *
+     * It used to live here alone, and the planner did not know about it: an end-of-term rollover on
+     * the session's last term promised a move for every class, queued a job each, and every one
+     * no-opped through this method while the batch reported success. Two implementations could not
+     * have fixed that — the drift is precisely the failure — so there is one, and this is a caller.
+     *
+     * The logging stays here because it is the JOB's concern; the planner presents the same reasons
+     * to an operator instead.
+     */
     private function resolveNextParticipation(): ?array
     {
-        $sourceTerm = Term::withoutGlobalScope(SchoolScope::class)->find($this->curriculum->term_id);
+        $slot = NextTermSlot::for($this->curriculum, $this->schoolId);
 
-        if ($sourceTerm === null) {
-            return null;
+        if ($slot->resolved()) {
+            return [$slot->term, $slot->isCcm];
         }
 
-        $classLevelArm = $this->curriculum->classLevelArm()->withoutGlobalScope(SchoolScope::class)->first();
-
-        if ($classLevelArm === null) {
-            return null;
-        }
-
-        $next = ClassLevelTermParticipation::withoutGlobalScope(SchoolScope::class)
-            ->where('school_id', $this->schoolId)
-            ->where('class_level_id', $classLevelArm->class_level_id)
-            ->where('term_order', '>', (int) $sourceTerm->order)
-            ->orderBy('term_order')
-            ->first();
-
-        if ($next === null) {
-            return null;
-        }
-
-        $targetTerm = Term::withoutGlobalScope(SchoolScope::class)
-            ->where('academic_session_id', $sourceTerm->academic_session_id)
-            ->where('order', $next->term_order)
-            ->first();
-
-        if ($targetTerm === null) {
+        if ($slot->reason === NextTermSlot::NO_TERM_AT_ORDER) {
             Log::info('MoveFromTermJob: class level participates in a later slot but no Term row exists for it', [
                 'curriculum_id' => $this->curriculum->id,
-                'term_order' => $next->term_order,
+                'term_order' => $slot->termOrder,
             ]);
-
-            return null;
         }
 
-        // ALLOWLIST, not "anything but completed". `upcoming` is the NORMAL case — at the close of
-        // term N its successor has not started — and `active` covers running slightly late, which is
-        // still a forward move. Everything else is refused, so a status added to TermStatusEnum later
-        // is rejected by default rather than silently accepted as a promotion target.
-        if (! in_array($targetTerm->status, [TermStatusEnum::UPCOMING, TermStatusEnum::ACTIVE], true)) {
+        if ($slot->reason === NextTermSlot::TARGET_TERM_NOT_OPEN) {
             Log::warning('MoveFromTermJob: target term is not upcoming or active, aborting', [
                 'curriculum_id' => $this->curriculum->id,
-                'target_term_id' => $targetTerm->id,
-                'target_term_status' => $targetTerm->status->value,
+                'target_term_id' => $slot->term?->id,
+                'target_term_status' => $slot->term?->status->value,
             ]);
-
-            return null;
         }
 
-        return [$targetTerm, (bool) $next->is_ccm];
+        return null;
     }
 
     /**

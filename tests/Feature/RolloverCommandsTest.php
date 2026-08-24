@@ -2,13 +2,7 @@
 
 use App\Jobs\MoveFromTermJob;
 use App\Jobs\MoveToNextYearJob;
-use App\Models\AcademicSession;
-use App\Models\Arm;
-use App\Models\ClassLevel;
-use App\Models\ClassLevelArm;
-use App\Models\ClassLevelTermParticipation;
 use App\Models\Curriculum;
-use App\Models\ExamType;
 use App\Models\School;
 use App\Models\Scopes\SchoolScope;
 use App\Models\Term;
@@ -21,78 +15,6 @@ uses(RefreshDatabase::class);
 // ---------------------------------------------------------------------------
 // Fixture
 // ---------------------------------------------------------------------------
-
-function rc_session(School $school, string $name): AcademicSession
-{
-    return AcademicSession::create([
-        'school_id' => $school->id,
-        'name' => $name,
-        'slug' => 'sess-'.Str::random(8),
-        'is_current' => false,
-    ]);
-}
-
-function rc_term(AcademicSession $session, int $order): Term
-{
-    return Term::create([
-        'academic_session_id' => $session->id,
-        'school_id' => $session->school_id,
-        'name' => "Term {$order}",
-        'slug' => 'term-'.Str::random(8),
-        'order' => $order,
-        'start_date' => now()->addMonths($order * 3),
-        'end_date' => now()->addMonths($order * 3 + 2),
-        'status' => 'active',
-    ]);
-}
-
-function rc_level(School $school, string $name, int $order, array $slots, array $attrs = []): array
-{
-    $level = ClassLevel::forceCreate(array_merge([
-        'school_id' => $school->id, 'name' => $name, 'order' => $order,
-    ], $attrs));
-
-    foreach ($slots as $slot) {
-        ClassLevelTermParticipation::forceCreate([
-            'school_id' => $school->id,
-            'class_level_id' => $level->id,
-            'term_order' => $slot,
-            'is_ccm' => false,
-        ]);
-    }
-
-    $arm = ClassLevelArm::forceCreate([
-        'school_id' => $school->id,
-        'class_level_id' => $level->id,
-        'arm_id' => Arm::firstOrCreate(['school_id' => $school->id, 'label' => 'B'])->id,
-    ]);
-
-    return [$level, $arm];
-}
-
-function rc_curriculum(School $school, ClassLevelArm $arm, Term $term, ExamType $et, bool $isCcm = false): Curriculum
-{
-    return Curriculum::create([
-        'school_id' => $school->id,
-        'term_id' => $term->id,
-        'class_level_arm_id' => $arm->id,
-        'exam_type_id' => $et->id,
-        'status' => 'active',
-        'is_ccm' => $isCcm,
-        'min_subjects' => 1,
-    ]);
-}
-
-function rc_world(): array
-{
-    $school = al_makeSchool();
-    $admin = al_makeUser($school->id);
-    $examType = ExamType::create(['school_id' => $school->id, 'name' => 'Internal', 'slug' => 'et-'.Str::random(8)]);
-    $source = rc_session($school, '2025/2026');
-    $target = rc_session($school, '2026/2027');
-
-    return compact('school', 'admin', 'examType', 'source', 'target');
-}
 
 // ---------------------------------------------------------------------------
 // end-of-term

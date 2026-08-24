@@ -2,19 +2,14 @@
 
 namespace App\Console\Commands;
 
+use App\Console\Concerns\ResolvesRolloverOperator;
 use App\Jobs\MoveToNextYearJob;
 use App\Models\AcademicSession;
-use App\Models\ClassLevel;
-use App\Models\ClassLevelArm;
-use App\Models\ClassLevelTermParticipation;
 use App\Models\Curriculum;
 use App\Models\Scopes\SchoolScope;
-use App\Models\Term;
-use App\Models\User;
+use App\Services\Rollover\RolloverPlanner;
 use Illuminate\Console\Command;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Bus;
-use Illuminate\Support\Facades\DB;
 
 /**
  * End-of-year rollover — dispatch one MoveToNextYearJob per FINAL-SLOT curriculum, per class level.
@@ -56,6 +51,8 @@ use Illuminate\Support\Facades\DB;
  */
 class RunEndOfYear extends Command
 {
+    use ResolvesRolloverOperator;
+
     protected $signature = 'academics:run-end-of-year
         {sourceSession : uuid of the closing session}
         {targetSession : uuid of the session pupils move into}
@@ -90,20 +87,39 @@ class RunEndOfYear extends Command
         $schoolId = (int) $source->school_id;
         $this->line("School {$schoolId}: {$source->name} -> {$target->name}");
 
+        // ── PLAN ONCE. BOTH GATES COME BACK AS DATA ───────────────────────────────────────────────
+        // The cycle gate used to be `$this->call('academics:validate-progression')` — a command
+        // invoking a sibling command, whose result is an EXIT CODE with the ring printed to a
+        // console buffer. That is why slice 2's UI could not name the ring: there was nothing to
+        // name. RolloverPlanner calls ProgressionGraph::findCycle directly and the ring arrives as
+        // an array, which this command formats for a terminal and the controller will format for a
+        // screen — one walk, two presentations.
+        $plan = app(RolloverPlanner::class)->planEndOfYear($source, $target);
+
         // ── GATE 1: THE PROGRESSION GRAPH MUST BE A DAG ───────────────────────────────────────────
-        if ($this->call('academics:validate-progression', ['--school' => $schoolId]) !== self::SUCCESS) {
-            $this->error('Refusing to queue: the progression graph is not acyclic (reported above).');
+        // KEYED ON `blockedBy`, NOT ON THE RAW FIELD. The first version of this asked
+        // `$plan->progressionCycle !== null` while gate 2 asked `blockedBy` — two ways of asking
+        // "is this blocked", and a mutation caught it: neutering the planner's blockedBy population
+        // for the cycle left every command test GREEN, because the command was not reading the field
+        // the planner had stopped populating.
+        //
+        // That is the exact drift the DTO exists to prevent. Slice 2's UI reads `blockedBy` /
+        // `isRunnable()`, so the bug would have been invisible from the CLI and live on the screen.
+        // Both gates now read one field; the raw ring is used only to SAY which ring.
+        if (in_array('progression-cycle', $plan->blockedBy, true)) {
+            $this->error("school {$schoolId}: next_class_level_id contains a CYCLE — ".implode(' -> ', $plan->progressionCycle));
+            $this->error(
+                'Refusing to queue. Every job in a ring would succeed individually while the cohorts '
+                .'simply swap levels and nobody advances. Break the cycle by clearing or repointing one '
+                .'next_class_level_id, then re-run this check.'
+            );
 
             return self::FAILURE;
         }
 
-        $selection = $this->selectFinalSlotCurricula($schoolId, $source);
-
         // ── GATE 2: CCM MOVE FIRST, ON THE FINAL SLOTS ────────────────────────────────────────────
-        $ccm = $selection->where('is_ccm', true);
-
-        if ($ccm->isNotEmpty()) {
-            $this->error("{$ccm->count()} CCM curriculum/curricula sit in a final slot for this session.");
+        if (in_array('ccm-active', $plan->blockedBy, true)) {
+            $this->error("{$plan->ccmBlockers->count()} CCM curriculum/curricula sit in a final slot for this session.");
             $this->line(
                 'Run the CCM move for those terms first. MoveToNextYearJob refuses a CCM source, so '
                 .'queuing now would report success while that cohort was silently skipped.'
@@ -112,20 +128,19 @@ class RunEndOfYear extends Command
             return self::FAILURE;
         }
 
-        $curricula = $selection->where('is_ccm', false)->values();
+        // Emitted AFTER the gates, as before: a level skipped for want of a term is context for a
+        // plan that is going to run, not noise in front of a refusal.
+        foreach ($plan->warnings as $warning) {
+            $this->warn($warning);
+        }
 
-        if ($curricula->isEmpty()) {
+        if ($plan->isEmpty()) {
             $this->warn('No active non-CCM final-slot curricula in this session — nothing to do.');
 
             return self::SUCCESS;
         }
 
-        $pupils = DB::table('student_curricula')
-            ->whereIn('curriculum_id', $curricula->pluck('id'))
-            ->whereNotIn('status', ['withdrawn'])
-            ->count();
-
-        $this->line("Plan: {$curricula->count()} final-slot curriculum/curricula, {$pupils} non-withdrawn enrolment(s).");
+        $this->line("Plan: {$plan->curricula->count()} final-slot curriculum/curricula, {$plan->pupilCount} non-withdrawn enrolment(s).");
 
         if (! $this->option('commit')) {
             $this->warn('DRY RUN — nothing dispatched. Pass --commit to queue.');
@@ -139,17 +154,16 @@ class RunEndOfYear extends Command
             return self::FAILURE;
         }
 
-        $this->warnIfBatchStillDraining($schoolId);
-
+        // DISPATCH CONSUMES THE PLAN — see RunEndOfTerm for why the shape matters in slice 2.
         $batch = Bus::batch(
-            $curricula->map(fn (Curriculum $curriculum) => new MoveToNextYearJob(
+            $plan->curricula->map(fn (Curriculum $curriculum) => new MoveToNextYearJob(
                 $curriculum, $target, (int) $operator->id, $schoolId
             ))->all()
-        )->name("rollover:end-of-year:school:{$schoolId}:session:{$source->id}")
+        )->name($plan->batchName)
             ->allowFailures()
             ->dispatch();
 
-        $this->info("Queued {$curricula->count()} job(s) as batch {$batch->id}.");
+        $this->info("Queued {$plan->curricula->count()} job(s) as batch {$batch->id}.");
         $this->line('The migration runs as workers drain the queue; this command does not wait for it.');
 
         return self::SUCCESS;
@@ -158,105 +172,5 @@ class RunEndOfYear extends Command
     private function session(string $uuid): ?AcademicSession
     {
         return AcademicSession::withoutGlobalScope(SchoolScope::class)->where('uuid', $uuid)->first();
-    }
-
-    /**
-     * One pass per class level: find its last participating slot, resolve the source session's Term
-     * at that order, and take the active curricula for that term across the level's arms.
-     *
-     * @return Collection<int, Curriculum>
-     */
-    private function selectFinalSlotCurricula(int $schoolId, AcademicSession $source): Collection
-    {
-        $selected = collect();
-
-        $levels = ClassLevel::withoutGlobalScope(SchoolScope::class)
-            ->where('school_id', $schoolId)
-            ->get();
-
-        foreach ($levels as $level) {
-            // MAX(term_order) of the LEVEL's participation — not the session's last term, and not a
-            // count of rows. See the class docblock; the three answers agree only on a contiguous
-            // level.
-            $finalSlot = ClassLevelTermParticipation::withoutGlobalScope(SchoolScope::class)
-                ->where('school_id', $schoolId)
-                ->where('class_level_id', $level->id)
-                ->max('term_order');
-
-            if ($finalSlot === null) {
-                continue;
-            }
-
-            $term = Term::withoutGlobalScope(SchoolScope::class)
-                ->where('academic_session_id', $source->id)
-                ->where('order', $finalSlot)
-                ->first();
-
-            if ($term === null) {
-                $this->warn("Class level [{$level->name}] has a final slot of {$finalSlot}, but {$source->name} has no term at that order — skipped.");
-
-                continue;
-            }
-
-            $armIds = ClassLevelArm::withoutGlobalScope(SchoolScope::class)
-                ->where('class_level_id', $level->id)
-                ->pluck('id');
-
-            if ($armIds->isEmpty()) {
-                continue;
-            }
-
-            $selected = $selected->merge(
-                Curriculum::withoutGlobalScope(SchoolScope::class)
-                    ->where('school_id', $schoolId)
-                    ->where('term_id', $term->id)
-                    ->whereIn('class_level_arm_id', $armIds)
-                    ->where('status', 'active')
-                    ->get()
-            );
-        }
-
-        return $selected->values();
-    }
-
-    private function resolveOperator(int $schoolId): ?User
-    {
-        $userId = $this->option('user');
-
-        if (! $userId) {
-            $this->error('--user is required with --commit: the jobs attribute their audit trail to an operator.');
-
-            return null;
-        }
-
-        $user = User::find($userId);
-
-        if ($user === null) {
-            $this->error("No user with id {$userId}.");
-
-            return null;
-        }
-
-        // NO SCHOOL-MEMBERSHIP CHECK — see RunEndOfTerm::resolveOperator. `$user->school_id` is the
-        // `school-id-fallback-context` pattern the boundary lint refuses and ADR 0042 is retiring, and
-        // the causer here is attribution only: the jobs receive $schoolId explicitly and never derive
-        // it from the operator.
-
-        return $user;
-    }
-
-    /** See RunEndOfTerm::warnIfBatchStillDraining — warn, never refuse; a failed batch needs re-queuing. */
-    private function warnIfBatchStillDraining(int $schoolId): void
-    {
-        $draining = DB::table('job_batches')
-            ->where('name', 'like', "rollover:%:school:{$schoolId}:%")
-            ->whereNull('finished_at')
-            ->whereNull('cancelled_at')
-            ->where('pending_jobs', '>', 0)
-            ->count();
-
-        if ($draining > 0) {
-            $this->warn("{$draining} rollover batch(es) for this school are still draining — re-queuing is safe but wasteful.");
-        }
     }
 }

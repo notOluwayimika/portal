@@ -17,6 +17,7 @@ use App\Models\StudentCurriculum;
 use App\Models\Term;
 use App\Models\User;
 use App\Services\StudentSubjectService;
+use Illuminate\Bus\Batchable;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -93,7 +94,12 @@ use Spatie\Activitylog\CauserResolver;
  */
 class MoveToNextYearJob implements ShouldQueue
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+    // Batchable is REQUIRED, not decorative: both rollover commands and the M4
+    // controller dispatch these through Bus::batch, and PendingBatch refuses any job
+    // without the trait. It was missing since the commands were written — every test
+    // fakes the bus, and BusFake::batch() returns a PendingBatchFake that skips the
+    // check entirely, so --commit had never actually run.
+    use Batchable, Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public int $tries = 3;
 

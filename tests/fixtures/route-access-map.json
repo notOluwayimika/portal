@@ -1653,13 +1653,6 @@
             "teacher"
         ]
     },
-    "GET /school-setup": {
-        "auth": true,
-        "roles": [
-            "admin",
-            "super_admin"
-        ]
-    },
     "GET /select-school": {
         "auth": true,
         "roles": [

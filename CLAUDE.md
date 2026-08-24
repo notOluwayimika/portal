@@ -71,6 +71,19 @@ operational facts an agent needs most often.
   it, and assert your column/table is gone — never trust a bare exit-0. Same class as
   the corrupt-`node_modules` tsc lie. Full write-up: `docs/testing.md` §
   "`--step=N` is relative to the branch".
+- **On a framework subclass, a generic private helper name collides with the base
+  class's method surface — silently, and fatally.** `FormRequest` extends
+  `Illuminate\Http\Request`, where `session()` is real and called internally, so a
+  private `session(string, int)` did not override-error: it corrupted the framework's
+  own call and PHP exited **2 with no output, no exception and no stack trace**. The
+  identical helper is safe on a `Command`, which has no `session()` — which is exactly
+  the trap, because it looks correct in the file you copied it from. Bisecting
+  test-by-test was the only thing that found it. Prefix helpers on framework
+  subclasses (`resolveSession`, not `session`) — the method-level form of the `sr_`/
+  `rc_` fixture-namespacing discipline. Its cousin, same session: `ActiveSchool::
+  getOrFail()` returns the **School model**, so `where('school_id', $model)` matches
+  nothing while reading as correct — use `->id`, and `ActiveSchool::id()` when null is
+  acceptable. Both are the reading-cannot-catch family: only running it finds them.
 - **Re-arming a tripwire means grepping for every SIBLING carrying the same
   assertion — not just the one that fired.** A version tripwire fires on one test
   first; fix that one alone and the rest surface later, one server bump at a time,

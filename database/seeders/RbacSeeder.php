@@ -226,6 +226,22 @@ class RbacSeeder extends Seeder
                 PermissionEnum::DASHBOARD_VIEW->value,
                 PermissionEnum::RESULT_VIEW->value,
                 PermissionEnum::ACADEMIC_SETUP_MANAGE->value,
+                // ── ROLLOVER (M4) — ADMIN ONLY FOR NOW, AND THAT IS A DECISION ────────────────
+                // Separate from academic_setup.manage on purpose: config edits are reversible and
+                // one row at a time; a rollover moves every pupil in the school across a year
+                // boundary and cannot be undone by re-editing a row.
+                //
+                // ADMIN-ONLY IS THE DECISION, NOT AN OMISSION. This is the single most destructive
+                // action in the system — it moves every pupil in a school across a year boundary —
+                // so it ships with the smallest grant that can actually exercise it, to be widened
+                // deliberately rather than narrowed after the fact.
+                //
+                // `registrar` is a FAST-FOLLOW, not a gap: the milestone's trigger was "a registrar
+                // is expected to run one themselves", and that is blocked on a prerequisite this
+                // work surfaced — registrar reaches NO role-gated route at all (see its block
+                // below), so granting rollover alone would produce a permission it cannot exercise.
+                // Ticket: docs/handoff/tickets/registrar-reaches-no-role-gated-route.md
+                PermissionEnum::ACADEMICS_ROLLOVER->value,
                 PermissionEnum::PRINCIPAL_APPROVAL_MANAGE->value,
                 PermissionEnum::FINANCE_ACCESS->value,
                 // Billing (S1 Part 0): admin may raise invoices and apply policy-backed reductions.

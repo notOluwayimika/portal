@@ -1,5 +1,7 @@
 <?php
 
+use App\Jobs\MoveFromTermJob;
+use App\Jobs\MoveToNextYearJob;
 use App\Models\AcademicSession;
 use App\Models\ClassLevel;
 use App\Models\Curriculum;
@@ -400,4 +402,42 @@ it('refuses to dispatch a plan through the wrong kind of path', function () {
     ))->toThrow(LogicException::class);
 
     Bus::assertNothingBatched();
+});
+
+// ---------------------------------------------------------------------------
+// 8. THE BATCH CAN ACTUALLY BE CREATED — the one thing Bus::fake() cannot tell you
+// ---------------------------------------------------------------------------
+
+/**
+ * BOTH ROLLOVER JOBS MUST BE BATCHABLE, ASSERTED AGAINST THE REAL Bus.
+ *
+ * ── WHY EVERY OTHER ARM IN THIS FILE IS BLIND TO THIS ────────────────────────────────────────────
+ * `Bus::fake()` replaces the dispatcher, and `BusFake::batch()` returns a `PendingBatchFake` which
+ * never calls `ensureJobIsBatchable()`. Only the real `PendingBatch` does. So a job missing the
+ * `Batchable` trait passes `assertBatchCount`, `assertNothingBatched` and every faked commit arm —
+ * and throws the moment a human presses the button.
+ *
+ * That is exactly what happened: neither MoveToNextYearJob nor MoveFromTermJob carried the trait
+ * since the commands were written, so `academics:run-end-of-term --commit` and `run-end-of-year
+ * --commit` had NEVER worked. 22 green tests, and the feature was unusable. Found by driving the
+ * screen, which is the argument for driving in one line.
+ *
+ * ── WHY Bus::batch() WITHOUT ->dispatch() IS THE RIGHT PROBE ─────────────────────────────────────
+ * The trait check runs when the batch is BUILT, not when it is stored. So constructing a real
+ * PendingBatch exercises Laravel's own validation — not a reimplementation of it — while queueing
+ * nothing and touching no table. Asserting `class_uses_recursive` instead would restate the rule in
+ * our own words and drift from the framework the day it changes.
+ */
+it('can build a real batch from both rollover jobs', function () {
+    // NO Bus::fake() — that is the entire point of this arm.
+    $w = rs_runnable_world();
+    $curriculum = $w['curriculum'];
+
+    expect(fn () => Bus::batch([
+        new MoveToNextYearJob($curriculum, $w['target'], (int) $w['admin']->id, (int) $w['school']->id),
+    ]))->not->toThrow(RuntimeException::class);
+
+    expect(fn () => Bus::batch([
+        new MoveFromTermJob($curriculum, (int) $w['admin']->id, (int) $w['school']->id),
+    ]))->not->toThrow(RuntimeException::class);
 });

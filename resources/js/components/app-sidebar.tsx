@@ -399,6 +399,29 @@ export function AppSidebar() {
             });
         }
 
+        // ── M4 · YEAR ROLLOVER ────────────────────────────────────────────────
+        // Gates on `academics.rollover`, NOT on admin_area.access: the rollover
+        // carries its own permission because it moves every pupil in a school
+        // across a year boundary, while admin_area.access covers reversible
+        // config work. Same compose-by-permission pattern as Users above and the
+        // Finance items below — an item appears exactly when the seat can use it,
+        // so the nav never offers a screen the server would 403.
+        //
+        // Without this the page existed and was reachable only by typing the URL,
+        // which is the same as not shipping it.
+        if (can('academics.rollover')) {
+            groups.push({
+                label: 'Academics',
+                items: [
+                    {
+                        title: 'Year Rollover',
+                        href: '/academics/rollover',
+                        icon: RefreshCw,
+                    },
+                ],
+            });
+        }
+
         // FINANCE — a MODULE, not a persona, so it sits after the admin working area
         // and before the persona menus, and every item gates on the permission its
         // own route carries. Same compose-by-permission pattern as the Users item

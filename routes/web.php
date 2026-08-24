@@ -29,6 +29,7 @@ use App\Http\Resources\GuardianResource;
 use App\Http\Resources\StudentCurriculumResource;
 use App\Http\Resources\StudentResource;
 use App\Http\Resources\TeacherResource;
+use App\Models\AcademicSession;
 use App\Models\ClassLevel;
 use App\Models\CommentBand;
 use App\Models\Curriculum;
@@ -544,6 +545,21 @@ Route::middleware(['auth', 'tenant', 'permission:admin_area.access'])->group(fun
 
     // Students (write-oriented; index + profile view live in the admin|principal
     // group below so principals get read-only access).
+    // ── M4 · YEAR ROLLOVER ───────────────────────────────────────────────────────────────────────
+    // Page gated on the SAME permission as its API. The two diverging is a live defect elsewhere in
+    // this codebase — /guardians gates the page on admin_area.access while its API is on
+    // academic_setup.manage, so a role holding one and not the other gets a full-page 403 that
+    // presents as a broken login (ticketed). Same gate on both, deliberately.
+    Route::get('academics/rollover', function () {
+        return Inertia::render('admin/academics/rollover', [
+            'sessions' => AcademicSession::query()
+                ->orderByDesc('id')
+                ->get()
+                ->map(fn ($s) => ['id' => $s->uuid, 'label' => $s->name])
+                ->values(),
+        ]);
+    })->middleware('permission:academics.rollover')->name('academics.rollover');
+
     Route::get('students/bulk-update', function () {
         return Inertia::render('admin/students/bulk-update');
     })->name('students.bulk-update');

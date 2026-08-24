@@ -112,6 +112,17 @@ enum Permission: string
     case PARENT_PORTAL_ACCESS = 'parent_portal.access';
     case BOARDING_PORTAL_ACCESS = 'boarding_portal.access';
     case ACADEMIC_SETUP_MANAGE = 'academic_setup.manage';
+    // ── ROLLOVER IS ITS OWN PERMISSION, NOT academic_setup.manage (M4) ────────────────────────────
+    // Deliberately separate, and the plan deferred creating it until something checked it — M4's
+    // controller is the first checker.
+    //
+    // academic_setup.manage gates CONFIG: reversible, one-row-at-a-time edits to class structure
+    // and progression pointers, held by roles including form_teacher. A rollover is a once-a-term
+    // act that moves EVERY pupil in a school across a year boundary and cannot be undone by
+    // re-editing a row. Sharing the permission would mean anyone who can rename an arm can roll the
+    // year over — which was tolerable only while shell access was the real gate, and M4 exists
+    // precisely because it no longer is.
+    case ACADEMICS_ROLLOVER = 'academics.rollover';
     case PRINCIPAL_APPROVAL_MANAGE = 'principal_approval.manage';
     // Interim gate for /api/v1/finance/* (was role:admin|super_admin).
     // Superseded when Finance's Ph2 permission scheme (finance.<resource>.

@@ -12,6 +12,7 @@ use App\Models\ClassLevelTermParticipation;
 use App\Models\Curriculum;
 use App\Models\ExamType;
 use App\Models\Guardian;
+use App\Models\Permission;
 use App\Models\Role;
 use App\Models\School;
 use App\Models\Term;
@@ -324,4 +325,35 @@ function rollover_cyclic_world(): array
     rc_curriculum($w['school'], $armA, $t1, $w['examType']);
 
     return $w;
+}
+
+/**
+ * Give a user the rollover permission — and ONLY that permission.
+ *
+ * Mirrors sr_admin's shape deliberately. It does NOT route through a role or grantSchoolAccess:
+ * `academics.rollover` exists precisely because it is not `academic_setup.manage`, so borrowing an
+ * `admin` seat would hand the actor both and make every authorization arm here vacuous — the seat
+ * would pass for the wrong reason.
+ */
+function rollover_grant(User $user, School $school): void
+{
+    $permission = Permission::where('name', App\Enums\Permission::ACADEMICS_ROLLOVER->value)
+        ->where('guard_name', 'web')
+        ->first()
+        ?? Permission::create([
+            'name' => App\Enums\Permission::ACADEMICS_ROLLOVER->value,
+            'guard_name' => 'web',
+        ]);
+
+    // School ACCESS is separate from the permission and both are required: the `tenant` middleware
+    // resolves the active school from access, and without it the request has no school context at
+    // all. Granted through `registrar` deliberately — it is the seat with no academic_setup.manage,
+    // so an actor built here holds rollover and NOT the config permission, which is the separation
+    // these arms exist to prove. Borrowing `admin` would hand over both and pass for the wrong
+    // reason.
+    $user->grantSchoolAccess($school, 'registrar');
+
+    setPermissionsTeamId($school->id);
+    $user->givePermissionTo($permission);
+    $user->flushSchoolAccessCache();
 }

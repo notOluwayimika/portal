@@ -21,6 +21,7 @@
     "admin": [
         "academic_data.view",
         "academic_setup.manage",
+        "academics.rollover",
         "activity_log.export",
         "activity_log.view",
         "activity_log.view_all",

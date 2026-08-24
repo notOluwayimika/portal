@@ -16,6 +16,7 @@ use App\Http\Controllers\HeadOfSchoolController;
 use App\Http\Controllers\MarkingComponentController;
 use App\Http\Controllers\NoticeController;
 use App\Http\Controllers\PrincipalApprovalController;
+use App\Http\Controllers\RolloverController;
 use App\Http\Controllers\ScholarshipController;
 use App\Http\Controllers\SessionController;
 use App\Http\Controllers\SetupController;
@@ -212,6 +213,24 @@ Route::middleware(['auth:sanctum', 'tenant', 'permission:academic_setup.manage']
     // already carry.
     Route::get('/student-curricula/{studentCurriculum:uuid}/reassignment-options', [StudentReassignmentController::class, 'show']);
     Route::post('/student-curricula/{studentCurriculum:uuid}/reassign', [StudentReassignmentController::class, 'store']);
+
+});
+
+// ── M4 · ROLLOVER OPERATOR SURFACE ────────────────────────────────────────────────────────────────
+// Its OWN permission, not academic_setup.manage: that gates reversible, one-row config edits and is
+// held by roles including form_teacher, while a rollover moves every pupil in the school across a
+// year boundary and cannot be undone by re-editing a row. The plan deferred coining it until
+// something checked it ("no permission exists until something checks it") — this group is the first
+// checker.
+Route::middleware(['auth:sanctum', 'tenant', 'permission:academics.rollover'])->group(function () {
+    Route::post('/rollover/end-of-term/preview', [RolloverController::class, 'previewEndOfTerm']);
+    Route::post('/rollover/end-of-term', [RolloverController::class, 'commitEndOfTerm']);
+    Route::post('/rollover/end-of-year/preview', [RolloverController::class, 'previewEndOfYear']);
+    Route::post('/rollover/end-of-year', [RolloverController::class, 'commitEndOfYear']);
+    Route::get('/rollover/batches', [RolloverController::class, 'batches']);
+});
+
+Route::middleware(['auth:sanctum', 'tenant', 'permission:academic_setup.manage'])->group(function () {
 
     // student subject management
 

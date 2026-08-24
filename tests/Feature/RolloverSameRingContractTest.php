@@ -63,17 +63,18 @@ it('surfaces that same ring in the command output', function () {
 });
 
 /**
- * SLICE 2 COMPLETES THIS. The assertion is written; only the endpoint is missing.
+ * THE THIRD CALLER — LIVE AS OF SLICE 2, and this was the first thing slice 2 made pass.
  *
- * When `POST /api/rollover/end-of-year/preview` lands, delete the `markTestSkipped` and this test
- * proves the third caller reads the same walk — which is the whole "one walk, three callers"
- * contract, end to end.
+ * Written in slice 1 behind markTestSkipped with the assertion already spelled out, precisely so
+ * that landing the endpoint could not quietly skip proving the contract. Un-skipping it was the
+ * first move of slice 2 rather than the last.
+ *
+ * "One walk, three callers" is now end to end: the walk, the command, and the UI pre-flight payload
+ * all report the SAME named ring.
  */
 it('surfaces that same ring in the UI pre-flight payload', function () {
-    $this->markTestSkipped('Slice 2: POST /api/rollover/end-of-year/preview does not exist yet.');
-
-    /** @phpstan-ignore-next-line deadCode.unreachable — written now so slice 2 cannot forget it. */
     $w = rollover_cyclic_world();
+    rollover_grant($w['admin'], $w['school']);
 
     $ring = ProgressionGraph::findCycle($w['school']->id);
 
@@ -86,5 +87,9 @@ it('surfaces that same ring in the UI pre-flight payload', function () {
         // The SAME array, not a re-derived or re-formatted one.
         ->assertJsonPath('progression_cycle', $ring)
         ->assertJsonPath('blocked_by', fn (array $b) => in_array('progression-cycle', $b, true))
-        ->assertJsonPath('is_runnable', false);
+        ->assertJsonPath('is_runnable', false)
+        // The applicability flag travels with it: this check RAN and found a ring, which is a
+        // different state from an end-of-term plan that never ran it.
+        ->assertJsonPath('progression_check_ran', true)
+        ->assertJsonPath('progression_is_acyclic', false);
 });

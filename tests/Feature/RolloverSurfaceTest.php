@@ -441,3 +441,65 @@ it('can build a real batch from both rollover jobs', function () {
         new MoveFromTermJob($curriculum, (int) $w['admin']->id, (int) $w['school']->id),
     ]))->not->toThrow(RuntimeException::class);
 });
+
+// ---------------------------------------------------------------------------
+// 9. END-OF-TERM — the kind that had an API and no surface
+// ---------------------------------------------------------------------------
+
+/**
+ * The end-of-term endpoints existed, were tested and were mutation-checked from slice 2 — and the
+ * SCREEN only ever wired up end-of-year, so the whole kind was unreachable by a human. Found by
+ * someone looking for the menu, which no green suite was ever going to report.
+ *
+ * These arms cover the term path end to end, and specifically the property that makes the two kinds
+ * one screen rather than two: they share every concept EXCEPT which gate applies.
+ */
+it('previews an end-of-term rollover and reports the progression check as not applicable', function () {
+    Bus::fake();
+
+    $w = rs_runnable_world();
+
+    $response = test()->actingAs($w['admin'])
+        ->postJson('/api/rollover/end-of-term/preview', ['term_id' => $w['term']->uuid])
+        ->assertOk();
+
+    // THE DISTINCTION THE THREE-STATE FIELD EXISTS FOR: a term rollover does not advance a level, so
+    // the graph is never walked. `progression_cycle: null` alone would be indistinguishable from
+    // "checked and acyclic" — which is what an end-of-year clean plan carries.
+    expect($response->json('progression_check_ran'))->toBeFalse()
+        ->and($response->json('progression_is_acyclic'))->toBeFalse()
+        ->and($response->json('progression_cycle'))->toBeNull()
+        ->and($response->json('kind'))->toBe('end-of-term')
+        ->and($response->json('batch_name'))->toContain('rollover:end-of-term:school:');
+
+    Bus::assertNothingBatched();
+});
+
+it('refuses an end-of-term commit while a CCM curriculum is active in that term', function () {
+    Bus::fake();
+
+    $w = rs_runnable_world();
+    rc_curriculum($w['school'], $w['arm'], $w['term'], $w['examType'], isCcm: true);
+
+    test()->actingAs($w['admin'])
+        ->postJson('/api/rollover/end-of-term', ['term_id' => $w['term']->uuid])
+        ->assertStatus(422)
+        ->assertJsonPath('plan.blocked_by', fn (array $b) => in_array('ccm-active', $b, true));
+
+    Bus::assertNothingBatched();
+});
+
+it('cannot reach another schools term by uuid', function () {
+    Bus::fake();
+
+    $w = rs_runnable_world();
+    $other = rc_world();
+    $foreignTerm = rc_term($other['source'], 1);
+
+    test()->actingAs($w['admin'])
+        ->postJson('/api/rollover/end-of-term/preview', ['term_id' => $foreignTerm->uuid])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['term_id']);
+
+    Bus::assertNothingBatched();
+});

@@ -17,6 +17,8 @@ use App\Models\Role;
 use App\Models\School;
 use App\Models\Term;
 use App\Models\User;
+use App\Services\Rollover\RolloverBatchName;
+use App\Services\Rollover\RolloverPlan;
 use App\Support\ActiveSchool;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
@@ -356,4 +358,42 @@ function rollover_grant(User $user, School $school): void
     setPermissionsTeamId($school->id);
     $user->givePermissionTo($permission);
     $user->flushSchoolAccessCache();
+}
+
+/*
+|--------------------------------------------------------------------------
+| Rollover plan factory
+|--------------------------------------------------------------------------
+|
+| Lives here, not in a test file: it is used by BOTH tests/Arch/RolloverSeamTest
+| and tests/Feature/RolloverSurfaceTest, and a helper defined in one test file is
+| only available to another when they happen to load together. Running the feature
+| file alone hit `Call to undefined function rollover_plan()` — a test that passes
+| only in company is a test that will fail the first time someone narrows a run.
+|
+*/
+
+/**
+ * A RolloverPlan with everything irrelevant to the assertion held constant.
+ *
+ * Named parameters only for the fields under test, so an arm reads as the one axis it varies —
+ * a plan literal with nine positional arguments hides which of them the test is about.
+ */
+function rollover_plan(
+    bool $progressionCheckRan,
+    ?array $progressionCycle,
+    array $blockedBy = [],
+): RolloverPlan {
+    return new RolloverPlan(
+        kind: RolloverBatchName::KIND_END_OF_YEAR,
+        schoolId: 1,
+        batchName: RolloverBatchName::forSession(1, 1),
+        curricula: collect(),
+        pupilCount: 0,
+        progressionCheckRan: $progressionCheckRan,
+        progressionCycle: $progressionCycle,
+        ccmBlockers: collect(),
+        warnings: [],
+        blockedBy: $blockedBy,
+    );
 }

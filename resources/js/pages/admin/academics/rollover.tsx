@@ -42,7 +42,21 @@ interface BatchRow {
 
 interface RolloverPageProps {
     sessions: Named[];
+    terms: Named[];
 }
+
+/**
+ * The two rollover kinds share every concept — the gates, the plan, queued-not-done, the batch
+ * panel — and differ only in what identifies the thing being closed: a TERM, or a pair of SESSIONS.
+ * So they are one screen with a switch rather than two screens duplicating the whole surface for a
+ * difference of one input.
+ *
+ * They are NOT interchangeable underneath: end-of-term never consults the progression graph (it does
+ * not advance a level), which is why the plan carries `progression_check_ran` and the panel renders
+ * "not applicable" rather than "no cycles" for it. The switch changes the inputs and the endpoint;
+ * the server decides what each kind checks.
+ */
+type RolloverKind = 'end-of-year' | 'end-of-term';
 
 /**
  * The rollover operator surface.
@@ -64,9 +78,11 @@ interface RolloverPageProps {
  * reflex. The dialogue names the sessions, the class count and the pupil count, because the number
  * is the thing an operator can actually recognise as wrong.
  */
-export default function RolloverPage({ sessions }: RolloverPageProps) {
+export default function RolloverPage({ sessions, terms }: RolloverPageProps) {
+    const [kind, setKind] = useState<RolloverKind>('end-of-year');
     const [source, setSource] = useState('');
     const [target, setTarget] = useState('');
+    const [term, setTerm] = useState('');
     const [plan, setPlan] = useState<RolloverPlan | null>(null);
     const [loading, setLoading] = useState(false);
     const [confirmOpen, setConfirmOpen] = useState(false);
@@ -92,16 +108,26 @@ export default function RolloverPage({ sessions }: RolloverPageProps) {
         loadBatches();
     }, []);
 
+    /** The endpoint and body for the current kind — written once so preview and commit cannot
+     *  disagree about which rollover they are running. */
+    const endpoint = (suffix: '' | '/preview') =>
+        `/api/rollover/${kind}${suffix}`;
+
+    const payload = () =>
+        kind === 'end-of-year'
+            ? { source_session_id: source, target_session_id: target }
+            : { term_id: term };
+
+    const ready =
+        kind === 'end-of-year' ? Boolean(source && target) : Boolean(term);
+
     const preview = async () => {
         setLoading(true);
         setPlan(null);
         setResult(null);
 
         try {
-            const res = await axios.post('/api/rollover/end-of-year/preview', {
-                source_session_id: source,
-                target_session_id: target,
-            });
+            const res = await axios.post(endpoint('/preview'), payload());
             setPlan(res.data);
         } catch (err: unknown) {
             const data = (
@@ -134,10 +160,7 @@ export default function RolloverPage({ sessions }: RolloverPageProps) {
         setCommitting(true);
 
         try {
-            const res = await axios.post('/api/rollover/end-of-year', {
-                source_session_id: source,
-                target_session_id: target,
-            });
+            const res = await axios.post(endpoint(''), payload());
 
             // The COMMIT's plan is the outcome. `previewed_jobs` is carried only so the panel can
             // say when the two disagreed — it is never displayed as the result.
@@ -169,6 +192,7 @@ export default function RolloverPage({ sessions }: RolloverPageProps) {
 
     const sourceLabel = sessions.find((s) => s.id === source)?.label ?? '—';
     const targetLabel = sessions.find((s) => s.id === target)?.label ?? '—';
+    const termLabel = terms.find((t) => t.id === term)?.label ?? '—';
 
     return (
         <>
@@ -193,49 +217,106 @@ export default function RolloverPage({ sessions }: RolloverPageProps) {
                         </p>
                     }
                 >
-                    <div className="grid gap-4 sm:grid-cols-3">
-                        <div>
-                            <Label className="text-xs">Closing session</Label>
-                            <select
-                                className="mt-1 h-9 w-full rounded-md border bg-background px-3 text-sm"
-                                value={source}
-                                onChange={(e) => setSource(e.target.value)}
-                            >
-                                <option value="">Select…</option>
-                                {sessions.map((s) => (
-                                    <option key={s.id} value={s.id}>
-                                        {s.label}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-
-                        <div>
-                            <Label className="text-xs">Pupils move into</Label>
-                            <select
-                                className="mt-1 h-9 w-full rounded-md border bg-background px-3 text-sm"
-                                value={target}
-                                onChange={(e) => setTarget(e.target.value)}
-                            >
-                                <option value="">Select…</option>
-                                {sessions.map((s) => (
-                                    <option key={s.id} value={s.id}>
-                                        {s.label}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-
-                        <div className="flex items-end">
+                    {/* THE KIND SWITCH. Changing it clears any plan on screen — a plan for the
+                        other kind still rendered would invite confirming the wrong rollover. */}
+                    <div className="flex gap-2">
+                        {(
+                            [
+                                ['end-of-year', 'End of year'],
+                                ['end-of-term', 'End of term'],
+                            ] as [RolloverKind, string][]
+                        ).map(([value, label]) => (
                             <Button
-                                onClick={preview}
-                                disabled={!source || !target || loading}
-                                className="w-full"
+                                key={value}
+                                variant={kind === value ? 'default' : 'outline'}
+                                size="sm"
+                                onClick={() => {
+                                    setKind(value);
+                                    setPlan(null);
+                                    setResult(null);
+                                }}
                             >
-                                {loading ? 'Checking…' : 'Preview'}
+                                {label}
                             </Button>
-                        </div>
+                        ))}
                     </div>
+
+                    {kind === 'end-of-term' ? (
+                        <div className="grid gap-4 sm:grid-cols-3">
+                            <div className="sm:col-span-2">
+                                <Label className="text-xs">Closing term</Label>
+                                <select
+                                    className="mt-1 h-9 w-full rounded-md border bg-background px-3 text-sm"
+                                    value={term}
+                                    onChange={(e) => setTerm(e.target.value)}
+                                >
+                                    <option value="">Select…</option>
+                                    {terms.map((t) => (
+                                        <option key={t.id} value={t.id}>
+                                            {t.label}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div className="flex items-end">
+                                <Button
+                                    onClick={preview}
+                                    disabled={!ready || loading}
+                                    className="w-full"
+                                >
+                                    {loading ? 'Checking…' : 'Preview'}
+                                </Button>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="grid gap-4 sm:grid-cols-3">
+                            <div>
+                                <Label className="text-xs">
+                                    Closing session
+                                </Label>
+                                <select
+                                    className="mt-1 h-9 w-full rounded-md border bg-background px-3 text-sm"
+                                    value={source}
+                                    onChange={(e) => setSource(e.target.value)}
+                                >
+                                    <option value="">Select…</option>
+                                    {sessions.map((s) => (
+                                        <option key={s.id} value={s.id}>
+                                            {s.label}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div>
+                                <Label className="text-xs">
+                                    Pupils move into
+                                </Label>
+                                <select
+                                    className="mt-1 h-9 w-full rounded-md border bg-background px-3 text-sm"
+                                    value={target}
+                                    onChange={(e) => setTarget(e.target.value)}
+                                >
+                                    <option value="">Select…</option>
+                                    {sessions.map((s) => (
+                                        <option key={s.id} value={s.id}>
+                                            {s.label}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div className="flex items-end">
+                                <Button
+                                    onClick={preview}
+                                    disabled={!ready || loading}
+                                    className="w-full"
+                                >
+                                    {loading ? 'Checking…' : 'Preview'}
+                                </Button>
+                            </div>
+                        </div>
+                    )}
 
                     {loading && <Spinner className="mx-auto" />}
 
@@ -261,7 +342,11 @@ export default function RolloverPage({ sessions }: RolloverPageProps) {
             <Modal
                 isOpen={confirmOpen}
                 onClose={() => setConfirmOpen(false)}
-                title="Run this rollover?"
+                title={
+                    kind === 'end-of-year'
+                        ? 'Run this year rollover?'
+                        : 'Run this term rollover?'
+                }
                 size="md"
                 footer={
                     <div className="flex justify-end gap-2">
@@ -281,10 +366,17 @@ export default function RolloverPage({ sessions }: RolloverPageProps) {
                 {/* NAMES WHAT IT IS ABOUT TO DO. The count is the part an operator can recognise as
                     wrong — "are you sure?" is a reflex, "1,240 pupils" is a decision. */}
                 <div className="space-y-3 text-sm">
-                    <p className="flex items-center gap-2 font-medium">
-                        {sourceLabel} <ArrowRight className="h-4 w-4" />{' '}
-                        {targetLabel}
-                    </p>
+                    {/* NAMES WHAT IS ACTUALLY CLOSING. A dialogue reading "2025/2026 → 2026/2027"
+                        while a TERM rollover is about to run would describe a different action from
+                        the one queued — the confirm is the last place that can still be true. */}
+                    {kind === 'end-of-year' ? (
+                        <p className="flex items-center gap-2 font-medium">
+                            {sourceLabel} <ArrowRight className="h-4 w-4" />{' '}
+                            {targetLabel}
+                        </p>
+                    ) : (
+                        <p className="font-medium">Closing term: {termLabel}</p>
+                    )}
                     <p>
                         This will move{' '}
                         <strong>{plan?.pupil_count ?? 0} pupil(s)</strong>{' '}

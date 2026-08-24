@@ -24,31 +24,6 @@ use App\Services\Rollover\RolloverPlanner;
  */
 uses()->group('arch');
 
-/**
- * A RolloverPlan with everything irrelevant to the assertion held constant.
- *
- * Named parameters only for the fields under test, so an arm reads as the one axis it varies —
- * a plan literal with nine positional arguments hides which of them the test is about.
- */
-function rollover_plan(
-    bool $progressionCheckRan,
-    ?array $progressionCycle,
-    array $blockedBy = [],
-): RolloverPlan {
-    return new RolloverPlan(
-        kind: RolloverBatchName::KIND_END_OF_YEAR,
-        schoolId: 1,
-        batchName: RolloverBatchName::forSession(1, 1),
-        curricula: collect(),
-        pupilCount: 0,
-        progressionCheckRan: $progressionCheckRan,
-        progressionCycle: $progressionCycle,
-        ccmBlockers: collect(),
-        warnings: [],
-        blockedBy: $blockedBy,
-    );
-}
-
 it('keeps the validate-progression command free of any rollover-planner dependency', function () {
     $source = file_get_contents((new ReflectionClass(ValidateProgressionGraph::class))->getFileName());
 

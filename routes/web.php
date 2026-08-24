@@ -525,7 +525,6 @@ Route::middleware(['auth', 'tenant', 'permission:admin_area.access'])->group(fun
         return Inertia::render('admin/teacher-assignments/index');
     })->name('admin.teacher-assignments');
 
-    Route::inertia('school-setup', 'admin/SchoolSetup')->name('school.setup');
     Route::inertia('setup', 'admin/setup')->name('setup');
 
     // Route::get('setup/')
@@ -556,6 +555,19 @@ Route::middleware(['auth', 'tenant', 'permission:admin_area.access'])->group(fun
                 ->orderByDesc('id')
                 ->get()
                 ->map(fn ($s) => ['id' => $s->uuid, 'label' => $s->name])
+                ->values(),
+            // Terms carry their session's name, because "First Term" is ambiguous across
+            // sessions and picking the wrong year's term is the mistake this screen must not
+            // make easy.
+            'terms' => Term::query()
+                ->with('academicSession')
+                ->orderByDesc('academic_session_id')
+                ->orderBy('order')
+                ->get()
+                ->map(fn ($t) => [
+                    'id' => $t->uuid,
+                    'label' => trim(($t->academicSession?->name ?? '').' — '.$t->name),
+                ])
                 ->values(),
         ]);
     })->middleware('permission:academics.rollover')->name('academics.rollover');

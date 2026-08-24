@@ -111,8 +111,35 @@ it('PROOF A — the isolation level this connection ACTUALLY uses, read from the
         'SELECT @@session.transaction_isolation AS session_level, VERSION() AS version'
     );
 
-    expect($row->session_level)->toBe('REPEATABLE-READ')
-        ->and($row->version)->toStartWith('8.0.');
+    expect($row->session_level)->toBe('REPEATABLE-READ');
+
+    /*
+     * ── THE SIBLING OF THE TRIPWIRE RE-ARMED ON PaymentAxisConcurrencyTest ───────────────────────
+     * This carried `toStartWith('8.0.')` and was MISSED when that one was re-armed: the earlier
+     * sweep fixed the assertion that happened to be failing at the time and did not grep for the
+     * others carrying it. So it fired later, on the same server move, for the same deliberate
+     * reason — and looked like an environment problem rather than an incomplete sweep, which is
+     * exactly how a tripwire gets baselined by someone in a hurry.
+     *
+     * BOTH PREFIXES ARE VERIFIED READINGS, NOT A WIDENING. Re-measured on 9.7.1 before this line
+     * changed, through the same connection the test uses:
+     *
+     *     config isolation_level : null              (unchanged)
+     *     @@session              : REPEATABLE-READ   (unchanged)
+     *     @@global               : REPEATABLE-READ   (unchanged)
+     *
+     * So every claim PROOF B and its siblings make about what a plain read can and cannot see
+     * across two uncommitted transactions still holds on this server. A bare `9.` would have
+     * blessed 9.8 and everything after it sight unseen — switching the alarm off while appearing
+     * to update it. Two specific verified prefixes keep it a tripwire: the next minor move re-fires.
+     */
+    expect(
+        str_starts_with($row->version, '8.0.') || str_starts_with($row->version, '9.7.')
+    )->toBeTrue(
+        "Isolation was verified on MySQL 8.0.43 and 9.7.1; this server reports {$row->version}. "
+        .'Re-read the isolation levels above on it, then add its prefix here — do not widen this to '
+        .'a bare major, which would stop the check from ever firing again.'
+    );
 });
 
 it('PROOF B — two simultaneous allocations against ONE payment cannot exceed it: the competitor holds the account row and the Action BLOCKS', function () {

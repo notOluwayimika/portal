@@ -293,10 +293,61 @@ is the theatre the branch's own `CLAUDE.md` rule warns about, which is why none 
 generalisation is now in `CLAUDE.md`; it is a failure mode this kind of work produces systematically,
 not a one-off.
 
+## DRIVEN — 2026-08-25
+
+The screen has now been driven in a browser against a throwaway clone (`portal_drive`: created
+empty, migrated from zero through the full `up()` chain so **all triggers exist** — deliberately not
+a table copy, which would not carry them). `portal-test` was untouched.
+
+**Fixture, verified by running the planner before opening a browser** (the runbook's own rule —
+"nothing to migrate" and "broken screen" render identically): closing 2025/2026 → target 2026/2027,
+2 classes, 10 pupils. Source arm `A`; receiving level offers `B` and `C` only, so **no label match**
+and the modulo decides.
+
+| Proven | Result |
+| --- | --- |
+| §1 authorization, both arms | `admin` reaches `/academics/rollover`; `accounts_officer` gets **403 Forbidden at the same URL** — not a 404 |
+| Arm distribution | 6 advancers split **3/3** into two **disjoint** sets — the property a single-arm fixture cannot show |
+| Readiness flag, both directions | 2 advancing destinations flagged; the repeater's configured destination **not** flagged |
+| Graduating bucket | non-empty (terminal level, 3 pupils) |
+| Reconciliation | 6 + 1 + 3 = **10 = pupil_count** |
+| Subject note is EOY-only | end-of-term showed "progression graph: not applicable", **no subject note, no placement table** |
+| §5 confirm | acknowledgment + TOCTOU wording rendered; `POST /api/rollover/end-of-year` → 200, "Queued 2 job(s)" |
+| §5 drain | 2/2 done, 0 failed |
+| **Preview/commit parity, BY ID** | **all six pupils landed in the class the preview named** |
+| §10 swap | count 2 → 2, set changed → **422, nothing queued** |
+
+**The subject warning was empirically correct, in consequence and not merely in display:**
+
+| destination | flagged | compulsory subjects | attached student-subjects |
+| --- | --- | --- | --- |
+| JSS 1 A `curr#18` | no | 1 | **1** |
+| JSS 2 C `curr#19` | YES | 0 | **0** |
+| JSS 2 B `curr#20` | YES | 0 | **0** |
+
+**Cold-review finding #1 was reproduced against a live database.** The rollover created `curr#19`
+and `curr#20` empty. Reconstructing the re-run state (source reopened, one late pupil to place) and
+re-previewing gave `JSS 1 A → JSS 2 B, curriculum_id=20, EXISTS=yes, flagged=YES`. **The old
+existence predicate would have read that as configured and stayed silent** — the defect demonstrated,
+not merely argued.
+
+*Recorded honestly:* the first attempt at that demonstration was wrong. Re-planning immediately after
+the drain returned `unconfigured=0`, which looked like proof and was not — every pupil was `promoted`
+with a link set, so there were no advancers and the flag was never evaluated. Green attesting to
+something true and beside the point, in the drive rather than the suite.
+
+**§10 detail, because it is the arm a count check passes:** the swap configured JSS 2 B (out of the
+set) and stripped JSS 1 A's subjects (into it). Count stayed at **2**. The page held the pre-swap
+set, the server computed the post-swap set, and the commit refused — *"A destination has become
+unconfigured since you previewed this rollover."* Singular, naming the one row that flipped.
+
 ## Still not done
 
-- **The screen is undriven.** Unchanged, and now with more to see: the corrected flag, the graduating
-  bucket, and the reconciliation line.
+- **M3 and M5 remain undriven, and are BLOCKED rather than skipped.** Their code and runbooks are
+  nine finished-but-stranded commits on `feat/reassignment-ui` — ~3,374 insertions including the bulk
+  reassignment modal, the action bar, 708 lines of `StudentBulkReassignmentTest`, and the eligibility
+  exam-type fix. That branch is also **25 commits behind staging** and will conflict in
+  `tests/Pest.php`. Landing it is its own track, after this branch.
 - **`DESTINATION_NOT_CONFIGURED` as a hold** — ticketed, not built.
 - **The binding gesture** — see above.
 - **The intentional-empty refinement** — see the accepted residual.

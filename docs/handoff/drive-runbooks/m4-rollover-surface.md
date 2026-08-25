@@ -40,7 +40,11 @@ SELECT c.id, c.school_id, c.term_id, c.is_ccm, c.status,
          WHERE sc.curriculum_id = c.id AND sc.ended_at IS NULL) AS live_pupils
 FROM curricula c
 JOIN class_level_arms cla ON cla.id = c.class_level_arm_id
-JOIN class_level_term_participations p
+-- SINGULAR. ClassLevelTermParticipation sets `protected $table = 'class_level_term_participation'`
+-- explicitly, so Laravel's plural convention does not apply. The plural name fails with
+-- "Base table or view not found" and hands you no answer at all — which reads like a broken
+-- environment rather than a typo, on the one query that exists to tell you the data is drivable.
+JOIN class_level_term_participation p
   ON p.class_level_id = cla.class_level_id AND p.school_id = c.school_id
 JOIN terms t ON t.id = c.term_id AND t.`order` = p.term_order
 WHERE c.status = 'active' AND c.is_ccm = 0 AND t.academic_session_id = <closing session id>;

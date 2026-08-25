@@ -397,8 +397,8 @@ Route::middleware(['auth:sanctum', 'tenant', 'permission:score.manage'])->group(
 Route::middleware(['auth:sanctum', 'tenant', 'permission:student_status.view'])->group(function () {
     // protected guardian routes
     Route::get('/guardians/{guardian:uuid}/students', [GuardianController::class, 'students']);
-    Route::get('/students/{student:uuid}/result-status', [StudentController::class, 'activeResultStatus']);
-    Route::get('/students/{student:uuid}/curriculum/{curriculum:uuid}/result-status', [CurriculumController::class, 'activeResultStatus'])->withoutScopedBindings();
+    Route::get('/students/{student:uuid}/result-status', [StudentController::class, 'activeResultStatus'])->middleware('guardian_ward');
+    Route::get('/students/{student:uuid}/curriculum/{curriculum:uuid}/result-status', [CurriculumController::class, 'activeResultStatus'])->middleware('guardian_ward')->withoutScopedBindings();
 });
 
 // Read-only student data also available to principals (oversight role). The
@@ -417,8 +417,8 @@ Route::middleware(['auth:sanctum', 'tenant', 'permission:student.view'])->group(
 Route::middleware(['auth:sanctum', 'tenant', 'permission:result.view'])->group(function () {
     Route::get('/curriculum-subjects/{curriculumSubject:uuid}/year-average', [CurriculumSubjectController::class, 'getYearAverage']);
     Route::get('/curriculum-subjects/{curriculumSubject:uuid}/teachers', [CurriculumSubjectController::class, 'getTeachers']);
-    Route::get('/student-curricula/{studentCurriculum:uuid}', [StudentCurriculumController::class, 'getTeacherDetails']);
-    Route::get('/student-curricula/{studentCurriculum:uuid}/curriculum-subject/{curriculumSubject:uuid}', [StudentCurriculumController::class, 'getScoresWithMarkingComponents'])->withoutScopedBindings();
+    Route::get('/student-curricula/{studentCurriculum:uuid}', [StudentCurriculumController::class, 'getTeacherDetails'])->middleware('guardian_ward');
+    Route::get('/student-curricula/{studentCurriculum:uuid}/curriculum-subject/{curriculumSubject:uuid}', [StudentCurriculumController::class, 'getScoresWithMarkingComponents'])->middleware('guardian_ward')->withoutScopedBindings();
 });
 
 Route::middleware(['auth:sanctum', 'tenant', 'permission:parent_portal.access'])->group(function () {

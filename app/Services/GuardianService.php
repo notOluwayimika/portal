@@ -1063,6 +1063,53 @@ class GuardianService
             ->first();
     }
 
+    /**
+     * Whether $student (by primary key) is a ward of $user in the ACTIVE School.
+     *
+     * The ownership predicate behind EnsureGuardianOwnsStudent. Extracted rather
+     * than inlined because the same question is asked of eight routes across two
+     * transports, and eight copies of it is how the answer diverges.
+     *
+     * RESOLVES THROUGH forUserInActiveSchool(), NEVER `$user->guardian`. The
+     * docblock immediately above states why that relation is wrong for a parent
+     * with rows in more than one School: it is an unordered `hasOne` whose scope
+     * ORs on School access, so it returns an arbitrary one of their rows. Here
+     * that is not a display bug — it is the difference between "is this child
+     * yours" answered about the right School and answered about some other one,
+     * on the code path that decides whether a parent may read a stranger's
+     * results. False when there is no Guardian row in the active School at all.
+     *
+     * `can_login` IS DELIBERATELY NOT TESTED, and this is not an oversight.
+     * Ownership ("is this your child") and login-enablement ("may this parent
+     * sign in") are separate product decisions living on the same pivot row, and
+     * the overwhelming majority of live pivots do not carry can_login. Folding it
+     * in here would read as a tightening while actually cutting almost every
+     * legitimate parent off from their own child's results — a functional outage
+     * shipped under cover of a security fix. If login-enablement should gate
+     * these routes, that is its own change, with its own rollout.
+     *
+     * The pivot is queried directly rather than through `$guardian->students()`
+     * so the answer cannot be altered by Student's global SchoolScope: this
+     * method must answer about the pivot and nothing else. Cross-School pivots
+     * are impossible by construction anyway — the `guardian_student_same_school`
+     * BEFORE INSERT/UPDATE triggers
+     * (2026_07_16_000003_add_guardian_student_same_school_constraint) refuse a
+     * row whose Guardian and Student sit in different Schools.
+     */
+    public function isWardOf(User $user, int $studentId): bool
+    {
+        $guardian = $this->forUserInActiveSchool($user);
+
+        if (! $guardian) {
+            return false;
+        }
+
+        return DB::table('guardian_student')
+            ->where('guardian_id', $guardian->id)
+            ->where('student_id', $studentId)
+            ->exists();
+    }
+
     private function logPivotEvent(Guardian $guardian, Student $student, string $event, array $properties = []): void
     {
         activity('guardian')

@@ -784,7 +784,7 @@ Route::middleware(['auth', 'tenant', 'permission:curriculum_subject.view'])->gro
             'student' => new StudentResource($studentCurriculum->student),
             'studentCurriculum' => new StudentCurriculumResource($studentCurriculum),
         ]);
-    })->name('setup.studentCurricula.show');
+    })->name('setup.studentCurricula.show')->middleware('guardian_ward');
 
 });
 
@@ -796,7 +796,7 @@ Route::middleware(['auth', 'tenant', 'permission:student_curriculum.view'])->gro
         return Inertia::render('admin/student-curricula/index', [
             'student' => new StudentResource($student),
         ]);
-    })->name('setup.studentCurricula.index');
+    })->name('setup.studentCurricula.index')->middleware('guardian_ward');
 });
 
 Route::middleware(['auth', 'tenant', 'permission:dashboard.view'])->group(function () {
@@ -869,7 +869,7 @@ Route::middleware(['auth', 'tenant', 'permission:result.view'])->group(function 
                 School::findOrFail(ActiveSchool::id()),
             ),
         ]);
-    })->name('students.results.active');
+    })->name('students.results.active')->middleware('guardian_ward');
     Route::get('students/{student:uuid}/results/{studentCurriculum:uuid}', function (Student $student, StudentCurriculum $studentCurriculum) {
         $studentCurricula = StudentCurriculum::with([
             'student',
@@ -918,7 +918,7 @@ Route::middleware(['auth', 'tenant', 'permission:result.view'])->group(function 
                 School::findOrFail(ActiveSchool::id()),
             ),
         ]);
-    })->name('students.results.show')->withoutScopedBindings();
+    })->name('students.results.show')->middleware('guardian_ward')->withoutScopedBindings();
 });
 
 Route::middleware(['auth', 'tenant', 'permission:parent_portal.access'])->group(function () {

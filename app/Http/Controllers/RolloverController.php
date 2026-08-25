@@ -203,6 +203,11 @@ class RolloverController extends Controller
                 'advancers' => $this->groups($plan->placement->advancers),
                 'repeaters' => $this->groups($plan->placement->repeaters),
                 'unplaceable' => $plan->placement->unplaceable->values(),
+                // The leaving cohort. Sent so the panel's total can RECONCILE against pupil_count —
+                // terminal pupils are counted by the plan and advanced by nobody, so omitting them
+                // left the confirm's headline sitting above a table that summed to less.
+                'graduating' => $plan->placement->graduating->values(),
+                'accounted_pupils' => $plan->placement->accountedPupils(),
                 'unconfigured_count' => $plan->placement->unconfiguredCount(),
                 // ── THE ACKNOWLEDGMENT TOKEN, TO BE ECHOED BACK OPAQUELY ────────────────────────
                 // The client MUST send this array back verbatim on commit. It must never rebuild it

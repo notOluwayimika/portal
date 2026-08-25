@@ -220,6 +220,7 @@ class RolloverPlanner
         $advancers = collect();
         $repeaters = collect();
         $unplaceable = collect();
+        $graduating = collect();
 
         foreach ($curricula as $curriculum) {
             $sourceArm = $curriculum->classLevelArm;
@@ -238,6 +239,7 @@ class RolloverPlanner
             $advancing = [];
             $holding = [];
             $stuck = [];
+            $leaving = [];
 
             foreach ($curriculum->studentCurricula as $episode) {
                 if ($episode->status === StudentStatusEnum::WITHDRAWN) {
@@ -267,8 +269,17 @@ class RolloverPlanner
                 }
 
                 // A terminal level advances nobody. Not a failure — it is what a graduating year is —
-                // so it is not shown as unplaceable either; those pupils simply do not appear.
+                // so it is not "unplaceable" either. But it is not INVISIBLE: these pupils are inside
+                // pupil_count, so leaving them out of every bucket makes the confirm's headline
+                // ("340 pupils across 12 classes") sit above a table totalling fewer, with the whole
+                // leaving cohort as the unexplained difference.
                 if ($targetLevel === null) {
+                    $leaving[] = [
+                        'id' => (int) $episode->student_id,
+                        'name' => $episode->student->full_name,
+                        'admission_number' => $episode->student->admission_number,
+                    ];
+
                     continue;
                 }
 
@@ -284,6 +295,10 @@ class RolloverPlanner
             $advancers = $advancers->concat($this->toGroups($advancing, $sourceLabel));
             $repeaters = $repeaters->concat($this->toGroups($holding, $sourceLabel));
 
+            if ($leaving !== []) {
+                $graduating->push(['source' => $sourceLabel, 'pupils' => $leaving]);
+            }
+
             foreach ($stuck as $reason => $entry) {
                 $unplaceable->push([
                     'source' => $sourceLabel,
@@ -294,7 +309,12 @@ class RolloverPlanner
             }
         }
 
-        return new RolloverPlacement($advancers->values(), $repeaters->values(), $unplaceable->values());
+        return new RolloverPlacement(
+            $advancers->values(),
+            $repeaters->values(),
+            $unplaceable->values(),
+            $graduating->values(),
+        );
     }
 
     /**
@@ -343,6 +363,10 @@ class RolloverPlanner
                 : (int) $entry['placement']->curriculum->id,
             destinationKey: $key,
             pupils: $entry['pupils'],
+            // CARRIED, never re-derived here. The screen's badge, the panel's count and the commit's
+            // acknowledgment set all have to name the same destinations, and two computations of
+            // "is this destination safe" would drift the way two key-arrays would.
+            destinationHasCompulsorySubjects: $entry['placement']->destinationHasCompulsorySubjects,
         ))->values();
     }
 

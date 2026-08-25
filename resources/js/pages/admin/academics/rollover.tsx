@@ -57,6 +57,12 @@ interface Placement {
         explanation: string;
         pupils: PlacementPupil[];
     }[];
+    graduating: {
+        source: string;
+        pupils: PlacementPupil[];
+    }[];
+    /** Pupils in every bucket combined — reconciled against `pupil_count` so none can go missing. */
+    accounted_pupils: number;
     unconfigured_count: number;
     /**
      * OPAQUE. Echoed back on commit exactly as received, never rebuilt from the rows above.
@@ -656,6 +662,29 @@ function PlacementPanel({ plan }: { plan: RolloverPlan }) {
                 rows={placement.repeaters}
             />
 
+            {placement.graduating.length > 0 && (
+                <div className="rounded-md bg-muted px-3 py-2 text-xs">
+                    <p className="font-medium">
+                        Graduating — not moving (
+                        {placement.graduating.reduce(
+                            (n, g) => n + g.pupils.length,
+                            0,
+                        )}
+                        ):
+                    </p>
+                    <ul className="mt-1 space-y-0.5">
+                        {placement.graduating.map((g) => (
+                            <li key={g.source}>
+                                <strong>{g.source}</strong> — terminal class
+                                level, nobody is promoted out of it (
+                                {g.pupils.length} pupil
+                                {g.pupils.length === 1 ? '' : 's'})
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            )}
+
             {placement.unplaceable.length > 0 && (
                 <div className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
                     <p className="font-medium">
@@ -671,6 +700,19 @@ function PlacementPanel({ plan }: { plan: RolloverPlan }) {
                         ))}
                     </ul>
                 </div>
+            )}
+
+            {/* THE TOTAL HAS TO CLOSE. The headline above says "N pupils across M classes"; if the
+                buckets do not sum to N, the difference is pupils nobody has accounted for — and a
+                screen whose own numbers disagree on a bulk destructive action is the count-honesty
+                failure this milestone already paid for once. Rendered only when it does NOT
+                reconcile, so the normal case stays quiet. */}
+            {placement.accounted_pupils !== plan.pupil_count && (
+                <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                    {plan.pupil_count} pupil(s) are in this plan but only{' '}
+                    {placement.accounted_pupils} appear above — check the
+                    difference before running this.
+                </p>
             )}
         </div>
     );

@@ -5,12 +5,15 @@ use App\Jobs\MoveToNextYearJob;
 use App\Models\Arm;
 use App\Models\ClassLevelArm;
 use App\Models\Curriculum;
+use App\Models\CurriculumSubject;
 use App\Models\Student;
 use App\Models\StudentCurriculum;
+use App\Models\Subject;
 use App\Services\Rollover\RolloverPlanner;
 use App\Support\ActiveSchool;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
@@ -72,6 +75,27 @@ function rpp_plan(array $w)
         $w['school']->id,
         fn () => app(RolloverPlanner::class)->planEndOfYear($w['source'], $w['target']),
     );
+}
+
+/**
+ * Attach one subject to a curriculum, with control over the two flags the attach path filters on.
+ *
+ * `autoAttachCompulsorySubjects` reads `curriculumSubjects()->active()->where('is_compulsory', true)`,
+ * so BOTH flags matter and the helper takes both — a helper that only ever produced the qualifying
+ * combination would make the two negative arms below impossible to write.
+ */
+function rpp_compulsory_subject(array $w, Curriculum $curriculum, bool $active = true, bool $compulsory = true): CurriculumSubject
+{
+    return CurriculumSubject::create([
+        'curriculum_id' => $curriculum->id,
+        'subject_id' => Subject::create([
+            'school_id' => $w['school']->id,
+            'name' => 'Subject '.Str::random(6),
+            'code' => Str::random(4),
+        ])->id,
+        'is_compulsory' => $compulsory,
+        'active' => $active,
+    ]);
 }
 
 /** Where a pupil ACTUALLY sits now, read from the database as "Year 8 B". */
@@ -349,15 +373,74 @@ it('flags a repeaters own-level destination as unconfigured, and stops once it e
         ->and($plan->placement->repeaters->first()->destinationLabel)->toBe('Year 7 B')
         ->and($plan->placement->unconfiguredKeys())->toHaveCount(1);
 
-    // Now CREATE the repeater's destination and re-preview. The flag must clear and name the id —
-    // the same assertion in the other direction, so a flag stuck permanently on cannot pass.
+    // The destination now EXISTS but has no subjects. It must STILL be flagged — existence is not
+    // the property that matters, and this is the exact state an earlier rollover run leaves behind.
     $target = rc_curriculum($w['school'], $w['arm7'], $w['targetTerm'], $w['examType']);
+
+    $mid = rpp_plan($w);
+
+    expect($mid->placement->repeaters->first()->destinationIsUnconfigured())->toBeTrue()
+        ->and($mid->placement->repeaters->first()->destinationCurriculumId)->toBe((int) $target->id)
+        ->and($mid->placement->unconfiguredCount())->toBe(1);
+
+    // Only once it has an ACTIVE COMPULSORY subject does the flag clear — the same assertion in the
+    // other direction, so a flag stuck permanently on cannot pass either.
+    rpp_compulsory_subject($w, $target);
 
     $after = rpp_plan($w);
 
     expect($after->placement->repeaters->first()->destinationIsUnconfigured())->toBeFalse()
         ->and($after->placement->repeaters->first()->destinationCurriculumId)->toBe((int) $target->id)
         ->and($after->placement->unconfiguredCount())->toBe(0);
+});
+
+/**
+ * THE RUN THE OLD PREDICATE MISSED — and it was the run that mattered.
+ *
+ * `destinationIsUnconfigured()` used to test `curriculum === null`. That flags run 1, where the
+ * destinations do not exist yet and nothing is at risk, and PASSES run 2 — the re-run the job's own
+ * workflow depends on, after arm or exam-type config is corrected and the previously-unresolved
+ * pupils are finally placed. Run 1 created those destinations EMPTY (destination() firstOrCreates
+ * with min_subjects, status and two scheme ids, and no subjects), so on the re-run they exist, the
+ * count reads 0, the panel and the confirm line are both silent, the acknowledgment gate passes on
+ * an empty set — and the pupils land subject-less.
+ *
+ * Found by cold review, not by this suite: the old test created the destination with rc_curriculum()
+ * (which attaches nothing) and asserted the count was 0, which was honest about what it pinned and
+ * pinned the wrong axis.
+ */
+it('still flags a destination that EXISTS but teaches nothing — the state a previous run leaves behind', function () {
+    $w = rpp_world();
+
+    // Exactly what a first rollover leaves: the destination row, with no subjects on it.
+    $destination = rc_curriculum($w['school'], $w['arm8'], $w['targetTerm'], $w['examType']);
+
+    $plan = rpp_plan($w);
+    $group = $plan->placement->advancers->first();
+
+    expect($group->destinationCurriculumId)->toBe((int) $destination->id)
+        ->and($group->destinationIsUnconfigured())->toBeTrue()
+        ->and($plan->placement->unconfiguredCount())->toBe(1)
+        ->and($plan->placement->unconfiguredKeys())->toHaveCount(1);
+});
+
+it('does not clear the flag for a subject that is archived, or one that is optional', function () {
+    $w = rpp_world();
+    $destination = rc_curriculum($w['school'], $w['arm8'], $w['targetTerm'], $w['examType']);
+
+    // ARCHIVED compulsory: autoAttachCompulsorySubjects filters on active(), so this attaches nothing.
+    rpp_compulsory_subject($w, $destination, active: false);
+    expect(rpp_plan($w)->placement->unconfiguredCount())->toBe(1);
+
+    // OPTIONAL and active: also never auto-attached — a pupil would land with nothing.
+    rpp_compulsory_subject($w, $destination, compulsory: false);
+    expect(rpp_plan($w)->placement->unconfiguredCount())->toBe(1);
+
+    // ACTIVE AND COMPULSORY clears it. Three states, one predicate, and the two that must NOT clear
+    // it are asserted first — a flag that cleared on any subject at all would pass a test that only
+    // ever added the right kind.
+    rpp_compulsory_subject($w, $destination);
+    expect(rpp_plan($w)->placement->unconfiguredCount())->toBe(0);
 });
 
 // ---------------------------------------------------------------------------
@@ -436,8 +519,12 @@ function rpp_toctou_world(): array
         $levels[$from] = ['src' => $src, 'dst' => $dst, 'dstArm' => $dstArm, 'curriculum' => $curriculum];
     }
 
-    // Year 12's destination EXISTS at preview time — the one that can later be removed.
+    // Year 12's destination is GENUINELY CONFIGURED at preview time — it exists AND teaches
+    // something. The subject is not decoration: the flag keys on active compulsory subjects, not on
+    // the row existing, so a bare rc_curriculum() here would leave this destination unconfigured too
+    // and the "two acknowledged, one later deleted" premise would quietly become three.
     $levels[11]['dstCurriculum'] = rc_curriculum($w['school'], $levels[11]['dstArm'], $targetTerm, $w['examType']);
+    rpp_compulsory_subject($w, $levels[11]['dstCurriculum']);
 
     rollover_grant($w['admin'], $w['school']);
 
@@ -470,8 +557,10 @@ it('commits when a destination was configured since the preview — a removal is
 
     $acknowledged = rpp_plan($w)->placement->unconfiguredKeys();
 
-    // Year 8's destination now exists, so the fresh set is a strict SUBSET of what was acknowledged.
-    rc_curriculum($w['school'], $w['levels'][7]['dstArm'], $w['targetTerm'], $w['examType']);
+    // Year 8's destination is now genuinely CONFIGURED — the row AND a compulsory subject, because
+    // the row alone is what an earlier run leaves behind and no longer clears the flag. The fresh
+    // set is then a strict SUBSET of what was acknowledged.
+    rpp_compulsory_subject($w, rc_curriculum($w['school'], $w['levels'][7]['dstArm'], $w['targetTerm'], $w['examType']));
 
     expect(rpp_plan($w)->placement->unconfiguredKeys())->toHaveCount(1);
 
@@ -513,7 +602,8 @@ it('refuses a SWAP, where one destination was configured and another deleted and
     $acknowledged = rpp_plan($w)->placement->unconfiguredKeys();
     expect($acknowledged)->toHaveCount(2);
 
-    rc_curriculum($w['school'], $w['levels'][7]['dstArm'], $w['targetTerm'], $w['examType']);
+    // CONFIGURED (row + compulsory subject), and another DELETED — the count is unchanged.
+    rpp_compulsory_subject($w, rc_curriculum($w['school'], $w['levels'][7]['dstArm'], $w['targetTerm'], $w['examType']));
     Curriculum::withoutGlobalScopes()->whereKey($w['levels'][11]['dstCurriculum']->id)->delete();
 
     $fresh = rpp_plan($w)->placement->unconfiguredKeys();
@@ -540,4 +630,133 @@ it('treats a missing acknowledgment as the empty set — safe while nothing is u
     ])->assertStatus(422);
 
     Bus::assertNothingBatched();
+});
+
+// ---------------------------------------------------------------------------
+// THE LEAVING COHORT — counted by the plan, advanced by nobody, and it must still appear
+// ---------------------------------------------------------------------------
+
+/**
+ * A terminal level is SELECTED by planEndOfYear (each level's final slot is the selection criterion,
+ * and "no next slot" is not a failure there), so its pupils are inside `pupil_count` and its
+ * curriculum is dispatched a job that advances none of them.
+ *
+ * Before the graduating bucket they were in no bucket at all, so the confirm's "N pupils across M
+ * classes" sat above a table totalling fewer — and for any school with a leaving year the difference
+ * IS that whole cohort. Every number was individually correct and the screen did not add up.
+ *
+ * Found by cold review; the suite had no terminal-level coverage whatsoever.
+ */
+it('accounts for terminal-level pupils rather than dropping them out of every bucket', function () {
+    $w = rpp_world(0);
+
+    // Year 8 is terminal — rc_level leaves next_class_level_id null, and nothing here sets it.
+    [, $arm12] = rc_level($w['school'], 'Year 12', 12, [1]);
+    $leaving = rc_curriculum($w['school'], $arm12, $w['sourceTerm'], $w['examType']);
+
+    foreach (range(1, 2) as $i) {
+        StudentCurriculum::create([
+            'student_id' => Student::create([
+                'school_id' => $w['school']->id,
+                'first_name' => 'Leaver'.$i,
+                'last_name' => Str::random(6),
+                'gender' => 'male',
+                'admission_number' => 'ADM-'.Str::random(8),
+            ])->id,
+            'curriculum_id' => $leaving->id,
+            'status' => StudentStatusEnum::ACTIVE,
+        ]);
+    }
+
+    $plan = rpp_plan($w);
+
+    // THE PREMISE: they really are counted by the plan. Without this the reconciliation below could
+    // hold because the planner had quietly dropped them from pupil_count too.
+    expect($plan->pupilCount)->toBe(2)
+        ->and($plan->placement->advancers)->toHaveCount(0)
+        ->and($plan->placement->graduating)->toHaveCount(1)
+        ->and($plan->placement->graduating->first()['pupils'])->toHaveCount(2);
+
+    // AND THE TOTAL CLOSES — the property the screen actually renders.
+    expect($plan->placement->accountedPupils())->toBe($plan->pupilCount);
+});
+
+it('reconciles the placement total against the pupil count on a mixed plan', function () {
+    $w = rpp_world(2);
+
+    // A terminal level alongside the advancing one, plus a repeater, so three buckets are non-empty
+    // at once — a single-bucket fixture cannot tell a working sum from one that ignores two terms.
+    [, $arm12] = rc_level($w['school'], 'Year 12', 12, [1]);
+    $leaving = rc_curriculum($w['school'], $arm12, $w['sourceTerm'], $w['examType']);
+
+    StudentCurriculum::create([
+        'student_id' => Student::create([
+            'school_id' => $w['school']->id,
+            'first_name' => 'Leaver',
+            'last_name' => Str::random(6),
+            'gender' => 'male',
+            'admission_number' => 'ADM-'.Str::random(8),
+        ])->id,
+        'curriculum_id' => $leaving->id,
+        'status' => StudentStatusEnum::ACTIVE,
+    ]);
+
+    StudentCurriculum::create([
+        'student_id' => Student::create([
+            'school_id' => $w['school']->id,
+            'first_name' => 'Repeater',
+            'last_name' => Str::random(6),
+            'gender' => 'female',
+            'admission_number' => 'ADM-'.Str::random(8),
+        ])->id,
+        'curriculum_id' => $w['curriculum']->id,
+        'status' => StudentStatusEnum::REPEATED,
+    ]);
+
+    $plan = rpp_plan($w);
+
+    expect($plan->placement->advancers)->toHaveCount(1)
+        ->and($plan->placement->repeaters)->toHaveCount(1)
+        ->and($plan->placement->graduating)->toHaveCount(1)
+        ->and($plan->placement->accountedPupils())->toBe($plan->pupilCount);
+});
+
+// ---------------------------------------------------------------------------
+// COST — the preview is per-DESTINATION, not per-pupil
+// ---------------------------------------------------------------------------
+
+/**
+ * The resolver runs ~5 queries to reach a destination (arm map, arms, exam type, participation slot,
+ * term, curriculum). Asked once per pupil, a 340-pupil year group is ~1,700 queries for an answer
+ * that is a pure function of (level, arm, examType).
+ *
+ * Asserted as a RATIO against pupil count rather than as an absolute number: an absolute would be a
+ * brittle restatement of today's query plan that reds on any unrelated eager-load change, while the
+ * property that matters is that adding pupils to a destination does not add queries.
+ */
+it('does not add queries per pupil once a destination has been resolved', function () {
+    $small = rpp_world(2);
+    $large = rpp_world(12);
+
+    $count = function (array $w): int {
+        $queries = 0;
+        DB::listen(function () use (&$queries) {
+            $queries++;
+        });
+
+        rpp_plan($w);
+
+        return $queries;
+    };
+
+    // The fixtures differ ONLY in roster size — same levels, same arms, one destination each.
+    $smallCount = $count($small);
+    $largeCount = $count($large);
+
+    expect($large['episodes'])->toHaveCount(12)
+        ->and($small['episodes'])->toHaveCount(2);
+
+    // Six times the pupils must not mean six times the queries. The slack absorbs the per-pupil
+    // work that legitimately remains (the eager-loaded episode rows themselves).
+    expect($largeCount)->toBeLessThan($smallCount * 2);
 });

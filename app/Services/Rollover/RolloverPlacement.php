@@ -33,15 +33,46 @@ final class RolloverPlacement
      * @param  Collection<int, PlacementGroup>  $repeaters
      * @param  Collection<int, array{source: string, reason: string, explanation: string, pupils: list<array{id: int, name: string, admission_number: string|null}>}>  $unplaceable
      */
+    /**
+     * @param  Collection<int, array{source: string, pupils: list<array{id: int, name: string, admission_number: string|null}>}>  $graduating
+     */
     public function __construct(
         public readonly Collection $advancers,
         public readonly Collection $repeaters,
         public readonly Collection $unplaceable,
+        /**
+         * TERMINAL-LEVEL PUPILS — the leaving cohort. A fourth bucket, not an omission.
+         *
+         * They are inside `pupil_count` (planEndOfYear selects each level's final slot and does not
+         * filter terminal levels — "no next slot" is the SELECTION CRITERION there, not a failure),
+         * their curriculum is dispatched a job, and the job advances none of them. Left out of every
+         * bucket, they became an unexplained gap: the confirm says "340 pupils across 12 classes"
+         * directly above a table totalling fewer, and for any school with a leaving year the
+         * difference IS that whole cohort.
+         *
+         * Every number was individually correct and the screen still did not add up — which is the
+         * count-honesty lesson this milestone already paid for once, in the other direction.
+         */
+        public readonly Collection $graduating = new Collection,
     ) {}
 
     public static function empty(): self
     {
-        return new self(collect(), collect(), collect());
+        return new self(collect(), collect(), collect(), collect());
+    }
+
+    /**
+     * Every pupil this placement accounts for. The panel reconciles this against `pupil_count`, so a
+     * pupil who falls out of every bucket is VISIBLE as a remainder rather than silently absent.
+     */
+    public function accountedPupils(): int
+    {
+        $inGroups = fn (Collection $groups) => $groups->sum(fn (PlacementGroup $g) => $g->pupilCount());
+
+        return $inGroups($this->advancers)
+            + $inGroups($this->repeaters)
+            + $this->unplaceable->sum(fn (array $u) => count($u['pupils']))
+            + $this->graduating->sum(fn (array $g) => count($g['pupils']));
     }
 
     /**

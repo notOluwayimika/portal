@@ -44,7 +44,17 @@ final class NextYearPlacement
     /** Resolved: there is a destination for this pupil. */
     public const OK = 'ok';
 
-    /** The source level has no `next_class_level_id`. Nobody advances out of a graduating year. */
+    /**
+     * The source level has no `next_class_level_id`. Nobody advances out of a graduating year.
+     *
+     * UNREACHABLE TODAY, and that is recorded rather than left to be discovered. Both callers test
+     * `$targetLevel === null` before asking (MoveToNextYearJob::migrateStudents and
+     * RolloverPlanner::placementFor, which routes those pupils to the graduating bucket), so nothing
+     * observes this constant. It is kept because `forAdvancer` accepts a nullable target level and
+     * must answer SOMETHING for null — deleting it would leave that parameter with no defined
+     * response — but a reason set that lists an outcome nobody can produce reads as more exhaustive
+     * than it is. If a caller ever stops guarding, this is what it will get.
+     */
     public const TERMINAL_LEVEL = 'terminal-level';
 
     /** The target class level has no arms configured at all. */
@@ -68,6 +78,10 @@ final class NextYearPlacement
     /**
      * @param  array<string, mixed>|null  $curriculumKeys  the five-key destination identity
      * @param  Curriculum|null  $curriculum  the destination; null with keys set means "would be created"
+     * @param  bool  $destinationHasCompulsorySubjects  whether the destination has ACTIVE COMPULSORY
+     *                                                  curriculum subjects — the property that
+     *                                                  actually decides whether a pupil lands able to
+     *                                                  study. False when there is no destination yet.
      */
     public function __construct(
         public readonly string $reason,
@@ -75,6 +89,7 @@ final class NextYearPlacement
         public readonly ?int $examTypeId = null,
         public readonly ?array $curriculumKeys = null,
         public readonly ?Curriculum $curriculum = null,
+        public readonly bool $destinationHasCompulsorySubjects = false,
         public readonly ?int $mappedClassLevelId = null,
         public readonly ?int $termOrder = null,
     ) {}
@@ -85,12 +100,37 @@ final class NextYearPlacement
     }
 
     /**
-     * Resolved, but the destination curriculum does not exist yet — so the pupil would land with no
-     * subjects. Only ever true in read-only (preview) mode; the write path creates it.
+     * Resolved, but the destination has NO ACTIVE COMPULSORY SUBJECTS — so a pupil placed there
+     * lands unable to study, and nothing will attach any afterwards.
+     *
+     * ── THIS TESTS SUBJECTS, NOT EXISTENCE, AND THE DIFFERENCE IS THE WHOLE POINT ────────────────
+     * It used to be `$this->curriculum === null`, which measured whether the destination ROW existed.
+     * That is the wrong property, and it fails on precisely the run that matters:
+     *
+     *   Run 1 — destinations do not exist          -> flagged. Nothing is at risk yet; the operator
+     *                                                 is warned about a state they can still fix.
+     *   Run 2 — the RE-RUN the job's own workflow depends on, after the arm or exam-type config is
+     *           corrected and the previously-unresolved pupils finally get placed. Run 1 already
+     *           created those destinations, EMPTY (destination() firstOrCreates with min_subjects,
+     *           status and two scheme ids — and no subjects). They now EXIST, so an existence check
+     *           reads "configured", the panel is silent, the confirm line is silent, and the
+     *           acknowledgment gate passes on an empty set — while the pupils land subject-less.
+     *
+     * So the existence check guarded the run where nothing was at risk and passed the run where
+     * everything was. Keyed now on what StudentSubjectService::autoAttachCompulsorySubjects actually
+     * reads: `curriculumSubjects()->active()->where('is_compulsory', true)`. Non-existence is
+     * subsumed — a destination that is not there has no subjects either.
+     *
+     * KNOWN FALSE POSITIVE, accepted deliberately: a class level that legitimately runs no compulsory
+     * subjects will flag on every rollover. That is the noise-teaches-skipping problem and it is a
+     * real cost — but it is the lesser evil against a cohort landing subject-less in silence, and
+     * distinguishing "intentionally empty" from "not configured yet" needs a signal the schema does
+     * not carry today. Watch for it on the drive; it is a follow-up, not a reason to keep measuring
+     * the wrong thing.
      */
     public function destinationIsUnconfigured(): bool
     {
-        return $this->resolved() && $this->curriculum === null;
+        return $this->resolved() && ! $this->destinationHasCompulsorySubjects;
     }
 
     /**

@@ -9,6 +9,7 @@ use App\Models\ClassLevelArmProgression;
 use App\Models\ClassLevelExamType;
 use App\Models\ClassLevelTermParticipation;
 use App\Models\Curriculum;
+use App\Models\CurriculumSubject;
 use App\Models\MarkingScheme;
 use App\Models\Scopes\SchoolScope;
 use App\Models\StudentCurriculum;
@@ -45,6 +46,23 @@ final class NextYearPlacementResolver
 {
     /** @var array<int, Collection<int, ClassLevelArm>> keyed by class level id */
     private array $armCache = [];
+
+    /** @var array<int, bool> keyed by curriculum id */
+    private array $subjectCache = [];
+
+    /** @var array<int, int|null> keyed by class level id */
+    private array $examTypeCache = [];
+
+    /**
+     * @var array<string, NextYearPlacement> keyed by "levelId:armId:examTypeId"
+     *
+     * WRITE-MODE RESULTS ARE NOT CACHED. In read-only mode the destination is a pure function of
+     * (level, arm, examType) and the same answer serves every pupil bound for it. The write path
+     * firstOrCreates, and caching a create would hide from the second caller that the row now exists
+     * — harmless today because firstOrCreate is idempotent, but it is the kind of "cache a write"
+     * that stops being harmless the moment anything downstream reads `wasRecentlyCreated`.
+     */
+    private array $destinationCache = [];
 
     public function __construct(
         private readonly Curriculum $source,
@@ -195,6 +213,23 @@ final class NextYearPlacementResolver
      */
     private function resolveExamType(ClassLevel $targetLevel): ?int
     {
+        $levelId = (int) $targetLevel->id;
+
+        if (array_key_exists($levelId, $this->examTypeCache)) {
+            return $this->examTypeCache[$levelId];
+        }
+
+        return $this->examTypeCache[$levelId] = $this->computeExamType($targetLevel);
+    }
+
+    /**
+     * `array_key_exists` rather than `??=`, because NULL is a MEANINGFUL answer here — "the target
+     * level runs neither this exam type nor a default, so refuse rather than guess". `??=` would
+     * treat that as a cache miss and re-query for every pupil in the cohort, which is the one case
+     * where the answer is guaranteed identical.
+     */
+    private function computeExamType(ClassLevel $targetLevel): ?int
+    {
         $sourceExamTypeId = $this->source->exam_type_id;
 
         $inTargetSet = ClassLevelExamType::withoutGlobalScope(SchoolScope::class)
@@ -219,6 +254,25 @@ final class NextYearPlacementResolver
      * refuses and the pupil is left for a re-run after the calendar is entered.
      */
     private function destination(ClassLevel $level, ClassLevelArm $arm, int $examTypeId, bool $create): NextYearPlacement
+    {
+        // Memoised for the PREVIEW only — the planner asks once per pupil and the answer is a pure
+        // function of (level, arm, examType). Five queries per pupil became five per destination.
+        $cacheKey = $level->id.':'.$arm->id.':'.$examTypeId;
+
+        if (! $create && isset($this->destinationCache[$cacheKey])) {
+            return $this->destinationCache[$cacheKey];
+        }
+
+        $placement = $this->resolveDestination($level, $arm, $examTypeId, $create);
+
+        if (! $create) {
+            $this->destinationCache[$cacheKey] = $placement;
+        }
+
+        return $placement;
+    }
+
+    private function resolveDestination(ClassLevel $level, ClassLevelArm $arm, int $examTypeId, bool $create): NextYearPlacement
     {
         $firstSlot = ClassLevelTermParticipation::withoutGlobalScope(SchoolScope::class)
             ->where('school_id', $this->schoolId)
@@ -270,8 +324,37 @@ final class NextYearPlacementResolver
             examTypeId: $examTypeId,
             curriculumKeys: $keys,
             curriculum: $curriculum,
+            destinationHasCompulsorySubjects: $this->hasCompulsorySubjects($curriculum),
             termOrder: (int) $firstSlot->term_order,
         );
+    }
+
+    /**
+     * Does this destination have anything for a pupil to study?
+     *
+     * The EXACT predicate StudentSubjectService::autoAttachCompulsorySubjects uses when it decides
+     * what to attach — `curriculumSubjects()->active()->where('is_compulsory', true)`. Written as the
+     * same query rather than as a similar one, because the two agreeing is the entire value of the
+     * warning: a screen that flags on a different rule than the attach uses is a screen that lies in
+     * one direction or the other.
+     *
+     * A null destination is false without a query — it cannot have subjects if it does not exist.
+     *
+     * Memoised per curriculum id: the planner asks once per PUPIL, and this is a property of the
+     * CURRICULUM. Same reasoning as the arm cache, and it holds for a run because a preview is a
+     * read of one moment.
+     */
+    private function hasCompulsorySubjects(?Curriculum $curriculum): bool
+    {
+        if ($curriculum === null) {
+            return false;
+        }
+
+        return $this->subjectCache[(int) $curriculum->id] ??= CurriculumSubject::withoutGlobalScope(SchoolScope::class)
+            ->where('curriculum_id', $curriculum->id)
+            ->active()
+            ->where('is_compulsory', true)
+            ->exists();
     }
 
     /**

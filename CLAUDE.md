@@ -146,19 +146,30 @@ operational facts an agent needs most often.
   it asserts that the implementation equals itself. The arm expectation is built from
   an explicitly-ordered query, not from the resolver's own ordering — which is why
   flipping `orderBy('id')` to `orderByDesc('id')` reds it.
-- **An acknowledgment the server never receives is theatre, and theatre is worse than
-  absence.** The rollover confirm asked an operator to accept a risk and sent the
-  server two session ids, so the commit could not distinguish an acknowledged plan
-  from an unacknowledged one, and every divergence signal it emitted came from
-  `queued()` — *after* dispatch. The control existed entirely in the client. Same
-  family as a stated rule with no lint behind it: an unenforced control does not
-  merely fail to protect, it **manufactures the confidence that stops anyone
-  looking**. Before adding a confirmation, ask what crosses the wire and what
-  compares it. And when you enforce one, **acknowledge the SET, not the count** — a
-  count cannot tell "these two" from "some other two", and the swap is the case that
-  slips through. Server-enforce divergence precisely where post-write reporting is
-  too late because the divergence is unrecoverable; leave benign divergences to the
-  client.
+- **A control the server never receives is theatre, and theatre is worse than
+  absence.** The rollover commit took two session ids and nothing else, so it could
+  not distinguish a plan the operator had read from one a client had merely fetched,
+  and every divergence signal it emitted came from `queued()` — *after* dispatch. The
+  check existed entirely in the client. Same family as a stated rule with no lint
+  behind it: an unenforced control does not merely fail to protect, it **manufactures
+  the confidence that stops anyone looking**. Before adding one, ask what crosses the
+  wire and what compares it. And when you enforce one over a set of things, **compare
+  the SET, not the count** — a count cannot tell "these two" from "some other two",
+  and the swap is the case that slips through. Server-enforce divergence precisely
+  where post-write reporting is too late because the divergence is unrecoverable;
+  leave benign divergences to the client.
+
+  **Name it for what it is.** What was built here is a **staleness gate**: the server
+  re-plans and refuses if the unsafe set grew since the client's last preview. It is
+  NOT an acknowledgment — no operator gesture is bound to it, and the client echoes
+  the last preview automatically, so it cannot tell "the operator read the warning and
+  accepted it" from "a client fetched a preview". Calling it an acknowledgment was an
+  overclaim, and it was caught by cold review *in the very entry describing this
+  lesson* — which is the lesson twice over: **a claim wider than its artifact is the
+  same defect as a control with no enforcement, one level up.** Resolve it by asking
+  whether the claim is the GOAL — if it is, fix the artifact; if the artifact is right
+  and the words overreached, fix the words. Leaving the gap open is the theatre this
+  rule warns about.
 
 ## Workflow
 

@@ -3,8 +3,14 @@
 **Branch:** `feat/rollover-placement-preview`
 **Base:** `staging` @ `4b0383e5` (the merge of PR #296; verified with `bin/landed`, which confirmed
 containment *and* that the merge took the reviewed head `2e431fea`)
-**Shape:** 4 commits · 4 new PHP classes · 1 new test file (12 tests) · 1 job refactor · 1 screen ·
-runbook + `CLAUDE.md`
+**Shape:** 6 commits pre-review, +1 after · 4 new PHP classes · 1 new test file · 1 job refactor ·
+1 screen · runbook + `CLAUDE.md`. Re-derive with `git log --oneline 4b0383e5..HEAD` rather than
+trusting this line — an earlier revision said 4 and was stale by two, which cold review caught.
+
+**Post-review revision.** Everything below the divider was written before the cold read. The review
+returned one blocking `fix` and four tickets; the lead's calls and what changed are in
+"After the cold review" at the end. **Read that section first** — it corrects a predicate error at
+the centre of the feature that this report originally described as working.
 
 ---
 
@@ -57,7 +63,8 @@ did not move. **The job's behaviour is unchanged — only the log line differs.*
 | `app/Http/Requests/RolloverEndOfYearRequest.php` | `+ acknowledged_unconfigured` |
 | `resources/js/pages/admin/academics/rollover.tsx` | placement table, subject note (EOY only), confirm line, opaque echo |
 | `docs/handoff/drive-runbooks/m4-rollover-surface.md` | four new steps (§§8–10 + hand-back items) |
-| `CLAUDE.md` | two lessons |
+| `tests/Arch/RolloverSeamTest.php` | +6 — adds `placement` to the pinned `RolloverPlan` field list |
+| `CLAUDE.md` | three lessons |
 
 ---
 
@@ -76,11 +83,12 @@ parity tests, and the second exists *because a mutation showed the first was not
 calls. Two, because a preview that wrote would report the destination as configured on the second
 look, silently removing the flag the screen exists to raise.
 
-**The acknowledgment is binding.** `RolloverEndOfYearRequest` previously accepted two session ids and
-nothing else, so the server could not distinguish an acknowledged plan from an unacknowledged one, and
-every divergence signal came from `queued()` — after `dispatchEndOfYear`. Now a **subset** check runs
-before dispatch, over destination **identities** derived from the five resolved keys (not curriculum
-ids — the destinations that matter are precisely the ones with no id yet).
+**There is a server-side staleness gate over the unsafe set.** *(This paragraph originally read "the
+acknowledgment is binding" — see the correction in "After the cold review".)*
+`RolloverEndOfYearRequest` previously accepted two session ids and nothing else, so the server had
+nothing to compare and every divergence signal came from `queued()` — after `dispatchEndOfYear`. Now a
+**subset** check runs before dispatch, over destination **identities** derived from the five resolved
+keys (not curriculum ids — the destinations that matter are precisely the ones with no id yet).
 
 ---
 
@@ -180,3 +188,117 @@ Pre-existing, cosmetic, out of scope.
 `bin/quality` — see the run appended at commit time. `MoveToNextYearJobTest` 17/17 unmodified;
 73 rollover-surface tests green; `tsc` 42 errors, exactly the ratchet baseline, none in the changed
 file.
+
+
+---
+---
+
+# After the cold review
+
+The cold read returned **one blocking `fix`, four tickets and one note**. Every one was accepted; the
+lead upgraded one ticket to fix-on-branch and declined the narrow option on the blocker. This section
+is the record of what changed, and it supersedes anything above that contradicts it.
+
+## The blocker — the readiness flag was measuring the wrong property
+
+`destinationIsUnconfigured()` tested `curriculum === null` — whether the destination ROW existed. The
+hazard is a pupil landing with nothing to study, and `autoAttachCompulsorySubjects` reads
+`curriculumSubjects()->active()->where('is_compulsory', true)`. Those are not the same question, and
+the gap is produced by this job's own documented workflow:
+
+| | destination exists? | has subjects? | old flag | correct |
+| --- | --- | --- | --- | --- |
+| Run 1 | no | no | **flagged** | flagged |
+| Run 2 (the re-run after fixing arm/exam-type config) | **yes** — run 1 created it empty | **no** | **silent** | flagged |
+
+So the flag guarded the run where nothing was at risk and passed the run where everything was: on the
+re-run the count reads 0, the panel and the confirm line are both silent, the staleness gate passes on
+an empty set, and the remaining pupils land subject-less.
+
+**Fixed by widening the artifact, not narrowing the copy** — "don't let pupils land subject-less" is
+the reason the feature exists, so the claim is the goal. `NextYearPlacement` now carries
+`destinationHasCompulsorySubjects`, computed by the resolver with the *same query the attach path
+uses*, memoised per curriculum. `destinationCurriculumId` is kept as information (it still
+distinguishes "would be created" from "exists but empty" in the copy) but is no longer the predicate.
+
+Three tests added, and the original honesty test corrected — it had created the destination with
+`rc_curriculum()` (which attaches nothing) and asserted the count was 0, so it *pinned the defect*:
+
+- a destination that **exists but teaches nothing** stays flagged;
+- an **archived** compulsory subject and an **active optional** one do NOT clear it, asserted before
+  the qualifying case, so a flag that cleared on any subject at all cannot pass;
+- **watched red (mutation 7):** reverting both predicates to the existence check reds three tests.
+
+Four fixtures needed correcting: they had "configured" destinations built with `rc_curriculum()`
+alone, which under the corrected predicate are unconfigured — the fixtures had encoded the same
+mistake the predicate did.
+
+**Accepted residual:** a class level that legitimately runs no compulsory subjects now flags on every
+rollover. That is the noise-teaches-skipping cost, and it is real — but it is the lesser evil against
+a silent subject-less cohort, and distinguishing "intentionally empty" from "not configured" needs a
+signal the schema does not carry. **Watch for it on the drive**; follow-up, not a blocker.
+
+## Upgraded to fix-on-branch — the leaving cohort was in no bucket
+
+Terminal-level pupils are inside `pupil_count` (end-of-year selects each level's final slot; "no next
+slot" is the selection criterion there, not a failure) and are advanced by nobody. They appeared in no
+bucket, so the confirm's "N pupils across M classes" sat above a table totalling fewer — and for any
+school with a leaving year the difference is that whole cohort. Every number individually correct, and
+the screen did not add up, which is this milestone's own count-honesty lesson pointing the other way.
+
+Added a fourth `graduating` bucket plus `accountedPupils()`, and the panel renders a reconciliation
+line **only when the total fails to close**, so the normal case stays quiet. Two tests: a terminal-only
+plan, and a mixed plan with three buckets non-empty at once — a single-bucket fixture cannot tell a
+working sum from one that ignores two terms. The suite previously had **no terminal-level coverage at
+all**.
+
+## Widened the artifact to match the claim — per-pupil query cost
+
+The report had claimed caching covered the per-pupil cost; it covered one axis (arms) of five.
+`resolveExamType()` and `destination()` are now memoised in the same shape — the destination is a pure
+function of (level, arm, examType), so five queries per *pupil* became five per *destination*.
+
+`array_key_exists` rather than `??=` for the exam type, because NULL is a meaningful answer there
+("refuse rather than guess") and `??=` would treat it as a miss and re-query every pupil. Write-mode
+results are deliberately **not** cached — caching a `firstOrCreate` hides from the second caller that
+the row now exists.
+
+Pinned by a test asserting the **ratio**, not an absolute query count: six times the pupils must not
+mean six times the queries. An absolute number would be a brittle restatement of today's query plan.
+**Watched red (mutation 8):** removing the memoisation reds it.
+
+## Claims narrowed rather than artifacts changed
+
+**The staleness gate is not an acknowledgment.** No operator gesture is bound to it; the client echoes
+the last preview automatically, so the server cannot tell "the operator read the warning and accepted
+it" from "a client fetched a preview". The mechanism is sound and stays; the *name* was wrong. Both
+this report and the `CLAUDE.md` entry now call it a staleness gate — and the `CLAUDE.md` entry records
+that the overclaim was caught **inside the very lesson about unenforced controls**, which is the point
+twice over.
+
+**Binding it to a real operator gesture is a genuine deferral candidate** — an unrecoverable warning
+arguably deserves a "proceed anyway" the server verifies, and that is the honest end state of "make
+the warn unskimmable". Not built; deadline-dependent.
+
+**`TERMINAL_LEVEL` is unreachable** — both callers guard `$targetLevel === null` before asking. Kept,
+because `forAdvancer` accepts a nullable level and must answer something, but now documented as
+unreachable rather than left to read as a producible outcome.
+
+## The through-line
+
+Three of the six findings were the same shape: **a claim wider than its artifact.** The resolution
+differs by whether the claim is the goal — the readiness flag and the query cost were fixed by
+widening the artifact; the acknowledgment was fixed by narrowing the words. Leaving any of them open
+is the theatre the branch's own `CLAUDE.md` rule warns about, which is why none were left open. That
+generalisation is now in `CLAUDE.md`; it is a failure mode this kind of work produces systematically,
+not a one-off.
+
+## Still not done
+
+- **The screen is undriven.** Unchanged, and now with more to see: the corrected flag, the graduating
+  bucket, and the reconciliation line.
+- **`DESTINATION_NOT_CONFIGURED` as a hold** — ticketed, not built.
+- **The binding gesture** — see above.
+- **The intentional-empty refinement** — see the accepted residual.
+- **Placement is still unmeasured on a real cohort.** The ratio test proves it does not scale with
+  pupils; it does not prove the absolute number is acceptable on Brookstone's data.

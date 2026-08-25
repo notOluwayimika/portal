@@ -17,6 +17,7 @@ import { Fragment, useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
 import { FinanceStatCard } from '@/components/finance/finance-stat-card';
+import { MoneyInput } from '@/components/finance/money-input';
 import { StatusPill } from '@/components/finance/status-pill';
 import type { StatusTone } from '@/components/finance/status-pill';
 import Select from '@/components/ui/base-dropdown';
@@ -25,7 +26,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Modal from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/spinner';
-import { formatNaira, minorToNairaInput, nairaToMinor } from '@/lib/format';
+import { formatNaira } from '@/lib/format';
 
 /**
  * The school's discount policies — the catalog every reduction on an invoice has to cite (U2).
@@ -70,8 +71,9 @@ import { formatNaira, minorToNairaInput, nairaToMinor } from '@/lib/format';
  * succeeds unless the new name collides with an active row. Filed:
  * docs/handoff/tickets/discount-policy-changes-do-not-check-target-status.md.
  *
- * THE FRONTEND COMPUTES NO MONEY. An amount policy's value goes in through nairaToMinor and is read
- * back through formatNaira/minorToNairaInput; a percent policy is NOT money and touches neither — it
+ * THE FRONTEND COMPUTES NO MONEY. An amount policy's value enters and leaves this file as integer
+ * minor units — <MoneyInput> owns the conversion at the field and formatNaira renders it back in
+ * valueLabel; a percent policy is NOT money and touches neither — it
  * is an integer 1..100 (`unsignedTinyInteger`, CHECK-bounded in the migration). There is no `* 100`,
  * no parseFloat, no toFixed and no Intl in this file; bin/ci-money-lint.php is a gate step and this
  * file sits inside its strict zone (`resources/js/pages/admin/finance/`). THE KPI CARDS COUNT ROWS
@@ -114,9 +116,10 @@ type FormState = {
     name: string;
     description: string;
     basis: Basis;
-    // As typed, in naira — converted at submit by nairaToMinor. Only read when basis = 'amount'.
-    amount: string;
-    // As typed. An integer 1..100, and NOT money: it never goes near nairaToMinor.
+    // Integer minor units, or null when the field is empty. <MoneyInput> converts at the field,
+    // so nothing here parses at submit. Only read when basis = 'amount'.
+    amountMinor: number | null;
+    // As typed. An integer 1..100, and NOT money: it never goes near the naira helpers.
     percent: string;
     requiresApproval: boolean;
     reason: string;
@@ -126,7 +129,7 @@ const EMPTY: FormState = {
     name: '',
     description: '',
     basis: 'percent',
-    amount: '',
+    amountMinor: null,
     percent: '',
     requiresApproval: false,
     reason: '',
@@ -291,13 +294,7 @@ export default function DiscountPolicies() {
             name: policy.name,
             description: policy.description ?? '',
             basis: policy.basis,
-            amount:
-                policy.value_minor !== null && policy.value_currency !== null
-                    ? minorToNairaInput({
-                          amount_minor: policy.value_minor,
-                          currency: policy.value_currency,
-                      })
-                    : '',
+            amountMinor: policy.value_minor,
             percent: policy.percent === null ? '' : String(policy.percent),
             requiresApproval: policy.requires_approval,
             reason: '',
@@ -332,9 +329,7 @@ export default function DiscountPolicies() {
         }
 
         if (form.basis === 'amount') {
-            const minor = nairaToMinor(form.amount);
-
-            if (minor === null || minor < 1) {
+            if (form.amountMinor === null || form.amountMinor < 1) {
                 found.value_minor =
                     'Enter the amount taken off, in naira — for example 25000 or 2500.50.';
             }
@@ -388,7 +383,7 @@ export default function DiscountPolicies() {
                       requires_approval: form.requiresApproval,
                       ...(form.basis === 'amount'
                           ? {
-                                value_minor: nairaToMinor(form.amount),
+                                value_minor: form.amountMinor,
                                 value_currency: DEFAULT_CURRENCY,
                             }
                           : { percent: Number(form.percent.trim()) }),
@@ -1093,15 +1088,14 @@ export default function DiscountPolicies() {
                                         <Label htmlFor="dp-amount">
                                             Amount off (₦)
                                         </Label>
-                                        <Input
+                                        <MoneyInput
                                             id="dp-amount"
-                                            value={form.amount}
-                                            inputMode="decimal"
+                                            value={form.amountMinor}
                                             placeholder="25000"
-                                            onChange={(e) =>
+                                            onChange={(amountMinor) =>
                                                 setForm({
                                                     ...form,
-                                                    amount: e.target.value,
+                                                    amountMinor,
                                                 })
                                             }
                                         />

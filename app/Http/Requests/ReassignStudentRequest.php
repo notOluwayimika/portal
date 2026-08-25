@@ -118,8 +118,9 @@ class ReassignStudentRequest extends FormRequest
             if (! in_array((int) $destination->id, array_map('intval', $siblingIds), true)) {
                 $validator->errors()->add(
                     'destination_curriculum_id',
-                    'That class is not an alternative arm of this pupil’s current class. A pupil can '
-                    .'only be reassigned within the same year group, term and exam type.'
+                    'That class is not in this pupil’s current cohort. A pupil can only be '
+                    .'reassigned within the same year group and term. Exam type and arm may change; '
+                    .'moving between CCM and non-CCM cannot be done here.'
                 );
 
                 return;

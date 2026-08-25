@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\StudentStatusEnum;
 use App\Finance\Actions\ApproveVoidRequest;
 use App\Finance\Actions\SubmitVoidRequest;
 use App\Finance\Models\BankAccount;
@@ -10,11 +11,15 @@ use App\Models\ClassLevel;
 use App\Models\ClassLevelArm;
 use App\Models\ClassLevelTermParticipation;
 use App\Models\Curriculum;
+use App\Models\CurriculumSubject;
 use App\Models\ExamType;
 use App\Models\Guardian;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\School;
+use App\Models\Student;
+use App\Models\StudentCurriculum;
+use App\Models\Subject;
 use App\Models\Term;
 use App\Models\User;
 use App\Services\Rollover\RolloverBatchName;
@@ -397,4 +402,125 @@ function rollover_plan(
         warnings: [],
         blockedBy: $blockedBy,
     );
+}
+
+/*
+|--------------------------------------------------------------------------
+| Reassignment fixture — one Year 8 cohort with arms B and S
+|--------------------------------------------------------------------------
+|
+| Built for StudentReassignmentTest (M3, the single move) and shared with
+| StudentBulkReassignmentTest (the cohort move) because both need the SAME
+| world: a true sibling arm, a same-school non-sibling in another year group,
+| and a second school for isolation.
+|
+| It lives here rather than being copied into the second file for the reason
+| CohortSiblings gives about its own query: two copies of a fixture drift, and
+| a drifted fixture is worse than a duplicated one because the tests keep
+| passing while they stop describing the same system. Moved rather than
+| duplicated when the bulk tests arrived.
+|
+*/
+
+function sr_admin(School $school): User
+{
+    $user = al_makeUser($school->id);
+
+    $permission = Permission::where('name', 'academic_setup.manage')->where('guard_name', 'web')->first()
+        ?? Permission::create(['name' => 'academic_setup.manage', 'guard_name' => 'web']);
+
+    setPermissionsTeamId($school->id);
+    $user->givePermissionTo($permission);
+
+    return $user;
+}
+
+function sr_arm(School $school, ClassLevel $level, string $label): ClassLevelArm
+{
+    return ClassLevelArm::forceCreate([
+        'school_id' => $school->id,
+        'class_level_id' => $level->id,
+        'arm_id' => Arm::firstOrCreate(['school_id' => $school->id, 'label' => $label])->id,
+    ]);
+}
+
+function sr_curriculum(School $school, ClassLevelArm $arm, ExamType $examType, Term $term): Curriculum
+{
+    $curriculum = Curriculum::create([
+        'school_id' => $school->id,
+        'term_id' => $term->id,
+        'class_level_arm_id' => $arm->id,
+        'exam_type_id' => $examType->id,
+        'status' => 'active',
+        'is_ccm' => false,
+        'min_subjects' => 1,
+    ]);
+
+    // A compulsory subject so the service's additive auto-attach actually runs, rather than the
+    // move being proved against a curriculum that requires nothing.
+    CurriculumSubject::create([
+        'curriculum_id' => $curriculum->id,
+        'subject_id' => Subject::create(['school_id' => $school->id, 'name' => 'Subj '.Str::random(5)])->id,
+        'is_compulsory' => true,
+    ]);
+
+    return $curriculum;
+}
+
+function sr_school(string $name): array
+{
+    $school = al_makeSchool();
+    $admin = sr_admin($school);
+
+    $session = AcademicSession::create([
+        'school_id' => $school->id,
+        'name' => '2025/2026',
+        'slug' => 'as-'.Str::random(8),
+    ]);
+    $term = Term::create([
+        'school_id' => $school->id,
+        'academic_session_id' => $session->id,
+        'name' => 'First Term',
+        'slug' => 'tm-'.Str::random(8),
+        'order' => 1,
+        // Both NOT NULL without defaults; the dates are irrelevant to reassignment but the row will
+        // not insert without them.
+        'start_date' => now()->subMonth(),
+        'end_date' => now()->addMonth(),
+    ]);
+    $examType = ExamType::create([
+        'school_id' => $school->id,
+        'name' => 'Internal',
+        'slug' => 'et-'.Str::random(8),
+    ]);
+
+    $y8 = ClassLevel::forceCreate(['school_id' => $school->id, 'name' => 'Year 8', 'order' => 8]);
+    $y9 = ClassLevel::forceCreate(['school_id' => $school->id, 'name' => 'Year 9', 'order' => 9]);
+
+    $c8B = sr_curriculum($school, sr_arm($school, $y8, 'B'), $examType, $term);
+    $c8S = sr_curriculum($school, sr_arm($school, $y8, 'S'), $examType, $term);
+    // SAME school, same term, same exam type — and a different YEAR GROUP. This is the row that
+    // isolates the sibling rule: no school guard can refuse it.
+    $c9B = sr_curriculum($school, sr_arm($school, $y9, 'B'), $examType, $term);
+
+    $student = Student::create([
+        'school_id' => $school->id,
+        'first_name' => 'Pupil',
+        'last_name' => Str::random(6),
+        'gender' => 'male',
+        'admission_number' => 'ADM-'.Str::random(8),
+    ]);
+
+    $episode = StudentCurriculum::create([
+        'student_id' => $student->id,
+        'curriculum_id' => $c8B->id,
+        'status' => StudentStatusEnum::ACTIVE,
+    ]);
+
+    return compact('school', 'admin', 'session', 'term', 'examType', 'y8', 'y9', 'c8B', 'c8S', 'c9B', 'student', 'episode');
+}
+
+function sr_world(): array
+{
+    return sr_school('primary');
 }

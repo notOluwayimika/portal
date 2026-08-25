@@ -55,7 +55,44 @@ class StudentResource extends JsonResource
                 'stream' => $classLevelArm?->stream?->name,
                 'full_class' => $this->student_class ?? 'N/A',
             ],
+            // ── LEAKS A RAW AUTO-INCREMENT ID, AND IS LEFT ALONE ANYWAY ───────────────────────────
+            // This contradicts the convention StudentCurriculumResource states (uuids on the wire,
+            // never database ids), and it is NOT fixed here: whatever consumes it today would break
+            // silently, and finding that out is its own change with its own blast radius. The new
+            // uuid fields below sit BESIDE it rather than replacing it, and the leak is recorded as
+            // its own ticket so "we added fields next to it" does not quietly bless it forever.
             'curriculum_id' => $curriculum?->id,
+            // ── THE TWO FIELDS BULK REASSIGNMENT NEEDS ────────────────────────────────────────────
+            // `current_episode_id` is the EPISODE, not the pupil, and the bulk endpoint takes these
+            // rather than student uuids on purpose: if a pupil is moved between page load and
+            // submit, a student uuid would silently re-derive "current" and move whichever episode
+            // they now hold — the wrong one, with no error. An episode uuid mismatches instead, and
+            // names the pupil.
+            'current_episode_id' => $currentCurriculum?->uuid,
+            'curriculum_uuid' => $curriculum?->uuid,
+            // ── THE COHORT KEY THE BULK LOCK COMPARES ─────────────────────────────────────────────
+            // (class level, term, is_ccm) — the same triple CohortSiblings matches on, assembled
+            // server-side so the client cannot re-derive it differently. It is NOT `curriculum_uuid`:
+            // two pupils in different curricula of one cohort (different arm, or different exam type)
+            // are reassignable together, and keying the client on curriculum would disable the button
+            // for a selection the server would happily accept.
+            //
+            // Nor is it the class LABEL, which is the other tempting shortcut: a label collapses exam
+            // type and CCM entirely, so two pupils rendering "Year 9 B" can sit in different cohorts.
+            // Opaque on purpose — it is an equality token, and nothing should parse it.
+            // `$classLevelArm` is reached through `$curriculum?->classLevelArm`, so a non-null arm
+            // proves a non-null curriculum — hence plain `->` inside the branch, which is what
+            // Larastan requires rather than merely permits.
+            'cohort_key' => $classLevelArm?->class_level_id === null
+                ? null
+                : implode(':', [
+                    $classLevelArm->class_level_id,
+                    // Nullable, and the placeholder matters: two term-less curricula in one level
+                    // must compare EQUAL, which `null` interpolated as '' would also achieve — but
+                    // only by accident. Stated so it survives a refactor.
+                    $curriculum->term_id ?? '-',
+                    (int) (bool) $curriculum->is_ccm,
+                ]),
             'student_curricula' => StudentCurriculumResource::collection($this->whenLoaded('studentCurricula')),
             'admission_date' => $this->admission_date?->toDateString(),
             'address' => $this->address,

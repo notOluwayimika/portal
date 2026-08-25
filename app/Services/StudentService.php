@@ -20,25 +20,11 @@ class StudentService
 
     public function paginate(Request $request): LengthAwarePaginator
     {
-        return Student::query()
-            ->when($request->search, function ($q) use ($request) {
-                $searchTerm = '%'.$request->search.'%';
-                $q->where('first_name', 'LIKE', $searchTerm)
-                    ->orWhere('last_name', 'LIKE', $searchTerm)
-                    ->orWhere('admission_number', 'LIKE', $searchTerm);
-            })
-            // Filter by the student's ACTIVE enrolment's class level and/or arm.
-            // Applying both narrows to a single class-level-arm, because a student
-            // has one active curriculum bound to one class_level_arm — the two
-            // filters compose to "this class level AND this arm".
-            ->when($request->filled('class_level'), function ($q) use ($request) {
-                $q->whereHas('currentCurriculum.curriculum.classLevelArm.classLevel',
-                    fn ($cl) => $cl->where('uuid', $request->string('class_level')));
-            })
-            ->when($request->filled('arm'), function ($q) use ($request) {
-                $q->whereHas('currentCurriculum.curriculum.classLevelArm.arm',
-                    fn ($a) => $a->where('uuid', $request->string('arm')));
-            })
+        // The filter set lives in StudentIndexFilters so the export cannot answer this question
+        // differently — see that class. The search clause is GROUPED there, which it was not here:
+        // ungrouped, `A OR B OR C AND EXISTS(class level)` binds as `A OR B OR (C AND EXISTS)`, so
+        // searching a first or last name silently ignored the class-level and arm filters.
+        return StudentIndexFilters::apply(Student::query(), $request)
             ->with([
                 'photoFile',
                 'currentCurriculum.curriculum.classLevelArm.classLevel',

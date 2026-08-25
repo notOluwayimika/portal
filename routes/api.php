@@ -21,6 +21,7 @@ use App\Http\Controllers\ScholarshipController;
 use App\Http\Controllers\SessionController;
 use App\Http\Controllers\SetupController;
 use App\Http\Controllers\SportHouseController;
+use App\Http\Controllers\StudentBulkReassignmentController;
 use App\Http\Controllers\StudentController;
 use App\Http\Controllers\StudentCurriculumController;
 use App\Http\Controllers\StudentReassignmentController;
@@ -214,6 +215,9 @@ Route::middleware(['auth:sanctum', 'tenant', 'permission:academic_setup.manage']
     Route::get('/student-curricula/{studentCurriculum:uuid}/reassignment-options', [StudentReassignmentController::class, 'show']);
     Route::post('/student-curricula/{studentCurriculum:uuid}/reassign', [StudentReassignmentController::class, 'store']);
 
+    // The cohort form of the same correction: every pupil in 9B to 9S in one all-or-nothing batch.
+    // Same permission as the single move above — it is the same operation, applied to a selection.
+    Route::post('/students/bulk-reassign', [StudentBulkReassignmentController::class, 'store']);
 });
 
 // ── M4 · ROLLOVER OPERATOR SURFACE ────────────────────────────────────────────────────────────────

@@ -19,24 +19,43 @@ use Illuminate\Support\Collection;
  * than duplicating it between the config screen and the rollover gate.
  *
  * ── WHAT "SAME COHORT" MEANS, AND WHY IT IS EXACTLY THIS SET ──────────────────────────────────────
- * The migration jobs only ever produce placements that share (class level, term, exam type, is_ccm)
- * and differ in arm. So this set is precisely "a placement a job could have produced instead" — which
- * makes reassignment correct-by-construction: it can rearrange what the jobs did, and it cannot
- * invent a placement no job would ever create.
+ * A curriculum is a valid destination iff it shares (class level, term, is_ccm) with the pupil's
+ * current placement and IS NOT that placement. Arm and exam type are both free.
  *
  * SESSION IS NOT A SEPARATE AXIS: a term belongs to exactly one academic session, so an equal
  * `term_id` already pins the session. Adding a session join would be a second, redundant statement of
  * the same constraint — and a place for the two to disagree later.
  *
- * CROSS-EXAM-TYPE IS DEFERRED, NOT OVERLOOKED. Moving a pupil between exam tracks by hand is a
- * different operation with different billing and marking-scheme consequences, and it is deliberately
- * not buildable from this screen. Widening it means relaxing the `exam_type_id` match here AND
- * revisiting what the sibling rule protects — a decision, not a one-line change.
+ * ── EXAM TYPE WAS IN THIS KEY AND HAS BEEN REMOVED, DELIBERATELY ──────────────────────────────────
+ * It used to match, and the docblock here used to argue that cross-exam-type moves were "a different
+ * operation" deferred pending a decision. THAT DECISION HAS BEEN TAKEN AND WENT THE OTHER WAY, so
+ * the argument is recorded as superseded rather than quietly deleted.
+ *
+ * The reason it went the other way: under curriculum-as-truth, exam type is just one axis of the
+ * destination curriculum, and the placement being corrected is PROVISIONAL. MoveToNextYearJob picks
+ * an exam type by "carry the source's if the target level runs it, else the level default" — a
+ * reasonable guess made without a human, and routinely the wrong one. Year 10 B/WAEC → Year 10 S/BSS
+ * is the ordinary correction, not an exotic one. A rule that forbade it left the operator with a
+ * misplaced pupil and no way to fix it from the screen built to fix misplacements.
+ *
+ * WHAT THIS COST, STATED PLAINLY: the set is no longer "a placement a job could have produced
+ * instead" — it is wider than that, because a job would not have crossed exam tracks. Reassignment is
+ * therefore no longer correct-by-construction against the jobs, and the guarantee now rests on the
+ * three axes that remain. `is_ccm` in particular is doing more work than before: it is the only thing
+ * standing between this screen and a CCM crossing, which belongs to MoveFromCcmJob and not to a
+ * manual move.
+ *
+ * TWO CLAUSES CHANGED, NOT ONE. Dropping the `exam_type_id` match alone would have been a half-fix:
+ * the exclusion below used to be "a DIFFERENT ARM" (`class_level_arm_id != …`), which by itself still
+ * rejects a same-arm/different-exam-type destination — precisely the Year 10 B/WAEC → Year 10 B/BSS
+ * case. The exclusion is now "not this curriculum", which is what "arm and exam type free" actually
+ * requires.
  *
  * ── THE NULLABLE AXES ARE SAFE, AND NOT FOR THE REASON IT FIRST LOOKS ─────────────────────────────
- * `term_id` and `exam_type_id` are both nullable, and `WHERE term_id = NULL` is never true in SQL —
- * so a term-less curriculum matching none of its term-less siblings is a real failure mode, and it
- * fails SILENTLY in the safe direction (the operator is told the pupil has nowhere to go).
+ * `term_id` is nullable, and `WHERE term_id = NULL` is never true in SQL — so a term-less curriculum
+ * matching none of its term-less siblings is a real failure mode, and it fails SILENTLY in the safe
+ * direction (the operator is told the pupil has nowhere to go). `exam_type_id` is also nullable but
+ * no longer matched, so it cannot contribute to this any more.
  *
  * Eloquent closes it: Query\Builder::where() converts a null VALUE into a `whereNull` before it ever
  * builds an `=` comparison. So the plain `where()` calls below are correct, and an explicit
@@ -89,15 +108,19 @@ class CohortSiblings
             // the term is done, and every closed curriculum in the data pairs with a `promoted`
             // episode — so offering one would place a pupil into a finished class.
             ->where('status', 'active')
+            // THE AXIS DOING THE MOST WORK NOW. With exam type out of the key, this is the only
+            // clause standing between a manual move and a CCM crossing, which belongs to
+            // MoveFromCcmJob. Do not relax it without revisiting that job.
             ->where('is_ccm', (bool) $current->is_ccm)
             ->whereHas('classLevelArm', fn (Builder $query) => $query->where('class_level_id', $classLevelId))
-            // DIFFERENT ARM, expressed as "not this curriculum's arm" rather than "not this
-            // curriculum" — the two differ if a level ever carries two curricula for one arm, and
-            // the arm is the axis the operator is actually changing.
-            ->where('class_level_arm_id', '!=', $current->class_level_arm_id)
-            // Both nullable; where() converts a null value to IS NULL — see the class docblock.
+            // NOT THIS CURRICULUM — not "not this arm". A level can carry two curricula for one arm
+            // (same arm, different exam type), and excluding by arm would reject exactly the
+            // correction this screen exists for. See the docblock: this is the second of the two
+            // clauses that changed, and dropping the exam-type match without this one is a half-fix
+            // that looks complete.
+            ->where('id', '!=', $current->id)
+            // Nullable; where() converts a null value to IS NULL — see the class docblock.
             ->where('term_id', $current->term_id)
-            ->where('exam_type_id', $current->exam_type_id)
             ->with(['classLevelArm.arm', 'classLevelArm.classLevel', 'classLevelArm.stream'])
             ->orderBy('id')
             ->get();

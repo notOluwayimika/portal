@@ -131,7 +131,15 @@ operational facts an agent needs most often.
   - **two ids of the same parity** collapse a `% armCount` to one residue, leaving
     the arm ORDER unpinned while the test reads as though it covered it;
   - **a single-element acknowledgment set** cannot express a swap, so a count-based
-    check passes every arm and keeps the hole it was written to close.
+    check passes every arm and keeps the hole it was written to close;
+  - **and it happens in DRIVES, not only in suites** (2026-08-25). Re-planning a
+    rollover immediately after its batch drained returned `unconfigured=0`, which
+    read as proof the readiness flag was satisfied. It was not: every pupil was
+    already `promoted` with a link set, so there were no advancers and the flag was
+    never evaluated. The demonstration only became real once the unresolved-pupil
+    state was reconstructed. **A drive is an artifact too** — "I clicked it and it
+    looked right" degenerates exactly as a fixture does, and the browser gives you
+    no assertion to inspect afterwards, so ask what else could produce this screen.
 
   Before trusting a green, ask **what else could produce this pass?** and give the
   fixture enough distinguishing structure that the answer is "nothing but the rule

@@ -314,12 +314,18 @@ class RolloverPlanner
             'pupils' => [],
         ];
 
+        // NOT nullsafe: `student_curricula.student_id` carries a composite `(student_id, school_id)`
+        // FK (2026_07_19_130000), so an episode without a student cannot exist and the relation is
+        // typed non-nullable. A `?->… ?? 'student#N'` fallback here would be dead code pretending to
+        // handle a state the schema forbids — Larastan says so, and it is right.
         $student = $episode->student;
 
         $bucket[$key]['pupils'][] = [
             'id' => (int) $episode->student_id,
-            'name' => $student?->full_name ?? 'student#'.$episode->student_id,
-            'admission_number' => $student?->admission_number,
+            'name' => $student->full_name,
+            // Nullable on the COLUMN, unlike the relation — a pupil may genuinely have no admission
+            // number yet, and the screen renders the name alone in that case.
+            'admission_number' => $student->admission_number,
         ];
     }
 

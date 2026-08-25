@@ -2,15 +2,18 @@
 
 namespace App\Services\Rollover;
 
+use App\Enums\StudentStatusEnum;
 use App\Models\AcademicSession;
 use App\Models\ClassLevel;
 use App\Models\ClassLevelArm;
 use App\Models\ClassLevelTermParticipation;
 use App\Models\Curriculum;
 use App\Models\Scopes\SchoolScope;
+use App\Models\StudentCurriculum;
 use App\Models\Term;
 use App\Services\ProgressionGraph;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -176,7 +179,164 @@ class RolloverPlanner
             noNextSlot: [],
             warnings: $warnings,
             blockedBy: $blockedBy,
+            placement: $this->placementFor($curricula, $schoolId, $target),
         );
+    }
+
+    /**
+     * Where every pupil in the selection would land, computed through the SAME resolver the job uses.
+     *
+     * ── THE SKIP ORDER IS THE JOB'S, IN THE JOB'S ORDER ─────────────────────────────────────────
+     * withdrawn → repeater → already-promoted → terminal → advance. It is not "roughly the same
+     * checks": order is load-bearing, because a withdrawn pupil who is also marked `repeated` is
+     * skipped by the job and would be shown as held by any preview that tested repeat first. A
+     * preview that disagrees with the job about who moves is the defect this whole design removes,
+     * one level down from the placement rules themselves.
+     *
+     * ── READ-ONLY, AND THAT IS THE SAFETY CLAIM ─────────────────────────────────────────────────
+     * `create: false` throughout. A preview that wrote would mint a year's worth of curricula every
+     * time a registrar opened the screen — and worse, it would make the destination exist, so the
+     * very flag the screen is here to raise would read "configured" from the second look onward.
+     *
+     * @param  Collection<int, Curriculum>  $curricula
+     */
+    private function placementFor(Collection $curricula, int $schoolId, AcademicSession $target): RolloverPlacement
+    {
+        if ($curricula->isEmpty()) {
+            return RolloverPlacement::empty();
+        }
+
+        // selectFinalSlotCurricula builds its result with collect()->merge(), so what arrives is a
+        // SUPPORT collection with no ->load(). Wrapped rather than re-queried by id: re-querying would
+        // re-apply the selection's rules in a second place, which is the duplication this class exists
+        // to avoid, and it would silently drop any curriculum the caller had already filtered out.
+        $curricula = EloquentCollection::make($curricula->all())->load([
+            'classLevelArm.classLevel',
+            'classLevelArm.arm',
+            'classLevelArm.stream',
+            'studentCurricula.student',
+        ]);
+
+        $advancers = collect();
+        $repeaters = collect();
+        $unplaceable = collect();
+
+        foreach ($curricula as $curriculum) {
+            $sourceArm = $curriculum->classLevelArm;
+            $sourceLevel = $sourceArm?->classLevel;
+
+            if ($sourceArm === null || $sourceLevel === null) {
+                continue;
+            }
+
+            $resolver = new NextYearPlacementResolver($curriculum, $schoolId, $target);
+            $targetLevel = $resolver->targetLevel($sourceLevel);
+            $sourceLabel = $this->describe($curriculum);
+
+            // [destinationKey => ['placement' => NextYearPlacement, 'pupils' => [...]]], so two pupils
+            // bound for the same destination become one row rather than two.
+            $advancing = [];
+            $holding = [];
+            $stuck = [];
+
+            foreach ($curriculum->studentCurricula as $episode) {
+                if ($episode->status === StudentStatusEnum::WITHDRAWN) {
+                    continue;
+                }
+
+                if ($episode->status === StudentStatusEnum::REPEATED) {
+                    $placement = $resolver->forRepeater($sourceArm, $sourceLevel, create: false);
+                    $this->bucket($placement->resolved() ? $holding : $stuck, $placement, $episode, $sourceLevel, $sourceArm);
+
+                    continue;
+                }
+
+                // ALREADY PROMOTED — the job skips these wherever they now sit, so the preview must
+                // not promise to move them. This is what stops a re-run's preview double-counting a
+                // cohort that has already gone.
+                if ($episode->promoted_to_id !== null) {
+                    continue;
+                }
+
+                // A terminal level advances nobody. Not a failure — it is what a graduating year is —
+                // so it is not shown as unplaceable either; those pupils simply do not appear.
+                if ($targetLevel === null) {
+                    continue;
+                }
+
+                $placement = $resolver->forAdvancer($episode, $sourceArm, $targetLevel, create: false);
+                $this->bucket($placement->resolved() ? $advancing : $stuck, $placement, $episode, $targetLevel, $placement->arm);
+            }
+
+            $advancers = $advancers->concat($this->toGroups($advancing, $sourceLabel));
+            $repeaters = $repeaters->concat($this->toGroups($holding, $sourceLabel));
+
+            foreach ($stuck as $reason => $entry) {
+                $unplaceable->push([
+                    'source' => $sourceLabel,
+                    'reason' => $reason,
+                    'explanation' => $entry['explanation'],
+                    'pupils' => $entry['pupils'],
+                ]);
+            }
+        }
+
+        return new RolloverPlacement($advancers->values(), $repeaters->values(), $unplaceable->values());
+    }
+
+    /**
+     * Accumulate one pupil into a bucket, keyed by destination (or by refusal reason when there is no
+     * destination to key on).
+     *
+     * @param  array<string, array{label: string, placement: NextYearPlacement, explanation: string, pupils: list<array<string, mixed>>}>  $bucket
+     */
+    private function bucket(array &$bucket, NextYearPlacement $placement, StudentCurriculum $episode, ?ClassLevel $level, ?ClassLevelArm $arm): void
+    {
+        $key = $placement->resolved() ? (string) $placement->destinationKey() : $placement->reason;
+
+        $bucket[$key] ??= [
+            'label' => $this->destinationLabel($level, $arm),
+            'placement' => $placement,
+            'explanation' => $placement->explain(),
+            'pupils' => [],
+        ];
+
+        $student = $episode->student;
+
+        $bucket[$key]['pupils'][] = [
+            'id' => (int) $episode->student_id,
+            'name' => $student?->full_name ?? 'student#'.$episode->student_id,
+            'admission_number' => $student?->admission_number,
+        ];
+    }
+
+    /**
+     * @param  array<string, array{label: string, placement: NextYearPlacement, explanation: string, pupils: list<array<string, mixed>>}>  $bucket
+     * @return Collection<int, PlacementGroup>
+     */
+    private function toGroups(array $bucket, string $sourceLabel): Collection
+    {
+        return collect($bucket)->map(fn (array $entry, string $key) => new PlacementGroup(
+            sourceLabel: $sourceLabel,
+            destinationLabel: $entry['label'],
+            destinationCurriculumId: $entry['placement']->curriculum?->id === null
+                ? null
+                : (int) $entry['placement']->curriculum->id,
+            destinationKey: $key,
+            pupils: $entry['pupils'],
+        ))->values();
+    }
+
+    /** "Year 8 B" for a destination, which has a level and an arm but not yet a curriculum to describe. */
+    private function destinationLabel(?ClassLevel $level, ?ClassLevelArm $arm): string
+    {
+        $label = trim(implode(' ', array_filter([
+            $level?->name,
+            $arm?->arm?->label,
+            $arm?->stream?->name,
+        ])));
+
+        return $label !== '' ? $label : '—';
     }
 
     /**

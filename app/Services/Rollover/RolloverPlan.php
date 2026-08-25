@@ -66,6 +66,18 @@ final class RolloverPlan
         public readonly array $noNextSlot,
         public readonly array $warnings,
         public readonly array $blockedBy,
+        /**
+         * WHERE the pupils land — end-of-year only; {@see RolloverPlacement::empty()} for end-of-term.
+         *
+         * End-of-term has nothing to preview: it keeps the class level and clones the curriculum's
+         * subjects onto the target (MoveFromTermJob::cloneCurriculumSubjects), so there is no arm
+         * distribution to show and no destination that can be subject-less. Showing an empty
+         * placement panel there would be a screen warning about something that cannot happen, which
+         * teaches operators to skip warnings.
+         *
+         * Defaulted so every existing construction of this DTO keeps compiling — this is additive.
+         */
+        public readonly RolloverPlacement $placement = new RolloverPlacement(new Collection, new Collection, new Collection),
     ) {}
 
     /**

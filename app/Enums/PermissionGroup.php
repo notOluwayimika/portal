@@ -138,6 +138,10 @@ enum PermissionGroup: string
             self::ENROLLMENT_LIFECYCLE => [
                 Permission::STUDENT_CURRICULUM_REGISTER,
                 Permission::STUDENT_CURRICULUM_PROMOTE,
+                // Bulk promotion across a year boundary. Filed beside PROMOTE rather than
+                // with academic_setup.manage in ROUTE_ACCESS: what it MOVES is enrolments,
+                // which is what this group is the taxonomy for.
+                Permission::ACADEMICS_ROLLOVER,
                 Permission::STUDENT_CURRICULUM_UPDATE_STATUS,
             ],
             self::ROUTE_ACCESS => [

@@ -97,7 +97,7 @@ class Invoice extends Model
      * statement, never the isolation boundary (that is `school_id`, via BelongsToSchool).
      *
      * NAMING App\Models\Student FROM INSIDE App\Finance IS ALLOWED AND IS PRECEDENTED: Payment
-     * declares the identical relation — `student` (app/Finance/Models/Payment.php:173) — and
+     * declares the identical relation — `student` (app/Finance/Models/Payment.php:195) — and
      * PaymentReceiptController reads
      * `$payment->student?->full_name` through it. What the boundary forbids is a `DB::table` on a
      * `finance_` literal outside this module (bin/ci-boundary-lint.php) and Finance reaching into

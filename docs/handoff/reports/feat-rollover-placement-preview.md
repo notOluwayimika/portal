@@ -1,0 +1,355 @@
+# feat/rollover-placement-preview — implementation report
+
+**Branch:** `feat/rollover-placement-preview`
+**Base:** `staging` @ `4b0383e5` (the merge of PR #296; verified with `bin/landed`, which confirmed
+containment *and* that the merge took the reviewed head `2e431fea`)
+**Shape:** 6 commits pre-review, +1 after · 4 new PHP classes · 1 new test file · 1 job refactor ·
+1 screen · runbook + `CLAUDE.md`. Re-derive with `git log --oneline 4b0383e5..HEAD` rather than
+trusting this line — an earlier revision said 4 and was stale by two, which cold review caught.
+
+**Post-review revision.** Everything below the divider was written before the cold read. The review
+returned one blocking `fix` and four tickets; the lead's calls and what changed are in
+"After the cold review" at the end. **Read that section first** — it corrects a predicate error at
+the centre of the feature that this report originally described as working.
+
+---
+
+## Deviations from the approved plan — read these first
+
+**1. Two classes, not one.** The plan named a single `NextYearPlacement` shaped on `NextTermSlot`'s
+static factory. Built as two: `NextYearPlacement` (the per-pupil result, keeping `NextTermSlot`'s
+shape) and `NextYearPlacementResolver` (the per-curriculum context). The context — source curriculum,
+school, target session — is constant across every pupil while the result is per pupil, and folding
+both into statics produced seven-parameter calls at both call sites. The resolver also caches each
+level's arm list, which is the per-level-not-per-pupil work the plan's own cost note asked for.
+**The property that mattered survives**: the five `firstOrCreate` keys are still built once and fed
+to both modes.
+
+**2. `RolloverPlan` gained a `RolloverPlacement` object, not a bare `Collection`.** The plan said one
+field holding groups, "plus per-plan buckets for repeaters and unplaceable". Three fields would have
+meant three constructor changes; one value object holds all three and gives `unconfiguredKeys()` /
+`unconfiguredCount()` a natural home. Still one new field on `RolloverPlan`.
+
+**3. The TOCTOU acknowledgment is optional at the validation layer, not `required`.**
+`RolloverEndOfYearRequest` serves the preview endpoint too, where there is nothing to acknowledge, so
+`required` would have broken preview. It is `sometimes|array`, and `commitEndOfYear` treats **absent
+as the empty set** — which passes while nothing is unconfigured and refuses the moment something is.
+That is the direction a missing acknowledgment must fail in, and it is why the pre-existing surface
+tests still pass unchanged: their worlds are terminal, so nothing is unconfigured.
+
+**4. One behaviour in `MoveToNextYearJob` deliberately not preserved verbatim.**
+`resolveTargetLevel` now tests the **column** for terminality rather than the resolver's null.
+Measured: `class_levels` does not soft-delete and `class_levels_next_level_school_foreign` is
+`ON DELETE RESTRICT` (`2026_08_20_110000:67-70`), so the non-terminal null is unreachable in normal
+operation — the branch guards constraint-bypass paths (restored dump, `FOREIGN_KEY_CHECKS` off) only.
+Kept because it costs one comparison and fails safe; the alternative logs a broken pointer as
+"terminal, nobody advances", a specific false statement in the one log a person reads when a cohort
+did not move. **The job's behaviour is unchanged — only the log line differs.**
+
+---
+
+## What changed
+
+| File | Change |
+| --- | --- |
+| `app/Services/Rollover/NextYearPlacement.php` | new — per-pupil result, reason constants, `destinationKey()` |
+| `app/Services/Rollover/NextYearPlacementResolver.php` | new — the extracted rules, read-only + write modes |
+| `app/Services/Rollover/PlacementGroup.php` | new — one (source → destination) pair with its pupils |
+| `app/Services/Rollover/RolloverPlacement.php` | new — advancers / repeaters / unplaceable + the acknowledgment set |
+| `app/Jobs/MoveToNextYearJob.php` | delegates; keeps its own logging via `logRefusal` (−217/+66) |
+| `app/Services/Rollover/RolloverPlan.php` | `+ readonly RolloverPlacement $placement` |
+| `app/Services/Rollover/RolloverPlanner.php` | builds placement in `planEndOfYear`; empty for end-of-term |
+| `app/Http/Controllers/RolloverController.php` | serialises placement; the subset pre-check before dispatch |
+| `app/Http/Requests/RolloverEndOfYearRequest.php` | `+ acknowledged_unconfigured` |
+| `resources/js/pages/admin/academics/rollover.tsx` | placement table, subject note (EOY only), confirm line, opaque echo |
+| `docs/handoff/drive-runbooks/m4-rollover-surface.md` | four new steps (§§8–10 + hand-back items) |
+| `tests/Arch/RolloverSeamTest.php` | +6 — adds `placement` to the pinned `RolloverPlan` field list |
+| `CLAUDE.md` | three lessons |
+
+---
+
+## The claims, and how each is verified
+
+**The extraction is behaviour-preserving.** `MoveToNextYearJobTest` passes **17/17 with the test file
+untouched** (`git status tests/` clean across the Part 1 commit). That is the proof, exactly as
+`MoveFromTermJobTest`'s 17/17 was for `NextTermSlot`.
+
+**Preview and commit cannot disagree about placement.** Not asserted from the design — there are two
+parity tests, and the second exists *because a mutation showed the first was not enough*:
+- through the **create path** (destination absent at preview), and
+- where **distribution decides the arm** (two target arms, non-matching source label).
+
+**The preview writes nothing.** Curriculum and episode counts snapshotted around **two** preview
+calls. Two, because a preview that wrote would report the destination as configured on the second
+look, silently removing the flag the screen exists to raise.
+
+**There is a server-side staleness gate over the unsafe set.** *(This paragraph originally read "the
+acknowledgment is binding" — see the correction in "After the cold review".)*
+`RolloverEndOfYearRequest` previously accepted two session ids and nothing else, so the server had
+nothing to compare and every divergence signal came from `queued()` — after `dispatchEndOfYear`. Now a
+**subset** check runs before dispatch, over destination **identities** derived from the five resolved
+keys (not curriculum ids — the destinations that matter are precisely the ones with no id yet).
+
+---
+
+## Watched reds — six, each planted, observed, restored
+
+Restoration verified with `diff -q` against a private backup after every one; the working tree is
+byte-identical to the commit.
+
+| # | Mutation | Result |
+| --- | --- | --- |
+| 1 | subset check removed | **RED** — addition, swap, and missing-acknowledgment arms |
+| 2 | comparison made symmetric | **RED** — the *removal* arm, proving the asymmetry is deliberate |
+| 3 | **count** comparison instead of subset | **RED — the swap arm ONLY** |
+| 4 | read-only mode made to write | **RED** — 7 tests, including writes-nothing |
+| 5 | `orderBy('id')` → `orderByDesc('id')` | initially **GREEN** — see below |
+| 6 | preview path drifts from write path | initially **GREEN** on parity — see below |
+
+**Mutation 3 is the one that vindicates the swap fixture.** A count-based implementation passes the
+addition, removal, equal *and* missing-acknowledgment arms intact. Only the swap catches it. Without
+that fixture the fix would have shipped carrying the hole it exists to close.
+
+**Mutations 5 and 6 found gaps in the tests, not the code**, and both were the same mechanism:
+
+- **5** — the distribution test asserted that two pupils an `armCount` apart share an arm, which is
+  true under *any* ordering; and worse, `rc_level` labels every arm `B`, so the source **label-matched**
+  the target and the modulo was never evaluated at all. It called itself a distribution test, tested
+  the label rule, and agreed by luck because both ids had the same parity. Fixed: a non-matching
+  source label to force distribution, both residues asserted (and asserted to have been covered), and
+  the expected arm derived from an **explicitly ascending query** rather than restating the resolver's
+  own rule.
+- **6** — parity stayed green under a simulated second implementation, because its target level has
+  **one arm**: any placement rule lands everyone in the same place. Added the distribution-parity
+  test. Both red now.
+
+The generalisation is in `CLAUDE.md`: **a test proves the property it names only if the fixture makes
+that property the sole explanation for the pass.**
+
+---
+
+## Two incidental bugs, both found by running rather than reading
+
+- **`range(1, 0)` returns `[1, 0]` in PHP** — descending, two elements. The fixture helper was
+  silently planting two pupils into every world that asked for none, so tests building their own
+  roster measured mine as well as theirs.
+- **A ternary cannot be passed to a by-reference parameter.** Fatal, and the pre-existing rollover
+  suite never hit it because **none of its worlds has an advancer** — meaning the advancer path was
+  entirely untested before this branch, and these are the first tests to enter it.
+
+---
+
+## A fact the reviewer should examine deliberately
+
+**A subject-less enrollment is still billable.** `BillableEnrollmentAdapter` keys on `status = active`
+and never on subjects (audited this session, pinned by
+`tests/Feature/BillableEnrollmentAfterRolloverTest.php`). So a pupil who lands in a rollover-created
+curriculum with no subjects is `active`, and therefore billed for a curriculum they cannot study.
+
+That is **not a billing defect** — billing is correct per status — but it is a silent
+academically-empty-but-billable state that surfaces at reconciliation time rather than at rollover
+time. Two things are asserted rather than assumed:
+
+1. the extraction is behaviour-preserving (job test unmodified ⇒ episode creation, and therefore
+   billability, unchanged);
+2. the subject-less state bills normally, unchanged by this branch.
+
+This is why the warning is surfaced twice — panel and confirm — rather than once.
+
+---
+
+## What is NOT done
+
+**The screen has not been driven.** The suite is structurally blind to rendering: the payload test
+proves `unconfigured_count` is **present in the data**, not that the confirm dialogue **renders** it.
+That split is deliberate — backend half asserted, dialogue half drive-verified — and **neither half
+should be mistaken for the whole**. Runbook §§8–10 cover it.
+
+**`DESTINATION_NOT_CONFIGURED` as a hold is not on this branch.** The correct-by-construction fix is
+per-destination hold: the job stops `firstOrCreate`-ing an empty destination and leaves those pupils
+unplaceable, so the source stays open, the registrar configures the destination *with* subjects,
+re-runs, and the idempotent job places them ready. It is strictly better than a warning. It is not
+here because it changes the job's create semantics and so breaks the "`MoveToNextYearJobTest` passes
+unmodified" invariant that is this branch's proof of a behaviour-preserving extraction. **Ticket it.**
+
+**Performance is not measured on a real cohort.** Placement is N resolutions over the year group where
+the plan previously ran one count query. Episodes and students are eager-loaded and arms are cached
+per level, but the largest fixture here is 4 pupils. If it is slow on Brookstone's data that is a
+finding to report, not something to paper over with a cache.
+
+**One pre-existing oddity left alone:** `RolloverPlanner::describe()` carries a duplicated docblock
+(`@param` block immediately followed by a second `/** */`), which the IDE reports as unreachable code.
+Pre-existing, cosmetic, out of scope.
+
+---
+
+## Gate
+
+`bin/quality` — see the run appended at commit time. `MoveToNextYearJobTest` 17/17 unmodified;
+73 rollover-surface tests green; `tsc` 42 errors, exactly the ratchet baseline, none in the changed
+file.
+
+
+---
+---
+
+# After the cold review
+
+The cold read returned **one blocking `fix`, four tickets and one note**. Every one was accepted; the
+lead upgraded one ticket to fix-on-branch and declined the narrow option on the blocker. This section
+is the record of what changed, and it supersedes anything above that contradicts it.
+
+## The blocker — the readiness flag was measuring the wrong property
+
+`destinationIsUnconfigured()` tested `curriculum === null` — whether the destination ROW existed. The
+hazard is a pupil landing with nothing to study, and `autoAttachCompulsorySubjects` reads
+`curriculumSubjects()->active()->where('is_compulsory', true)`. Those are not the same question, and
+the gap is produced by this job's own documented workflow:
+
+| | destination exists? | has subjects? | old flag | correct |
+| --- | --- | --- | --- | --- |
+| Run 1 | no | no | **flagged** | flagged |
+| Run 2 (the re-run after fixing arm/exam-type config) | **yes** — run 1 created it empty | **no** | **silent** | flagged |
+
+So the flag guarded the run where nothing was at risk and passed the run where everything was: on the
+re-run the count reads 0, the panel and the confirm line are both silent, the staleness gate passes on
+an empty set, and the remaining pupils land subject-less.
+
+**Fixed by widening the artifact, not narrowing the copy** — "don't let pupils land subject-less" is
+the reason the feature exists, so the claim is the goal. `NextYearPlacement` now carries
+`destinationHasCompulsorySubjects`, computed by the resolver with the *same query the attach path
+uses*, memoised per curriculum. `destinationCurriculumId` is kept as information (it still
+distinguishes "would be created" from "exists but empty" in the copy) but is no longer the predicate.
+
+Three tests added, and the original honesty test corrected — it had created the destination with
+`rc_curriculum()` (which attaches nothing) and asserted the count was 0, so it *pinned the defect*:
+
+- a destination that **exists but teaches nothing** stays flagged;
+- an **archived** compulsory subject and an **active optional** one do NOT clear it, asserted before
+  the qualifying case, so a flag that cleared on any subject at all cannot pass;
+- **watched red (mutation 7):** reverting both predicates to the existence check reds three tests.
+
+Four fixtures needed correcting: they had "configured" destinations built with `rc_curriculum()`
+alone, which under the corrected predicate are unconfigured — the fixtures had encoded the same
+mistake the predicate did.
+
+**Accepted residual:** a class level that legitimately runs no compulsory subjects now flags on every
+rollover. That is the noise-teaches-skipping cost, and it is real — but it is the lesser evil against
+a silent subject-less cohort, and distinguishing "intentionally empty" from "not configured" needs a
+signal the schema does not carry. **Watch for it on the drive**; follow-up, not a blocker.
+
+## Upgraded to fix-on-branch — the leaving cohort was in no bucket
+
+Terminal-level pupils are inside `pupil_count` (end-of-year selects each level's final slot; "no next
+slot" is the selection criterion there, not a failure) and are advanced by nobody. They appeared in no
+bucket, so the confirm's "N pupils across M classes" sat above a table totalling fewer — and for any
+school with a leaving year the difference is that whole cohort. Every number individually correct, and
+the screen did not add up, which is this milestone's own count-honesty lesson pointing the other way.
+
+Added a fourth `graduating` bucket plus `accountedPupils()`, and the panel renders a reconciliation
+line **only when the total fails to close**, so the normal case stays quiet. Two tests: a terminal-only
+plan, and a mixed plan with three buckets non-empty at once — a single-bucket fixture cannot tell a
+working sum from one that ignores two terms. The suite previously had **no terminal-level coverage at
+all**.
+
+## Widened the artifact to match the claim — per-pupil query cost
+
+The report had claimed caching covered the per-pupil cost; it covered one axis (arms) of five.
+`resolveExamType()` and `destination()` are now memoised in the same shape — the destination is a pure
+function of (level, arm, examType), so five queries per *pupil* became five per *destination*.
+
+`array_key_exists` rather than `??=` for the exam type, because NULL is a meaningful answer there
+("refuse rather than guess") and `??=` would treat it as a miss and re-query every pupil. Write-mode
+results are deliberately **not** cached — caching a `firstOrCreate` hides from the second caller that
+the row now exists.
+
+Pinned by a test asserting the **ratio**, not an absolute query count: six times the pupils must not
+mean six times the queries. An absolute number would be a brittle restatement of today's query plan.
+**Watched red (mutation 8):** removing the memoisation reds it.
+
+## Claims narrowed rather than artifacts changed
+
+**The staleness gate is not an acknowledgment.** No operator gesture is bound to it; the client echoes
+the last preview automatically, so the server cannot tell "the operator read the warning and accepted
+it" from "a client fetched a preview". The mechanism is sound and stays; the *name* was wrong. Both
+this report and the `CLAUDE.md` entry now call it a staleness gate — and the `CLAUDE.md` entry records
+that the overclaim was caught **inside the very lesson about unenforced controls**, which is the point
+twice over.
+
+**Binding it to a real operator gesture is a genuine deferral candidate** — an unrecoverable warning
+arguably deserves a "proceed anyway" the server verifies, and that is the honest end state of "make
+the warn unskimmable". Not built; deadline-dependent.
+
+**`TERMINAL_LEVEL` is unreachable** — both callers guard `$targetLevel === null` before asking. Kept,
+because `forAdvancer` accepts a nullable level and must answer something, but now documented as
+unreachable rather than left to read as a producible outcome.
+
+## The through-line
+
+Three of the six findings were the same shape: **a claim wider than its artifact.** The resolution
+differs by whether the claim is the goal — the readiness flag and the query cost were fixed by
+widening the artifact; the acknowledgment was fixed by narrowing the words. Leaving any of them open
+is the theatre the branch's own `CLAUDE.md` rule warns about, which is why none were left open. That
+generalisation is now in `CLAUDE.md`; it is a failure mode this kind of work produces systematically,
+not a one-off.
+
+## DRIVEN — 2026-08-25
+
+The screen has now been driven in a browser against a throwaway clone (`portal_drive`: created
+empty, migrated from zero through the full `up()` chain so **all triggers exist** — deliberately not
+a table copy, which would not carry them). `portal-test` was untouched.
+
+**Fixture, verified by running the planner before opening a browser** (the runbook's own rule —
+"nothing to migrate" and "broken screen" render identically): closing 2025/2026 → target 2026/2027,
+2 classes, 10 pupils. Source arm `A`; receiving level offers `B` and `C` only, so **no label match**
+and the modulo decides.
+
+| Proven | Result |
+| --- | --- |
+| §1 authorization, both arms | `admin` reaches `/academics/rollover`; `accounts_officer` gets **403 Forbidden at the same URL** — not a 404 |
+| Arm distribution | 6 advancers split **3/3** into two **disjoint** sets — the property a single-arm fixture cannot show |
+| Readiness flag, both directions | 2 advancing destinations flagged; the repeater's configured destination **not** flagged |
+| Graduating bucket | non-empty (terminal level, 3 pupils) |
+| Reconciliation | 6 + 1 + 3 = **10 = pupil_count** |
+| Subject note is EOY-only | end-of-term showed "progression graph: not applicable", **no subject note, no placement table** |
+| §5 confirm | acknowledgment + TOCTOU wording rendered; `POST /api/rollover/end-of-year` → 200, "Queued 2 job(s)" |
+| §5 drain | 2/2 done, 0 failed |
+| **Preview/commit parity, BY ID** | **all six pupils landed in the class the preview named** |
+| §10 swap | count 2 → 2, set changed → **422, nothing queued** |
+
+**The subject warning was empirically correct, in consequence and not merely in display:**
+
+| destination | flagged | compulsory subjects | attached student-subjects |
+| --- | --- | --- | --- |
+| JSS 1 A `curr#18` | no | 1 | **1** |
+| JSS 2 C `curr#19` | YES | 0 | **0** |
+| JSS 2 B `curr#20` | YES | 0 | **0** |
+
+**Cold-review finding #1 was reproduced against a live database.** The rollover created `curr#19`
+and `curr#20` empty. Reconstructing the re-run state (source reopened, one late pupil to place) and
+re-previewing gave `JSS 1 A → JSS 2 B, curriculum_id=20, EXISTS=yes, flagged=YES`. **The old
+existence predicate would have read that as configured and stayed silent** — the defect demonstrated,
+not merely argued.
+
+*Recorded honestly:* the first attempt at that demonstration was wrong. Re-planning immediately after
+the drain returned `unconfigured=0`, which looked like proof and was not — every pupil was `promoted`
+with a link set, so there were no advancers and the flag was never evaluated. Green attesting to
+something true and beside the point, in the drive rather than the suite.
+
+**§10 detail, because it is the arm a count check passes:** the swap configured JSS 2 B (out of the
+set) and stripped JSS 1 A's subjects (into it). Count stayed at **2**. The page held the pre-swap
+set, the server computed the post-swap set, and the commit refused — *"A destination has become
+unconfigured since you previewed this rollover."* Singular, naming the one row that flipped.
+
+## Still not done
+
+- **M3 and M5 remain undriven, and are BLOCKED rather than skipped.** Their code and runbooks are
+  nine finished-but-stranded commits on `feat/reassignment-ui` — ~3,374 insertions including the bulk
+  reassignment modal, the action bar, 708 lines of `StudentBulkReassignmentTest`, and the eligibility
+  exam-type fix. That branch is also **25 commits behind staging** and will conflict in
+  `tests/Pest.php`. Landing it is its own track, after this branch.
+- **`DESTINATION_NOT_CONFIGURED` as a hold** — ticketed, not built.
+- **The binding gesture** — see above.
+- **The intentional-empty refinement** — see the accepted residual.
+- **Placement is still unmeasured on a real cohort.** The ratio test proves it does not scale with
+  pupils; it does not prove the absolute number is acceptable on Brookstone's data.

@@ -2,15 +2,14 @@
 
 namespace App\Console\Commands;
 
+use App\Console\Concerns\ResolvesRolloverOperator;
 use App\Jobs\MoveFromTermJob;
 use App\Models\Curriculum;
 use App\Models\Scopes\SchoolScope;
 use App\Models\Term;
-use App\Models\User;
+use App\Services\Rollover\RolloverPlanner;
 use Illuminate\Console\Command;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Bus;
-use Illuminate\Support\Facades\DB;
 
 /**
  * End-of-term rollover — dispatch one MoveFromTermJob per active non-CCM curriculum in a term.
@@ -41,6 +40,8 @@ use Illuminate\Support\Facades\DB;
  */
 class RunEndOfTerm extends Command
 {
+    use ResolvesRolloverOperator;
+
     protected $signature = 'academics:run-end-of-term
         {term : uuid of the closing term}
         {--user= : id of the operator the work is attributed to (required with --commit)}
@@ -63,11 +64,15 @@ class RunEndOfTerm extends Command
         $schoolId = (int) $term->school_id;
         $this->line("Term: {$term->name} (school {$schoolId})");
 
-        // ── GATE: CCM MOVE FIRST ──────────────────────────────────────────────────────────────────
-        $ccm = $this->activeCurricula($term)->where('is_ccm', true)->count();
+        // ── PLAN ONCE, THEN SHOW OR DISPATCH ──────────────────────────────────────────────────────
+        // The selection and the CCM gate moved to RolloverPlanner so slice 2's UI reaches the same
+        // decision without shelling out to artisan. This command keeps its output and its exit
+        // codes; only where the answer comes from changed.
+        $plan = app(RolloverPlanner::class)->planEndOfTerm($term);
 
-        if ($ccm > 0) {
-            $this->error("{$ccm} CCM curriculum/curricula are still active in this term.");
+        // ── GATE: CCM MOVE FIRST ──────────────────────────────────────────────────────────────────
+        if (in_array('ccm-active', $plan->blockedBy, true)) {
+            $this->error("{$plan->ccmBlockers->count()} CCM curriculum/curricula are still active in this term.");
             $this->line(
                 'Run the CCM move for this term first. MoveFromTermJob refuses a CCM source, so '
                 .'dispatching now would report success while silently skipping that cohort — leaving '
@@ -77,20 +82,13 @@ class RunEndOfTerm extends Command
             return self::FAILURE;
         }
 
-        $curricula = $this->activeCurricula($term)->where('is_ccm', false)->get();
-
-        if ($curricula->isEmpty()) {
+        if ($plan->isEmpty()) {
             $this->warn('No active non-CCM curricula in this term — nothing to do.');
 
             return self::SUCCESS;
         }
 
-        $pupils = DB::table('student_curricula')
-            ->whereIn('curriculum_id', $curricula->pluck('id'))
-            ->whereNotIn('status', ['withdrawn'])
-            ->count();
-
-        $this->line("Plan: {$curricula->count()} curriculum/curricula, {$pupils} non-withdrawn enrolment(s).");
+        $this->line("Plan: {$plan->curricula->count()} curriculum/curricula, {$plan->pupilCount} non-withdrawn enrolment(s).");
 
         if (! $this->option('commit')) {
             $this->warn('DRY RUN — nothing dispatched. Pass --commit to queue.');
@@ -104,86 +102,26 @@ class RunEndOfTerm extends Command
             return self::FAILURE;
         }
 
-        $this->warnIfBatchStillDraining($schoolId);
+        foreach ($plan->warnings as $warning) {
+            $this->warn($warning);
+        }
 
+        // DISPATCH CONSUMES THE PLAN — it does not re-plan. Irrelevant here (the CLI plans and
+        // dispatches in one call) and load-bearing in slice 2, where an operator reads a preview and
+        // confirms later: re-planning at confirm time would run something other than what was shown.
+        // The shape is settled here so slice 2 cannot be forced into the unsafe one.
         $batch = Bus::batch(
-            $curricula->map(fn (Curriculum $curriculum) => new MoveFromTermJob(
+            $plan->curricula->map(fn (Curriculum $curriculum) => new MoveFromTermJob(
                 $curriculum, (int) $operator->id, $schoolId
             ))->all()
-        )->name("rollover:end-of-term:school:{$schoolId}:term:{$term->id}")
+        )->name($plan->batchName)
             ->allowFailures()
             ->dispatch();
 
         // QUEUED, not completed — see the class docblock.
-        $this->info("Queued {$curricula->count()} job(s) as batch {$batch->id}.");
+        $this->info("Queued {$plan->curricula->count()} job(s) as batch {$batch->id}.");
         $this->line('The migration runs as workers drain the queue; this command does not wait for it.');
 
         return self::SUCCESS;
-    }
-
-    /**
-     * @return Builder<Curriculum>
-     */
-    private function activeCurricula(Term $term)
-    {
-        return Curriculum::withoutGlobalScope(SchoolScope::class)
-            ->where('school_id', $term->school_id)
-            ->where('term_id', $term->id)
-            ->where('status', 'active');
-    }
-
-    private function resolveOperator(int $schoolId): ?User
-    {
-        $userId = $this->option('user');
-
-        if (! $userId) {
-            $this->error('--user is required with --commit: the jobs attribute their audit trail to an operator.');
-
-            return null;
-        }
-
-        $user = User::find($userId);
-
-        if ($user === null) {
-            $this->error("No user with id {$userId}.");
-
-            return null;
-        }
-
-        // NO SCHOOL-MEMBERSHIP CHECK HERE, DELIBERATELY. The obvious guard —
-        // `$user->school_id !== $schoolId` — is the `school-id-fallback-context` pattern the boundary
-        // lint refuses and ADR 0042 is retiring: deriving school context from `users.school_id`.
-        // Caught by that lint on the first run of this file, and the right fix is not to work around
-        // it but to notice the check does not belong here at all. The causer is ATTRIBUTION ONLY —
-        // the jobs receive $schoolId explicitly and never read it from the causer (Constitution 13) —
-        // so validating the operator against their own row would reintroduce the fallback to answer a
-        // question the rollover does not ask. Authorization for running a rollover is shell access to
-        // artisan, not a column on the operator.
-
-        return $user;
-    }
-
-    /**
-     * A re-run while a previous batch is still draining is HARMLESS — the jobs' own guards no-op the
-     * second pass once sources have closed — but it is wasted work, and more importantly it means the
-     * operator may be reading a stale picture. Warn rather than refuse: there are legitimate reasons
-     * to re-queue (a batch that failed partway), and refusing would block the recovery.
-     */
-    private function warnIfBatchStillDraining(int $schoolId): void
-    {
-        $draining = DB::table('job_batches')
-            ->where('name', 'like', "rollover:%:school:{$schoolId}:%")
-            ->whereNull('finished_at')
-            ->whereNull('cancelled_at')
-            ->where('pending_jobs', '>', 0)
-            ->count();
-
-        if ($draining > 0) {
-            $this->warn(
-                "{$draining} rollover batch(es) for this school are still draining. Re-queuing is safe "
-                .'(the jobs no-op on work already done) but wasteful, and the plan above may not '
-                .'reflect what those jobs are about to change.'
-            );
-        }
     }
 }

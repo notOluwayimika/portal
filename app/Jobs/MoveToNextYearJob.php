@@ -7,22 +7,20 @@ use App\Jobs\Middleware\SchoolAware;
 use App\Models\AcademicSession;
 use App\Models\ClassLevel;
 use App\Models\ClassLevelArm;
-use App\Models\ClassLevelArmProgression;
-use App\Models\ClassLevelExamType;
-use App\Models\ClassLevelTermParticipation;
 use App\Models\Curriculum;
-use App\Models\MarkingScheme;
 use App\Models\Scopes\SchoolScope;
 use App\Models\StudentCurriculum;
 use App\Models\Term;
 use App\Models\User;
+use App\Services\Rollover\NextYearPlacement;
+use App\Services\Rollover\NextYearPlacementResolver;
 use App\Services\StudentSubjectService;
+use Illuminate\Bus\Batchable;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Spatie\Activitylog\CauserResolver;
@@ -93,11 +91,23 @@ use Spatie\Activitylog\CauserResolver;
  */
 class MoveToNextYearJob implements ShouldQueue
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+    // Batchable is REQUIRED, not decorative: both rollover commands and the M4
+    // controller dispatch these through Bus::batch, and PendingBatch refuses any job
+    // without the trait. It was missing since the commands were written — every test
+    // fakes the bus, and BusFake::batch() returns a PendingBatchFake that skips the
+    // check entirely, so --commit had never actually run.
+    use Batchable, Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public int $tries = 3;
 
     public int $timeout = 600;
+
+    /**
+     * Memoised, NOT constructor-injected: this job is serialised onto a queue, and a resolver holding
+     * models and an arm cache has no business crossing that boundary. Built on first use inside
+     * handle(), where the job is already hydrated.
+     */
+    private ?NextYearPlacementResolver $placement = null;
 
     public function __construct(
         public readonly Curriculum $curriculum,
@@ -204,6 +214,20 @@ class MoveToNextYearJob implements ShouldQueue
      */
     private function resolveTargetLevel(ClassLevel $sourceLevel): ?ClassLevel
     {
+        // The TERMINAL test is on the COLUMN, not on the resolver's null, because the two nulls mean
+        // different things and only one of them is terminality.
+        //
+        // HOW REACHABLE THE OTHER NULL IS, MEASURED RATHER THAN ASSUMED: not very. `class_levels`
+        // does NOT soft-delete, and `class_levels_next_level_school_foreign` is ON DELETE RESTRICT
+        // (2026_08_20_110000:67-70), so a referenced level cannot be deleted and the lookup cannot
+        // come back empty in normal operation. This branch is therefore defence against the paths
+        // that bypass the constraint — a restored dump, a bulk load with FOREIGN_KEY_CHECKS off —
+        // not a state the application can produce.
+        //
+        // It is kept anyway because it costs one comparison and it fails in the safe direction: the
+        // alternative treats a broken pointer as "terminal, nobody advances", which is a specific
+        // false statement in the one log a person reads when a cohort did not move. Do not simplify
+        // it back to testing the resolver's null.
         if ($sourceLevel->next_class_level_id === null) {
             Log::info('MoveToNextYearJob: terminal class level, nobody advances', [
                 'curriculum_id' => $this->curriculum->id,
@@ -213,9 +237,7 @@ class MoveToNextYearJob implements ShouldQueue
             return null;
         }
 
-        return ClassLevel::withoutGlobalScope(SchoolScope::class)
-            ->whereKey($sourceLevel->next_class_level_id)
-            ->first();
+        return $this->placement()->targetLevel($sourceLevel);
     }
 
     /**
@@ -269,50 +291,35 @@ class MoveToNextYearJob implements ShouldQueue
      */
     private function holdRepeater(StudentCurriculum $sourceEnrollment, ClassLevelArm $sourceArm, ClassLevel $sourceLevel): bool
     {
-        $target = $this->resolveTargetCurriculum($sourceLevel, $sourceArm, (int) $this->curriculum->exam_type_id);
+        $placement = $this->placement()->forRepeater($sourceArm, $sourceLevel, create: true);
 
-        if ($target === null) {
+        if (! $placement->resolved() || $placement->curriculum === null) {
             Log::warning('MoveToNextYearJob: cannot hold repeater — no target curriculum for their own level', [
                 'curriculum_id' => $this->curriculum->id,
                 'student_id' => $sourceEnrollment->student_id,
+                'reason' => $placement->reason,
             ]);
 
             return false;
         }
 
         // HELD-REPEATER ANCHOR — sound here because their target is fully deterministic.
-        $this->createEpisode((int) $sourceEnrollment->student_id, $target);
+        $this->createEpisode((int) $sourceEnrollment->student_id, $placement->curriculum);
 
         return true;
     }
 
     private function advance(StudentCurriculum $sourceEnrollment, ClassLevelArm $sourceArm, ClassLevel $targetLevel): bool
     {
-        $targetArm = $this->resolveArm($sourceEnrollment, $sourceArm, $targetLevel);
+        $placement = $this->placement()->forAdvancer($sourceEnrollment, $sourceArm, $targetLevel, create: true);
 
-        if ($targetArm === null) {
-            return false;
-        }
-
-        $examTypeId = $this->resolveExamType($targetLevel);
-
-        if ($examTypeId === null) {
-            Log::warning('MoveToNextYearJob: no resolvable exam type for the target level — refusing to guess', [
-                'curriculum_id' => $this->curriculum->id,
-                'student_id' => $sourceEnrollment->student_id,
-                'target_class_level_id' => $targetLevel->id,
-            ]);
+        if (! $placement->resolved() || $placement->curriculum === null) {
+            $this->logRefusal($placement, $sourceEnrollment, $targetLevel);
 
             return false;
         }
 
-        $target = $this->resolveTargetCurriculum($targetLevel, $targetArm, $examTypeId);
-
-        if ($target === null) {
-            return false;
-        }
-
-        $newEpisode = $this->createEpisode((int) $sourceEnrollment->student_id, $target);
+        $newEpisode = $this->createEpisode((int) $sourceEnrollment->student_id, $placement->curriculum);
 
         // Link AND status in ONE update. The promoted_requires_link trigger (live on 5.7 since
         // 2026_08_20_140000) refuses status-before-link; one statement cannot trip it.
@@ -325,201 +332,59 @@ class MoveToNextYearJob implements ShouldQueue
     }
 
     /**
-     * Arm resolution, in strict order: explicit map, then stream-aware label match, then the target
-     * level's distribution strategy.
-     */
-    private function resolveArm(StudentCurriculum $sourceEnrollment, ClassLevelArm $sourceArm, ClassLevel $targetLevel): ?ClassLevelArm
-    {
-        // 1 — EXPLICIT MAP, VALIDATED AGAINST THE PROGRESSION TARGET. The schema guarantees the map's
-        // two arms share a school and nothing more: no FK ties the mapped target to the source level's
-        // next_class_level_id, so an operator can map 7A into a Year 9 arm and every constraint
-        // accepts it. Following that would promote a pupil into the wrong year — silently, since the
-        // write succeeds. A mismatched map is REFUSED, not fallen through: falling through would
-        // quietly place the pupil somewhere else and hide a misconfiguration the school needs told.
-        $mapped = ClassLevelArmProgression::withoutGlobalScope(SchoolScope::class)
-            ->where('school_id', $this->schoolId)
-            ->where('source_class_level_arm_id', $sourceArm->id)
-            ->first();
-
-        if ($mapped !== null) {
-            $mappedArm = ClassLevelArm::withoutGlobalScope(SchoolScope::class)
-                ->whereKey($mapped->target_class_level_arm_id)
-                ->first();
-
-            if ($mappedArm !== null && (int) $mappedArm->class_level_id === (int) $targetLevel->id) {
-                return $mappedArm;
-            }
-
-            Log::warning('MoveToNextYearJob: arm map points outside the progression target level — refusing it', [
-                'curriculum_id' => $this->curriculum->id,
-                'student_id' => $sourceEnrollment->student_id,
-                'source_class_level_arm_id' => $sourceArm->id,
-                'mapped_class_level_id' => $mappedArm?->class_level_id,
-                'expected_class_level_id' => $targetLevel->id,
-            ]);
-
-            return null;
-        }
-
-        // 2 — LABEL MATCH, STREAM-AWARE. class_level_arms is UNIQUE on
-        // (class_level_id, arm_id, stream_id), so a label alone can identify two arms in one level
-        // that differ only by stream. Every stream_id is NULL across both schools today, so a
-        // label-only match happens to be unambiguous — and would stop being so the first time a
-        // school configures streams, silently placing pupils in the wrong stream.
-        $labelMatch = $this->targetArms($targetLevel)
-            ->first(fn (ClassLevelArm $arm) => $arm->arm?->label === $sourceArm->arm?->label
-                && (int) $arm->stream_id === (int) $sourceArm->stream_id);
-
-        if ($labelMatch !== null) {
-            return $labelMatch;
-        }
-
-        // 3 — DISTRIBUTION, GOVERNED BY THE TARGET LEVEL. The target owns its arms and any future
-        // streams, so its strategy decides how they are filled; a source level's preference has no
-        // standing over a level it is feeding.
-        $arms = $this->targetArms($targetLevel);
-
-        if ($arms->isEmpty()) {
-            Log::warning('MoveToNextYearJob: target class level has no arms', [
-                'curriculum_id' => $this->curriculum->id,
-                'target_class_level_id' => $targetLevel->id,
-            ]);
-
-            return null;
-        }
-
-        if ($targetLevel->arm_distribution_strategy === 'explicit_only') {
-            Log::warning('MoveToNextYearJob: target level is explicit_only and no map or label matched — leaving the pupil unplaced', [
-                'curriculum_id' => $this->curriculum->id,
-                'student_id' => $sourceEnrollment->student_id,
-                'target_class_level_id' => $targetLevel->id,
-            ]);
-
-            return null;
-        }
-
-        // PURE FUNCTION OF THE PUPIL — never a counter. Placement must not depend on which source
-        // curriculum's job computed it: 7A and 7B both feeding 8D/8E would each start at D under a
-        // per-job round-robin and skew the arms, and any shared counter would race between concurrent
-        // jobs. student_id % armCount over a fixed order needs no coordination and is stable across
-        // re-runs, which is also what makes a re-run's recomputation land where the first one did.
-        return $arms[(int) $sourceEnrollment->student_id % $arms->count()];
-    }
-
-    /**
-     * The target level's arms in a FIXED, documented order — by id ascending. The order is part of
-     * the placement contract: change it and every pupil's modulo lands somewhere else.
+     * The shared placement rules, in WRITE mode. One resolver per job: the source curriculum, school
+     * and target session are constant across every pupil, and it caches each target level's arm list.
      *
-     * @return Collection<int, ClassLevelArm>
+     * The planner constructs the same object in READ-ONLY mode to build the preview, which is what
+     * makes preview/commit parity a property of the code rather than a coincidence of two
+     * implementations agreeing today.
      */
-    private function targetArms(ClassLevel $targetLevel): Collection
+    private function placement(): NextYearPlacementResolver
     {
-        return ClassLevelArm::withoutGlobalScope(SchoolScope::class)
-            ->with('arm')
-            ->where('class_level_id', $targetLevel->id)
-            ->orderBy('id')
-            ->get()
-            ->values();
-    }
-
-    /**
-     * Carry the pupil's exam type if the target level runs it, else the target's default.
-     *
-     * NULL is a HARD STOP, not a fallback: which certificate a pupil sits is not something to guess.
-     * This is the Year 11 -> Year 12 case the set-plus-default schema exists for — Year 11 runs BSS
-     * and WAEC, Year 12 runs WAEC alone, so a BSS pupil resolves through the default.
-     */
-    private function resolveExamType(ClassLevel $targetLevel): ?int
-    {
-        $sourceExamTypeId = $this->curriculum->exam_type_id;
-
-        $inTargetSet = ClassLevelExamType::withoutGlobalScope(SchoolScope::class)
-            ->where('class_level_id', $targetLevel->id)
-            ->where('exam_type_id', $sourceExamTypeId)
-            ->exists();
-
-        if ($inTargetSet) {
-            return (int) $sourceExamTypeId;
-        }
-
-        return $targetLevel->default_exam_type_id === null
-            ? null
-            : (int) $targetLevel->default_exam_type_id;
-    }
-
-    /**
-     * Find (or create) the curriculum for a level's FIRST participating slot in the target session.
-     *
-     * Terms are never created — if the class level participates in a slot the target session has no
-     * Term row for, this returns null and the pupil is left unresolved for a re-run after the calendar
-     * is entered. Fabricating an academic calendar as a side effect of a rollover is not this job's
-     * business, and the same discipline governs MoveFromTermJob.
-     */
-    private function resolveTargetCurriculum(ClassLevel $level, ClassLevelArm $arm, ?int $examTypeId): ?Curriculum
-    {
-        $firstSlot = ClassLevelTermParticipation::withoutGlobalScope(SchoolScope::class)
-            ->where('school_id', $this->schoolId)
-            ->where('class_level_id', $level->id)
-            ->orderBy('term_order')
-            ->first();
-
-        if ($firstSlot === null) {
-            Log::warning('MoveToNextYearJob: class level has no participating term slots', [
-                'curriculum_id' => $this->curriculum->id,
-                'class_level_id' => $level->id,
-            ]);
-
-            return null;
-        }
-
-        $targetTerm = Term::withoutGlobalScope(SchoolScope::class)
-            ->where('academic_session_id', $this->targetSession->id)
-            ->where('order', $firstSlot->term_order)
-            ->first();
-
-        if ($targetTerm === null) {
-            Log::warning('MoveToNextYearJob: target session has no Term row for the first participating slot', [
-                'curriculum_id' => $this->curriculum->id,
-                'target_session_id' => $this->targetSession->id,
-                'term_order' => $firstSlot->term_order,
-            ]);
-
-            return null;
-        }
-
-        $isCcm = (bool) $firstSlot->is_ccm;
-
-        return Curriculum::withoutGlobalScope(SchoolScope::class)->firstOrCreate(
-            [
-                'school_id' => $this->schoolId,
-                'term_id' => $targetTerm->id,
-                'class_level_arm_id' => $arm->id,
-                'exam_type_id' => $examTypeId,
-                'is_ccm' => $isCcm,
-            ],
-            [
-                'min_subjects' => $this->curriculum->min_subjects,
-                'status' => 'active',
-                // RESOLVED from the target level, never copied — see the class docblock.
-                'grading_scheme_id' => $level->grading_scheme_id,
-                'marking_scheme_id' => $this->resolveMarkingSchemeId($isCcm),
-            ]
+        return $this->placement ??= new NextYearPlacementResolver(
+            $this->curriculum,
+            $this->schoolId,
+            $this->targetSession,
         );
     }
 
     /**
-     * (school, is_ccm, latest version) — the same shape MoveFromCcmJob::attachMarkingComponents uses.
-     * NULL is legitimate and drops the curriculum onto the legacy per-subject component path.
+     * The refusals keep the job's own log lines and its own structure — the resolver returns a
+     * reason, this decides what to say about it. Same split as MoveFromTermJob keeping its logging
+     * when NextTermSlot took over its resolution.
      */
-    private function resolveMarkingSchemeId(bool $isCcm): ?int
+    private function logRefusal(NextYearPlacement $placement, StudentCurriculum $sourceEnrollment, ClassLevel $targetLevel): void
     {
-        return MarkingScheme::query()
-            ->withoutGlobalScope(SchoolScope::class)
-            ->active()
-            ->where('school_id', $this->schoolId)
-            ->where('is_ccm', $isCcm)
-            ->latest('version')
-            ->first()?->id;
+        $context = [
+            'curriculum_id' => $this->curriculum->id,
+            'student_id' => $sourceEnrollment->student_id,
+            'target_class_level_id' => $targetLevel->id,
+        ];
+
+        match ($placement->reason) {
+            NextYearPlacement::MAP_OUTSIDE_TARGET => Log::warning(
+                'MoveToNextYearJob: arm map points outside the progression target level — refusing it',
+                $context + ['mapped_class_level_id' => $placement->mappedClassLevelId],
+            ),
+            NextYearPlacement::NO_ARM => Log::warning('MoveToNextYearJob: target class level has no arms', $context),
+            NextYearPlacement::EXPLICIT_ONLY_NO_MATCH => Log::warning(
+                'MoveToNextYearJob: target level is explicit_only and no map or label matched — leaving the pupil unplaced',
+                $context,
+            ),
+            NextYearPlacement::NO_EXAM_TYPE => Log::warning(
+                'MoveToNextYearJob: no resolvable exam type for the target level — refusing to guess',
+                $context,
+            ),
+            NextYearPlacement::NO_PARTICIPATING_SLOT => Log::warning(
+                'MoveToNextYearJob: class level has no participating term slots',
+                $context,
+            ),
+            NextYearPlacement::NO_TERM_AT_SLOT => Log::warning(
+                'MoveToNextYearJob: target session has no Term row for the first participating slot',
+                $context + ['target_session_id' => $this->targetSession->id, 'term_order' => $placement->termOrder],
+            ),
+            default => Log::warning('MoveToNextYearJob: pupil left unplaced', $context + ['reason' => $placement->reason]),
+        };
     }
 
     /**

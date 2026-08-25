@@ -488,7 +488,8 @@
         "api",
         "auth:sanctum",
         "tenant",
-        "permission:student_status.view"
+        "permission:student_status.view",
+        "guardian_self"
     ],
     "GET /api/head-of-school/students": [
         "api",
@@ -612,13 +613,15 @@
         "api",
         "auth:sanctum",
         "tenant",
-        "permission:result.view"
+        "permission:result.view",
+        "guardian_ward"
     ],
     "GET /api/student-curricula/{studentCurriculum}/curriculum-subject/{curriculumSubject}": [
         "api",
         "auth:sanctum",
         "tenant",
-        "permission:result.view"
+        "permission:result.view",
+        "guardian_ward"
     ],
     "GET /api/students": [
         "api",
@@ -672,7 +675,8 @@
         "api",
         "auth:sanctum",
         "tenant",
-        "permission:student_status.view"
+        "permission:student_status.view",
+        "guardian_ward"
     ],
     "GET /api/students/{student}/enrollments/{studentCurriculum}/subjects": [
         "api",
@@ -690,7 +694,8 @@
         "api",
         "auth:sanctum",
         "tenant",
-        "permission:student_status.view"
+        "permission:student_status.view",
+        "guardian_ward"
     ],
     "GET /api/subject-result-statuses": [
         "api",
@@ -833,13 +838,15 @@
         "web",
         "auth",
         "tenant",
-        "permission:result.view"
+        "permission:result.view",
+        "guardian_no_bulk"
     ],
     "GET /class-level/{classLevel}/results": [
         "web",
         "auth",
         "tenant",
-        "permission:result.view"
+        "permission:result.view",
+        "guardian_no_bulk"
     ],
     "GET /dashboard": [
         "web",
@@ -983,12 +990,6 @@
     "GET /sanctum/csrf-cookie": [
         "web"
     ],
-    "GET /school-setup": [
-        "web",
-        "auth",
-        "tenant",
-        "permission:admin_area.access"
-    ],
     "GET /select-school": [
         "web",
         "auth"
@@ -1036,7 +1037,8 @@
         "web",
         "auth",
         "tenant",
-        "permission:curriculum_subject.view"
+        "permission:curriculum_subject.view",
+        "guardian_no_bulk"
     ],
     "GET /setup/head-of-schools": [
         "web",
@@ -1066,13 +1068,15 @@
         "web",
         "auth",
         "tenant",
-        "permission:curriculum_subject.view"
+        "permission:curriculum_subject.view",
+        "guardian_ward"
     ],
     "GET /setup/student-curricula/{student}": [
         "web",
         "auth",
         "tenant",
-        "permission:student_curriculum.view"
+        "permission:student_curriculum.view",
+        "guardian_ward"
     ],
     "GET /setup/teacher-assignments": [
         "web",
@@ -1115,13 +1119,15 @@
         "web",
         "auth",
         "tenant",
-        "permission:result.view"
+        "permission:result.view",
+        "guardian_ward"
     ],
     "GET /students/{student}/results/{studentCurriculum}": [
         "web",
         "auth",
         "tenant",
-        "permission:result.view"
+        "permission:result.view",
+        "guardian_ward"
     ],
     "GET /super-admin/admins": [
         "web",

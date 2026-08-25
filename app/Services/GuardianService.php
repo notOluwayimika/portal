@@ -1063,6 +1063,88 @@ class GuardianService
             ->first();
     }
 
+    /**
+     * Whether $user is acting as a PARENT and nothing else.
+     *
+     * THE ROLE-CONDITIONAL PREDICATE BEHIND EVERY GUARDIAN-SCOPED GUARD, and it
+     * lives here — beside isWardOf() — for the same reason isWardOf() does: the
+     * question is now asked by three middlewares across twelve routes, and three
+     * copies of it is how the answer diverges. A drifted copy is a hole, or an
+     * outage, depending on which way it drifted.
+     *
+     * WHY NOT THE BARE hasRole('guardian'). Ownership and self-scoping are the
+     * wrong questions for staff: an admin, teacher, head of school, key stage
+     * coordinator, boarding parent or bursar holding these abilities is
+     * *supposed* to read records they have no family relationship with — that is
+     * the job. A teacher who is also a parent at the same school holds BOTH
+     * roles, and the bare test would strip their staff access the day it
+     * shipped. Every other role in RbacSeeder::grantsMap() is a staff or
+     * oversight seat, so "holds anything besides guardian" is a sound and
+     * self-maintaining reading of "is staff".
+     *
+     * NOTE the deliberate divergence this creates: the approval/deadline
+     * visibility filters inside these route closures DO use the bare
+     * hasRole('guardian'), so a dual-role user stands outside these guards but
+     * is still guardian-filtered on what it shows them. That is the safe
+     * direction of the two (less restrictive about WHICH record, more
+     * restrictive about what is rendered), and those filters are out of scope.
+     */
+    public function isActingAsGuardian(User $user): bool
+    {
+        if (! $user->hasRole('guardian')) {
+            return false;
+        }
+
+        return $user->getRoleNames()->diff(['guardian'])->isEmpty();
+    }
+
+    /**
+     * Whether $student (by primary key) is a ward of $user in the ACTIVE School.
+     *
+     * The ownership predicate behind EnsureGuardianOwnsStudent. Extracted rather
+     * than inlined because the same question is asked of eight routes across two
+     * transports, and eight copies of it is how the answer diverges.
+     *
+     * RESOLVES THROUGH forUserInActiveSchool(), NEVER `$user->guardian`. The
+     * docblock immediately above states why that relation is wrong for a parent
+     * with rows in more than one School: it is an unordered `hasOne` whose scope
+     * ORs on School access, so it returns an arbitrary one of their rows. Here
+     * that is not a display bug — it is the difference between "is this child
+     * yours" answered about the right School and answered about some other one,
+     * on the code path that decides whether a parent may read a stranger's
+     * results. False when there is no Guardian row in the active School at all.
+     *
+     * `can_login` IS DELIBERATELY NOT TESTED, and this is not an oversight.
+     * Ownership ("is this your child") and login-enablement ("may this parent
+     * sign in") are separate product decisions living on the same pivot row, and
+     * the overwhelming majority of live pivots do not carry can_login. Folding it
+     * in here would read as a tightening while actually cutting almost every
+     * legitimate parent off from their own child's results — a functional outage
+     * shipped under cover of a security fix. If login-enablement should gate
+     * these routes, that is its own change, with its own rollout.
+     *
+     * The pivot is queried directly rather than through `$guardian->students()`
+     * so the answer cannot be altered by Student's global SchoolScope: this
+     * method must answer about the pivot and nothing else. Cross-School pivots
+     * are impossible by construction anyway — the `guardian_student_same_school`
+     * BEFORE INSERT/UPDATE triggers
+     * (2026_07_16_000003_add_guardian_student_same_school_constraint) refuse a
+     * row whose Guardian and Student sit in different Schools.
+     */
+    public function isWardOf(User $user, int $studentId): bool
+    {
+        $guardian = $this->forUserInActiveSchool($user);
+
+        if (! $guardian) {
+            return false;
+        }
+
+        return DB::table('guardian_student')
+            ->where('guardian_id', $guardian->id)
+            ->where('student_id', $studentId)
+            ->exists();
+    }
+
     private function logPivotEvent(Guardian $guardian, Student $student, string $event, array $properties = []): void
     {
         activity('guardian')

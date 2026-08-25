@@ -29,6 +29,7 @@ use App\Http\Resources\GuardianResource;
 use App\Http\Resources\StudentCurriculumResource;
 use App\Http\Resources\StudentResource;
 use App\Http\Resources\TeacherResource;
+use App\Models\AcademicSession;
 use App\Models\ClassLevel;
 use App\Models\CommentBand;
 use App\Models\Curriculum;
@@ -524,7 +525,6 @@ Route::middleware(['auth', 'tenant', 'permission:admin_area.access'])->group(fun
         return Inertia::render('admin/teacher-assignments/index');
     })->name('admin.teacher-assignments');
 
-    Route::inertia('school-setup', 'admin/SchoolSetup')->name('school.setup');
     Route::inertia('setup', 'admin/setup')->name('setup');
 
     // Route::get('setup/')
@@ -544,6 +544,34 @@ Route::middleware(['auth', 'tenant', 'permission:admin_area.access'])->group(fun
 
     // Students (write-oriented; index + profile view live in the admin|principal
     // group below so principals get read-only access).
+    // ── M4 · YEAR ROLLOVER ───────────────────────────────────────────────────────────────────────
+    // Page gated on the SAME permission as its API. The two diverging is a live defect elsewhere in
+    // this codebase — /guardians gates the page on admin_area.access while its API is on
+    // academic_setup.manage, so a role holding one and not the other gets a full-page 403 that
+    // presents as a broken login (ticketed). Same gate on both, deliberately.
+    Route::get('academics/rollover', function () {
+        return Inertia::render('admin/academics/rollover', [
+            'sessions' => AcademicSession::query()
+                ->orderByDesc('id')
+                ->get()
+                ->map(fn ($s) => ['id' => $s->uuid, 'label' => $s->name])
+                ->values(),
+            // Terms carry their session's name, because "First Term" is ambiguous across
+            // sessions and picking the wrong year's term is the mistake this screen must not
+            // make easy.
+            'terms' => Term::query()
+                ->with('academicSession')
+                ->orderByDesc('academic_session_id')
+                ->orderBy('order')
+                ->get()
+                ->map(fn ($t) => [
+                    'id' => $t->uuid,
+                    'label' => trim(($t->academicSession?->name ?? '').' — '.$t->name),
+                ])
+                ->values(),
+        ]);
+    })->middleware('permission:academics.rollover')->name('academics.rollover');
+
     Route::get('students/bulk-update', function () {
         return Inertia::render('admin/students/bulk-update');
     })->name('students.bulk-update');
@@ -746,7 +774,10 @@ Route::middleware(['auth', 'tenant', 'permission:curriculum_subject.view'])->gro
                 CommentBand::setFor($curriculumSubject->curriculum?->exam_type_id)
             ),
         ]);
-    })->name('setup.curriculumSubjects.show');
+        // `guardian_no_bulk`: the load above pulls `scores.student` and
+        // `studentResults.student` for EVERY student in the subject — a full score
+        // grid, reached with `curriculum_subject.view` alone and no uuid guessing.
+    })->name('setup.curriculumSubjects.show')->middleware('guardian_no_bulk');
 
     // student curricula subject management (drill-down; admin/head/teacher/guardian only)
     Route::get('setup/student-curricula/{studentCurriculum:uuid}/subjects', function (StudentCurriculum $studentCurriculum) {
@@ -756,7 +787,7 @@ Route::middleware(['auth', 'tenant', 'permission:curriculum_subject.view'])->gro
             'student' => new StudentResource($studentCurriculum->student),
             'studentCurriculum' => new StudentCurriculumResource($studentCurriculum),
         ]);
-    })->name('setup.studentCurricula.show');
+    })->name('setup.studentCurricula.show')->middleware('guardian_ward');
 
 });
 
@@ -768,7 +799,7 @@ Route::middleware(['auth', 'tenant', 'permission:student_curriculum.view'])->gro
         return Inertia::render('admin/student-curricula/index', [
             'student' => new StudentResource($student),
         ]);
-    })->name('setup.studentCurricula.index');
+    })->name('setup.studentCurricula.index')->middleware('guardian_ward');
 });
 
 Route::middleware(['auth', 'tenant', 'permission:dashboard.view'])->group(function () {
@@ -785,11 +816,14 @@ Route::middleware(['auth', 'tenant', 'permission:result_signature.manage'])->gro
 
 Route::middleware(['auth', 'tenant', 'permission:result.view'])->group(function () {
 
+    // `guardian_no_bulk`: these two render a whole class level / a whole arm's
+    // results. There is no student parameter for a parent to own, so ownership is
+    // the wrong question and the answer is a flat no. Staff are untouched.
     Route::get('class-level/{classLevel:uuid}/results', [ClassResultsController::class, 'classLevel'])
-        ->name('setup.classLevels.show');
+        ->name('setup.classLevels.show')->middleware('guardian_no_bulk');
 
     Route::get('class-level-arm/{classLevelArm:uuid}/results', [ClassResultsController::class, 'classLevelArm'])
-        ->name('setup.classLevelArms.results');
+        ->name('setup.classLevelArms.results')->middleware('guardian_no_bulk');
     Route::get('students/{student:uuid}/results/active', function (Student $student) {
         $studentCurricula = StudentCurriculum::with([
             'student',
@@ -841,7 +875,7 @@ Route::middleware(['auth', 'tenant', 'permission:result.view'])->group(function 
                 School::findOrFail(ActiveSchool::id()),
             ),
         ]);
-    })->name('students.results.active');
+    })->name('students.results.active')->middleware('guardian_ward');
     Route::get('students/{student:uuid}/results/{studentCurriculum:uuid}', function (Student $student, StudentCurriculum $studentCurriculum) {
         $studentCurricula = StudentCurriculum::with([
             'student',
@@ -890,7 +924,7 @@ Route::middleware(['auth', 'tenant', 'permission:result.view'])->group(function 
                 School::findOrFail(ActiveSchool::id()),
             ),
         ]);
-    })->name('students.results.show')->withoutScopedBindings();
+    })->name('students.results.show')->middleware('guardian_ward')->withoutScopedBindings();
 });
 
 Route::middleware(['auth', 'tenant', 'permission:parent_portal.access'])->group(function () {

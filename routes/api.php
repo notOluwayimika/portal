@@ -16,6 +16,7 @@ use App\Http\Controllers\HeadOfSchoolController;
 use App\Http\Controllers\MarkingComponentController;
 use App\Http\Controllers\NoticeController;
 use App\Http\Controllers\PrincipalApprovalController;
+use App\Http\Controllers\RolloverController;
 use App\Http\Controllers\ScholarshipController;
 use App\Http\Controllers\SessionController;
 use App\Http\Controllers\SetupController;
@@ -217,6 +218,23 @@ Route::middleware(['auth:sanctum', 'tenant', 'permission:academic_setup.manage']
     // The cohort form of the same correction: every pupil in 9B to 9S in one all-or-nothing batch.
     // Same permission as the single move above — it is the same operation, applied to a selection.
     Route::post('/students/bulk-reassign', [StudentBulkReassignmentController::class, 'store']);
+});
+
+// ── M4 · ROLLOVER OPERATOR SURFACE ────────────────────────────────────────────────────────────────
+// Its OWN permission, not academic_setup.manage: that gates reversible, one-row config edits and is
+// held by roles including form_teacher, while a rollover moves every pupil in the school across a
+// year boundary and cannot be undone by re-editing a row. The plan deferred coining it until
+// something checked it ("no permission exists until something checks it") — this group is the first
+// checker.
+Route::middleware(['auth:sanctum', 'tenant', 'permission:academics.rollover'])->group(function () {
+    Route::post('/rollover/end-of-term/preview', [RolloverController::class, 'previewEndOfTerm']);
+    Route::post('/rollover/end-of-term', [RolloverController::class, 'commitEndOfTerm']);
+    Route::post('/rollover/end-of-year/preview', [RolloverController::class, 'previewEndOfYear']);
+    Route::post('/rollover/end-of-year', [RolloverController::class, 'commitEndOfYear']);
+    Route::get('/rollover/batches', [RolloverController::class, 'batches']);
+});
+
+Route::middleware(['auth:sanctum', 'tenant', 'permission:academic_setup.manage'])->group(function () {
 
     // student subject management
 
@@ -382,9 +400,13 @@ Route::middleware(['auth:sanctum', 'tenant', 'permission:score.manage'])->group(
 
 Route::middleware(['auth:sanctum', 'tenant', 'permission:student_status.view'])->group(function () {
     // protected guardian routes
-    Route::get('/guardians/{guardian:uuid}/students', [GuardianController::class, 'students']);
-    Route::get('/students/{student:uuid}/result-status', [StudentController::class, 'activeResultStatus']);
-    Route::get('/students/{student:uuid}/curriculum/{curriculum:uuid}/result-status', [CurriculumController::class, 'activeResultStatus'])->withoutScopedBindings();
+    // `guardian_self`: identity, not custody. A parent may read their own guardian
+    // row's ward list and no other's; the row is resolved server-side from the
+    // acting user and the active School, never trusted from the uuid on the URL.
+    Route::get('/guardians/{guardian:uuid}/students', [GuardianController::class, 'students'])
+        ->middleware('guardian_self');
+    Route::get('/students/{student:uuid}/result-status', [StudentController::class, 'activeResultStatus'])->middleware('guardian_ward');
+    Route::get('/students/{student:uuid}/curriculum/{curriculum:uuid}/result-status', [CurriculumController::class, 'activeResultStatus'])->middleware('guardian_ward')->withoutScopedBindings();
 });
 
 // Read-only student data also available to principals (oversight role). The
@@ -403,8 +425,8 @@ Route::middleware(['auth:sanctum', 'tenant', 'permission:student.view'])->group(
 Route::middleware(['auth:sanctum', 'tenant', 'permission:result.view'])->group(function () {
     Route::get('/curriculum-subjects/{curriculumSubject:uuid}/year-average', [CurriculumSubjectController::class, 'getYearAverage']);
     Route::get('/curriculum-subjects/{curriculumSubject:uuid}/teachers', [CurriculumSubjectController::class, 'getTeachers']);
-    Route::get('/student-curricula/{studentCurriculum:uuid}', [StudentCurriculumController::class, 'getTeacherDetails']);
-    Route::get('/student-curricula/{studentCurriculum:uuid}/curriculum-subject/{curriculumSubject:uuid}', [StudentCurriculumController::class, 'getScoresWithMarkingComponents'])->withoutScopedBindings();
+    Route::get('/student-curricula/{studentCurriculum:uuid}', [StudentCurriculumController::class, 'getTeacherDetails'])->middleware('guardian_ward');
+    Route::get('/student-curricula/{studentCurriculum:uuid}/curriculum-subject/{curriculumSubject:uuid}', [StudentCurriculumController::class, 'getScoresWithMarkingComponents'])->middleware('guardian_ward')->withoutScopedBindings();
 });
 
 Route::middleware(['auth:sanctum', 'tenant', 'permission:parent_portal.access'])->group(function () {
@@ -417,6 +439,18 @@ Route::middleware(['auth:sanctum', 'tenant', 'permission:parent_portal.access'])
     // then silently failed to fill it. Takes no guardian id: see
     // GuardianController::wards.
     Route::get('/parent/wards', [GuardianController::class, 'wards']);
+});
+
+/*
+ * The parent portal's FINANCE read — what the authenticated guardian's wards owe.
+ *
+ * ITS OWN GROUP, not folded into the parent_portal group above and emphatically not into the
+ * `finance.access` group further down: same ability, separate declaration, so the finance surface a
+ * parent reaches is one file that can be read in full rather than a line inside a longer list. The
+ * file itself carries the reasoning for the path and the gate.
+ */
+Route::middleware(['auth:sanctum', 'tenant', 'permission:parent_portal.access'])->group(function () {
+    require __DIR__.'/endpoints/parent-finance.php';
 });
 
 // Form teachers may record assessments when the school has no boarding

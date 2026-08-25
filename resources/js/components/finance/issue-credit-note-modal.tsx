@@ -2,6 +2,7 @@ import axios from 'axios';
 import { useEffect, useState } from 'react';
 import { toast } from 'react-toastify';
 import { submit as submitCreditNote } from '@/actions/App/Finance/Http/Controllers/CreditNoteController';
+import { MoneyInput } from '@/components/finance/money-input';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -14,7 +15,6 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { invoiceLabel } from '@/lib/finance/invoice-kind';
-import { nairaToMinor } from '@/lib/format';
 import type { CreditNoteKind, Invoice } from '@/types/finance';
 
 type Props = {
@@ -37,7 +37,7 @@ export function IssueCreditNoteModal({
     invoice,
     onIssued,
 }: Props) {
-    const [amount, setAmount] = useState('');
+    const [amountMinor, setAmountMinor] = useState<number | null>(null);
     const [kind, setKind] = useState<CreditNoteKind>('credit_note');
     const [note, setNote] = useState('');
     const [errors, setErrors] = useState<Record<string, string>>({});
@@ -45,7 +45,7 @@ export function IssueCreditNoteModal({
     const [submitting, setSubmitting] = useState(false);
 
     const reset = () => {
-        setAmount('');
+        setAmountMinor(null);
         setKind('credit_note');
         setNote('');
         setErrors({});
@@ -68,10 +68,8 @@ export function IssueCreditNoteModal({
         setErrors({});
         setFormError(null);
 
-        const amountMinor = nairaToMinor(amount);
-
         if (amountMinor === null || amountMinor <= 0) {
-            setErrors({ amount: 'Enter a valid amount (e.g. 3000.00).' });
+            setErrors({ amount: 'Enter a valid amount (e.g. 3,000.00).' });
 
             return;
         }
@@ -131,12 +129,11 @@ export function IssueCreditNoteModal({
 
                 <div>
                     <Label htmlFor="credit-amount">Amount (₦)</Label>
-                    <Input
+                    <MoneyInput
                         id="credit-amount"
-                        inputMode="decimal"
-                        placeholder="3000.00"
-                        value={amount}
-                        onChange={(e) => setAmount(e.target.value)}
+                        placeholder="3,000.00"
+                        value={amountMinor}
+                        onChange={setAmountMinor}
                     />
                     {errors.amount && (
                         <p className="mt-0.5 text-xs text-destructive">

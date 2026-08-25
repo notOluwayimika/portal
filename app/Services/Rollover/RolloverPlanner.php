@@ -246,7 +246,15 @@ class RolloverPlanner
 
                 if ($episode->status === StudentStatusEnum::REPEATED) {
                     $placement = $resolver->forRepeater($sourceArm, $sourceLevel, create: false);
-                    $this->bucket($placement->resolved() ? $holding : $stuck, $placement, $episode, $sourceLevel, $sourceArm);
+
+                    // NOT a ternary into a by-reference parameter — PHP cannot pass the result of an
+                    // expression by reference, and the fatal only surfaces once a pupil actually
+                    // reaches here.
+                    if ($placement->resolved()) {
+                        $this->bucket($holding, $placement, $episode, $sourceLevel, $sourceArm);
+                    } else {
+                        $this->bucket($stuck, $placement, $episode, $sourceLevel, $sourceArm);
+                    }
 
                     continue;
                 }
@@ -265,7 +273,12 @@ class RolloverPlanner
                 }
 
                 $placement = $resolver->forAdvancer($episode, $sourceArm, $targetLevel, create: false);
-                $this->bucket($placement->resolved() ? $advancing : $stuck, $placement, $episode, $targetLevel, $placement->arm);
+
+                if ($placement->resolved()) {
+                    $this->bucket($advancing, $placement, $episode, $targetLevel, $placement->arm);
+                } else {
+                    $this->bucket($stuck, $placement, $episode, $targetLevel, $placement->arm);
+                }
             }
 
             $advancers = $advancers->concat($this->toGroups($advancing, $sourceLabel));

@@ -44,9 +44,21 @@ operational facts an agent needs most often.
   third time on this very branch, from a substitution that expanded to nothing:
 
   ```bash
-  files=$(git diff --name-only HEAD -- '*.php')
-  [ -n "$files" ] && ./vendor/bin/pint $files
+  files=($(git diff --name-only HEAD -- '*.php'))
+  [ ${#files[@]} -gt 0 ] && ./vendor/bin/pint "${files[@]}"
   ```
+
+  **An ARRAY, not a string, and that is not style.** The scalar form
+  `pint $files` depends on the shell word-splitting an unquoted parameter —
+  which bash does and **zsh does not**. This project's shell is zsh, so the
+  scalar form passes all N paths as ONE argument: pint reports
+  `The path "a.php b.php c.php" is not readable` and lints nothing. It failed
+  loudly here (2026-08-25), but it is the same class as the empty-list bug one
+  line up — a substitution that does not expand to the arguments you think it
+  does — and the next pint version that tolerates a joined path would fail
+  SILENTLY, reporting success having formatted nothing. The array form is
+  correct in both shells, so the guard covers the empty case and the shell
+  difference at once. Fix the class, not the instance.
 
   And read `git diff --stat` against your own model of the change before
   pushing — no gate objects to a commit full of correct formatting, and none

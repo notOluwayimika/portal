@@ -214,10 +214,20 @@ class MoveToNextYearJob implements ShouldQueue
      */
     private function resolveTargetLevel(ClassLevel $sourceLevel): ?ClassLevel
     {
-        // The TERMINAL test is on the column, not on the resolver's null. Both a terminal level and a
-        // `next_class_level_id` pointing at a row that is gone resolve to null, and calling the second
-        // one "terminal, nobody advances" would put a specific false statement in the log — the one
-        // place someone looks when a cohort did not move.
+        // The TERMINAL test is on the COLUMN, not on the resolver's null, because the two nulls mean
+        // different things and only one of them is terminality.
+        //
+        // HOW REACHABLE THE OTHER NULL IS, MEASURED RATHER THAN ASSUMED: not very. `class_levels`
+        // does NOT soft-delete, and `class_levels_next_level_school_foreign` is ON DELETE RESTRICT
+        // (2026_08_20_110000:67-70), so a referenced level cannot be deleted and the lookup cannot
+        // come back empty in normal operation. This branch is therefore defence against the paths
+        // that bypass the constraint — a restored dump, a bulk load with FOREIGN_KEY_CHECKS off —
+        // not a state the application can produce.
+        //
+        // It is kept anyway because it costs one comparison and it fails in the safe direction: the
+        // alternative treats a broken pointer as "terminal, nobody advances", which is a specific
+        // false statement in the one log a person reads when a cohort did not move. Do not simplify
+        // it back to testing the resolver's null.
         if ($sourceLevel->next_class_level_id === null) {
             Log::info('MoveToNextYearJob: terminal class level, nobody advances', [
                 'curriculum_id' => $this->curriculum->id,

@@ -6,6 +6,7 @@ use App\Models\Student;
 use App\Models\StudentCurriculum;
 use App\Models\User;
 use App\Services\GuardianService;
+use App\Support\StudentRecordAccessLog;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -68,6 +69,13 @@ use Symfony\Component\HttpFoundation\Response;
  * nothing about existence beyond what the School scope on the route binding
  * already reveals — a student outside the active School never resolves and 404s
  * before this middleware runs.
+ *
+ * BOTH ARMS ARE AUDITED — see App\Support\StudentRecordAccessLog, which carries
+ * the reasoning. A pass writes `student_record_viewed`, a refusal writes
+ * `student_record_access_refused` naming `guardian_ward` as the rule. Staff never
+ * reach either, deliberately. The log can never alter what this middleware
+ * decides: every write is swallowed, so an unwritable audit trail leaves a 403 a
+ * 403 and a 200 a 200.
  */
 class EnsureGuardianOwnsStudent
 {
@@ -96,14 +104,21 @@ class EnsureGuardianOwnsStudent
         // remove. Refusing instead turns that mistake into an immediately visible
         // 403 for parents rather than a silent re-opening of eight doors.
         if ($studentIds === []) {
-            return $this->refuse($request);
+            return $this->refuse($request, $user, [], null);
         }
 
         foreach ($studentIds as $studentId) {
             if (! $this->guardians->isWardOf($user, $studentId)) {
-                return $this->refuse($request);
+                return $this->refuse($request, $user, $studentIds, $studentId);
             }
         }
+
+        // The ward check has PASSED: a parent is about to read a child's record.
+        // This is the entry that makes "was it ever exploited" answerable, so it
+        // is written on the allow path and not only on refusals — a log of
+        // refusals alone records the attempts that failed and nothing about the
+        // reads that succeeded, which is the half the question is about.
+        StudentRecordAccessLog::viewed($user, $request, $studentIds);
 
         return $next($request);
     }
@@ -142,8 +157,25 @@ class EnsureGuardianOwnsStudent
         return array_values(array_unique($ids));
     }
 
-    private function refuse(Request $request): Response
+    /**
+     * @param  array<int,int>  $studentIds  every student the request named
+     * @param  int|null  $offendingStudentId  the one that failed the check, or null
+     *                                        when nothing resolved at all
+     */
+    private function refuse(Request $request, User $user, array $studentIds, ?int $offendingStudentId): Response
     {
+        // BEFORE the abort, which throws. Both refusal arms come through here,
+        // so the fail-closed "nothing resolved" case is audited too — that one
+        // is a WIRING mistake rather than a probe, and telling the two apart is
+        // exactly what recording the offending id (null here) is for.
+        StudentRecordAccessLog::refused(
+            $user,
+            $request,
+            'guardian_ward',
+            ['student_ids' => array_values($studentIds)],
+            $offendingStudentId,
+        );
+
         $message = 'You can only view records for a student in your care.';
 
         if ($request->expectsJson() || $request->is('api/*')) {

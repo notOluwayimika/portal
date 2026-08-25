@@ -46,6 +46,56 @@ final class InvoiceReadModel
     }
 
     /**
+     * THE OUTSTANDING INVOICES for ONE student — the payer's list, and the read the parent portal
+     * consumes.
+     *
+     * IT GOES THROUGH settlementSums() LIKE EVERY OTHER READ HERE, and that is the whole reason this
+     * method exists rather than the caller assembling it. The docblock immediately below states the
+     * invariant: an Invoice that did not come through those aggregates reports a settlement position
+     * of zero whether or not that is true, so a resource serialising it shows `outstanding` equal to
+     * the FULL TOTAL, silently. On a staff screen that is a wrong badge. On a PAYER surface it is a
+     * parent being asked for money they have already paid, with nothing anywhere reporting an error.
+     *
+     * THE OUTSTANDING ARITHMETIC IS NOT SPELLED AGAIN HERE. It is `InvoiceSettlement::for()` — the
+     * same derivation InvoiceResource renders — because the ticket the docblock below cites
+     * (docs/handoff/tickets/three-spellings-of-the-settlement-aggregates.md) counts the spellings
+     * that exist, and a third one added by this commit would be a fourth thing to converge.
+     *
+     * TWO EXCLUSIONS, BOTH DELIBERATE:
+     *   • VOID — `excludingVoid()`, the reporting default. A void charge was reversed; asking a
+     *     parent to pay it is asking for money the school has said it is not owed.
+     *   • SETTLED — an invoice whose outstanding has reached zero, by payment or by approved credit
+     *     note or by both. Nothing is owed on it, so it is not on the payer's list.
+     * An invoice that is PART paid stays, carrying its REMAINING amount. A student with no debt gets
+     * an empty collection — which is information, not an error.
+     *
+     * FILTERED IN PHP, NOT IN SQL, and that is a bounded claim rather than an oversight: the set is
+     * one student's invoices (a handful per term — `forStudent()` above already materialises all of
+     * them for `billedTotalForStudent()`), and a `HAVING` over the two withSum aliases would be the
+     * third spelling of the arithmetic this method exists to avoid.
+     *
+     * `lines` ARE NOT LOADED, unlike forStudent(). The payer resource does not carry them (a fee
+     * breakdown is internal composition), so loading them would be an eager load nothing reads.
+     *
+     * School isolation is automatic — Invoice uses BelongsToSchool.
+     *
+     * @return Collection<int, Invoice>
+     */
+    public function outstandingForStudent(int $studentId): Collection
+    {
+        $settlement = new InvoiceSettlement;
+
+        return Invoice::query()
+            ->where('student_id', $studentId)
+            ->excludingVoid()
+            ->tap($this->settlementSums(...))
+            ->orderBy('id')
+            ->get()
+            ->reject(fn (Invoice $invoice) => $settlement->for($invoice)['settlement_state'] === 'settled')
+            ->values();
+    }
+
+    /**
      * THE TWO SETTLEMENT AGGREGATES, FOR THIS READ PATH.
      *
      * ── THE INVARIANT, AND IT IS NOT ABOUT ROUTE-MODEL BINDING ──

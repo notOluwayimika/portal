@@ -181,8 +181,12 @@ it("default — the existing payment path writes origin = 'portal' with no code 
     ActiveSchool::runFor($school->id, function () use ($admin, $makeInvoice) {
         $invoice = $makeInvoice(10000);
 
-        // RecordPayment does not mention `origin` anywhere. The column's NOT NULL DEFAULT is what makes
-        // every row this system issues self-describing without a single edit to the write path.
+        // RecordPayment NOW WRITES `origin` EXPLICITLY (2026_08_25_100000's commit), defaulting its own
+        // parameter to Payment::ORIGIN_PORTAL. This test previously read as a test of the COLUMN
+        // DEFAULT — "RecordPayment does not mention origin anywhere" — and that sentence is no longer
+        // true. What it pins now is the thing that actually matters to every existing caller: the
+        // bursar's front door, called with no origin argument, still writes 'portal'. The column
+        // default survives underneath and is still the backstop for any writer that omits the column.
         app(RecordPayment::class)->handle($invoice, Money::fromKobo(10000), 'Payer', $admin, SchoolDay::today(), testBankAccountId());
 
         $row = DB::table('finance_payments')->latest('id')->first();

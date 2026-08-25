@@ -250,10 +250,14 @@ it('gives an UNRECOGNISED origin a refusal that claims nothing about where the m
      * payment, made by a system that had simply not been taught the value.
      *
      * ASSERTED ON AN IN-MEMORY MODEL, and that is the honest limit of this arm rather than a
-     * shortcut. `finance_payments_origin_shape` admits exactly 'portal' and 'migrated', so a third
-     * value cannot be persisted and the ROUTE cannot be driven into this branch — the arms below
-     * that go through HTTP are structurally unable to reach it. What is being pinned is the mapping
-     * itself, which is where the defect lived.
+     * shortcut. The guard is the `finance_payments_origin_pairing_bi` TRIGGER — `finance_payments_
+     * origin_shape` was DROPPED by 2026_08_17_100000 and this comment named it for one branch too
+     * long — and it admits exactly 'portal', 'migrated' and 'gateway' (the third added by
+     * 2026_08_25_100000). So an UNRECOGNISED value still cannot be persisted and the ROUTE still
+     * cannot be driven into this branch; the arms below that go through HTTP remain structurally
+     * unable to reach it. What is being pinned is the mapping itself, which is where the defect
+     * lived. Note that 'gateway' is NOT an unrecognised origin: it is receiptable and answers null,
+     * which PaymentOriginGatewayTest pins.
      *
      * WATCHED RED: restore `return $this->isReceiptable() ? null : self::RECEIPT_REFUSAL_REASON;`.
      * The unknown row then answers the WCBS text and the first expectation fails.

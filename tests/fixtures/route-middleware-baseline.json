@@ -488,7 +488,8 @@
         "api",
         "auth:sanctum",
         "tenant",
-        "permission:student_status.view"
+        "permission:student_status.view",
+        "guardian_self"
     ],
     "GET /api/head-of-school/students": [
         "api",
@@ -837,13 +838,15 @@
         "web",
         "auth",
         "tenant",
-        "permission:result.view"
+        "permission:result.view",
+        "guardian_no_bulk"
     ],
     "GET /class-level/{classLevel}/results": [
         "web",
         "auth",
         "tenant",
-        "permission:result.view"
+        "permission:result.view",
+        "guardian_no_bulk"
     ],
     "GET /dashboard": [
         "web",
@@ -1034,7 +1037,8 @@
         "web",
         "auth",
         "tenant",
-        "permission:curriculum_subject.view"
+        "permission:curriculum_subject.view",
+        "guardian_no_bulk"
     ],
     "GET /setup/head-of-schools": [
         "web",

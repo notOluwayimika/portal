@@ -774,7 +774,10 @@ Route::middleware(['auth', 'tenant', 'permission:curriculum_subject.view'])->gro
                 CommentBand::setFor($curriculumSubject->curriculum?->exam_type_id)
             ),
         ]);
-    })->name('setup.curriculumSubjects.show');
+        // `guardian_no_bulk`: the load above pulls `scores.student` and
+        // `studentResults.student` for EVERY student in the subject — a full score
+        // grid, reached with `curriculum_subject.view` alone and no uuid guessing.
+    })->name('setup.curriculumSubjects.show')->middleware('guardian_no_bulk');
 
     // student curricula subject management (drill-down; admin/head/teacher/guardian only)
     Route::get('setup/student-curricula/{studentCurriculum:uuid}/subjects', function (StudentCurriculum $studentCurriculum) {
@@ -813,11 +816,14 @@ Route::middleware(['auth', 'tenant', 'permission:result_signature.manage'])->gro
 
 Route::middleware(['auth', 'tenant', 'permission:result.view'])->group(function () {
 
+    // `guardian_no_bulk`: these two render a whole class level / a whole arm's
+    // results. There is no student parameter for a parent to own, so ownership is
+    // the wrong question and the answer is a flat no. Staff are untouched.
     Route::get('class-level/{classLevel:uuid}/results', [ClassResultsController::class, 'classLevel'])
-        ->name('setup.classLevels.show');
+        ->name('setup.classLevels.show')->middleware('guardian_no_bulk');
 
     Route::get('class-level-arm/{classLevelArm:uuid}/results', [ClassResultsController::class, 'classLevelArm'])
-        ->name('setup.classLevelArms.results');
+        ->name('setup.classLevelArms.results')->middleware('guardian_no_bulk');
     Route::get('students/{student:uuid}/results/active', function (Student $student) {
         $studentCurricula = StudentCurriculum::with([
             'student',

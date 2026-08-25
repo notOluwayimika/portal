@@ -5,6 +5,8 @@ use App\Finance\Console\AuditLedgerCoherence;
 use App\Finance\Console\ImportOpeningBalances;
 use App\Finance\Console\ReconcileAccounts;
 use App\Http\Middleware\ApplyImpersonation;
+use App\Http\Middleware\DenyGuardianBulkRecords;
+use App\Http\Middleware\EnsureGuardianOwnsGuardianRecord;
 use App\Http\Middleware\EnsureGuardianOwnsStudent;
 use App\Http\Middleware\EnsureRole;
 use App\Http\Middleware\EnsureTwoFactorEnrolled;
@@ -88,6 +90,13 @@ return Application::configure(basePath: dirname(__DIR__))
             // visible in `route:list` rather than buried in eight closures. See
             // the class.
             'guardian_ward' => EnsureGuardianOwnsStudent::class,
+            // No relationship to check: the response covers a whole cohort, so
+            // there is no student a parent could own. Attached BY NAME to the
+            // three bulk-record routes the guardian role can reach. See the class.
+            'guardian_no_bulk' => DenyGuardianBulkRecords::class,
+            // Identity, not custody: a parent may address their OWN guardian row
+            // and no other. Resolved server-side, never trusted from the request.
+            'guardian_self' => EnsureGuardianOwnsGuardianRecord::class,
             'permission' => PermissionMiddleware::class,
             'role_or_permission' => RoleOrPermissionMiddleware::class,
 

@@ -1064,6 +1064,41 @@ class GuardianService
     }
 
     /**
+     * Whether $user is acting as a PARENT and nothing else.
+     *
+     * THE ROLE-CONDITIONAL PREDICATE BEHIND EVERY GUARDIAN-SCOPED GUARD, and it
+     * lives here — beside isWardOf() — for the same reason isWardOf() does: the
+     * question is now asked by three middlewares across twelve routes, and three
+     * copies of it is how the answer diverges. A drifted copy is a hole, or an
+     * outage, depending on which way it drifted.
+     *
+     * WHY NOT THE BARE hasRole('guardian'). Ownership and self-scoping are the
+     * wrong questions for staff: an admin, teacher, head of school, key stage
+     * coordinator, boarding parent or bursar holding these abilities is
+     * *supposed* to read records they have no family relationship with — that is
+     * the job. A teacher who is also a parent at the same school holds BOTH
+     * roles, and the bare test would strip their staff access the day it
+     * shipped. Every other role in RbacSeeder::grantsMap() is a staff or
+     * oversight seat, so "holds anything besides guardian" is a sound and
+     * self-maintaining reading of "is staff".
+     *
+     * NOTE the deliberate divergence this creates: the approval/deadline
+     * visibility filters inside these route closures DO use the bare
+     * hasRole('guardian'), so a dual-role user stands outside these guards but
+     * is still guardian-filtered on what it shows them. That is the safe
+     * direction of the two (less restrictive about WHICH record, more
+     * restrictive about what is rendered), and those filters are out of scope.
+     */
+    public function isActingAsGuardian(User $user): bool
+    {
+        if (! $user->hasRole('guardian')) {
+            return false;
+        }
+
+        return $user->getRoleNames()->diff(['guardian'])->isEmpty();
+    }
+
+    /**
      * Whether $student (by primary key) is a ward of $user in the ACTIVE School.
      *
      * The ownership predicate behind EnsureGuardianOwnsStudent. Extracted rather

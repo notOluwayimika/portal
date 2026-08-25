@@ -66,19 +66,36 @@ class Payment extends Model
     public const MIGRATED_REFERENCE_FLOOR = 900_000_000;
 
     /**
-     * The two values `origin` may hold, named. The authority is the database: the trigger pair
-     * `finance_payments_origin_pairing_bi` / `_bu`
-     * (2026_08_17_100000_maker_checker_and_payment_origin_as_triggers.php) admits exactly these two
+     * The three values `origin` may hold, named. The authority is the database: the trigger pair
+     * `finance_payments_origin_pairing_bi` / `_bu` — installed by
+     * 2026_08_17_100000_maker_checker_and_payment_origin_as_triggers.php and REPLACED IN PLACE by
+     * 2026_08_25_100000_finance_payment_origin_admits_gateway.php — admits exactly these three
      * spellings, case-sensitively under `COLLATE utf8mb4_bin`, and keys the bank-account pairing off
-     * the same two. It replaced TWO CHECKs — `finance_payments_origin_shape` (2026_08_07_110000:91)
+     * the same three. It replaced TWO CHECKs — `finance_payments_origin_shape` (2026_08_07_110000:91)
      * and `finance_payments_bank_account_origin_shape` (2026_08_10_120000:102-104) — with one
      * predicate, because the pairing subsumes the domain rule and because production is MySQL 5.7.23,
      * which parses and ignores CHECK entirely. These constants are a second READER of that rule, never a second
-     * copy of it — the column is what refuses a third value, not this file.
+     * copy of it — the column is what refuses a fourth value, not this file.
      */
     public const ORIGIN_PORTAL = 'portal';
 
     public const ORIGIN_MIGRATED = 'migrated';
+
+    /**
+     * Money collected by an ONLINE PAYMENT PROVIDER and settled into one of the school's accounts.
+     *
+     * IT NAMES THE CATEGORY, NOT THE PROVIDER, and that is the whole decision rather than a
+     * shortening. `finance_payments` is append-only, so a value written into live money rows can
+     * never be corrected; `paystack` would mean a second provider needs a migration of rows that
+     * cannot be migrated. Which provider, and which transaction, travel per-row in
+     * `external_reference` — the column that already exists for exactly this purpose.
+     *
+     * ITS PAIRING ARM MIRRORS `portal`, NOT `migrated`: a gateway payment DOES name a bank account,
+     * the settlement account the provider pays out into, and the bursar reconciles it against a
+     * statement the same way. `migrated` is the odd arm because that money never entered one of our
+     * accounts at all.
+     */
+    public const ORIGIN_GATEWAY = 'gateway';
 
     /**
      * WHY A RECEIPT IS REFUSED FOR A MIGRATED ROW, in the words the operator reads. One string,
@@ -98,14 +115,19 @@ class Payment extends Model
      * The refusal for an origin this code does not recognise. It states what is actually known —
      * that provenance could not be confirmed — and asserts NOTHING about where the money came from.
      *
-     * Unreachable today: the `finance_payments_origin_pairing_bi` trigger admits exactly `portal` and
-     * `migrated`, so no third value can be persisted — and unlike the CHECK it replaced, that is now
-     * true on production too (2026_08_17_100000). It exists because the two halves of this
-     * decision must not be allowed to drift apart. `isReceiptable()` is an allowlist and refuses the
-     * unknown correctly; before this constant, the EXPLANATION was a denylist — every non-portal row
-     * got the WCBS text — so the day a third origin is added by an unrelated migration, this system
-     * would have told a bursar a specific, false thing about a parent's receipt. The predicate would
-     * have been right and the sentence wrong, which is worse than either being obviously broken.
+     * Unreachable today: the `finance_payments_origin_pairing_bi` trigger admits exactly `portal`,
+     * `migrated` and `gateway`, so no fourth value can be persisted — and unlike the CHECK it
+     * replaced, that is now true on production too (2026_08_17_100000, widened by
+     * 2026_08_25_100000). It exists because the two halves of this decision must not be allowed to
+     * drift apart. `isReceiptable()` is an allowlist and refuses the unknown correctly; before this
+     * constant, the EXPLANATION was a denylist — every non-portal row got the WCBS text — so the day
+     * a further origin is added by an unrelated migration, this system would have told a bursar a
+     * specific, false thing about a parent's receipt. The predicate would have been right and the
+     * sentence wrong, which is worse than either being obviously broken.
+     *
+     * THAT DAY HAS SINCE ARRIVED ONCE, AND THIS CONSTANT IS WHY IT COST NOTHING. `gateway` landed in
+     * 2026_08_25_100000 and is receiptable, so it takes the `null` branch — but had it not been, the
+     * neutral sentence, not the WCBS one, is what it would have been given.
      */
     public const RECEIPT_REFUSAL_REASON_UNKNOWN_ORIGIN = 'This system cannot confirm that it collected this payment, '
         .'so it will not issue a receipt for it. Ask the bursar’s office to check how this payment was recorded '
@@ -176,10 +198,12 @@ class Payment extends Model
     }
 
     /**
-     * The account the money landed in. NULL for a migrated row and NOT NULL for a portal one — the
-     * `finance_payments_origin_pairing_bi` trigger enforces exactly that pairing (2026_08_17_100000,
-     * replacing the CHECK of the same rule), so a receipt (which is only ever issued for a portal
-     * payment) always has one to name.
+     * The account the money landed in. NULL for a migrated row and NOT NULL for a portal or a gateway
+     * one — the `finance_payments_origin_pairing_bi` trigger enforces exactly that pairing
+     * (2026_08_17_100000, replacing the CHECK of the same rule; widened to the gateway arm by
+     * 2026_08_25_100000), so a receipt — which is only ever issued for a portal or a gateway payment,
+     * both of which name an account — always has one to name. A gateway row names the SETTLEMENT
+     * account the provider paid out into.
      *
      * @return BelongsTo<BankAccount, $this>
      */
@@ -190,10 +214,20 @@ class Payment extends Model
 
     /**
      * MAY THIS SYSTEM ISSUE A RECEIPT FOR THIS PAYMENT? The predicate is `origin`, and it is an
-     * ALLOWLIST rather than `!== ORIGIN_MIGRATED` on purpose. The two are equivalent today because
-     * the CHECK admits exactly two values — but they differ in what happens on the day a third
-     * arrives, and only one of them fails in the safe direction. A denylist would issue a receipt
-     * for an origin nobody had decided about; this refuses until someone does.
+     * ALLOWLIST rather than `!== ORIGIN_MIGRATED` on purpose.
+     *
+     * THE DAY THE TWO WOULD HAVE DIVERGED HAS HAPPENED, WHICH IS WHY THE SHAPE STAYS. When there were
+     * two origins the allowlist and `!== ORIGIN_MIGRATED` were equivalent, and the docblock said they
+     * differed only "on the day a third arrives". `gateway` is that third (2026_08_25_100000). A
+     * denylist would have issued a receipt for it automatically, the moment the migration ran and
+     * before anyone had decided whether this system may claim to have collected that money. The
+     * decision — it may; a gateway payment IS receiptable — is taken HERE, by adding the value to the
+     * list, in the same commit as the writer that produces it. A fourth origin is refused again until
+     * someone does the same for it.
+     *
+     * `in_array` WITH STRICT COMPARISON, not a `match` or an `||` chain, so the list reads as a list:
+     * the set is the thing being maintained, and the next arrival should be a one-line edit that is
+     * visible as such in a diff.
      *
      * NOT `MIGRATED_REFERENCE_FLOOR`. The floor is a receipt-NUMBERING fact — the reserved band a
      * migrated row draws its `reference` from so it cannot collide with a portal-issued one. Using
@@ -204,7 +238,7 @@ class Payment extends Model
      */
     public function isReceiptable(): bool
     {
-        return $this->origin === self::ORIGIN_PORTAL;
+        return in_array($this->origin, [self::ORIGIN_PORTAL, self::ORIGIN_GATEWAY], true);
     }
 
     /**
@@ -220,8 +254,14 @@ class Payment extends Model
      * turn an unrecognised row into a 500 on a page an operator deliberately opened — and a 500
      * destroys the refusal itself, so the operator learns nothing at all, which is the failure mode
      * the whole "never silently hide the row" rule exists to prevent. A refusal that declines to
-     * explain is strictly better than no refusal. The DATABASE is what keeps a third origin from
-     * existing (the CHECK); this branch is what keeps the system honest if it ever does.
+     * explain is strictly better than no refusal. The DATABASE is what keeps an unrecognised origin
+     * from existing — the `finance_payments_origin_pairing_bi` TRIGGER, not a CHECK, since
+     * 2026_08_17_100000; this branch is what keeps the system honest if one ever does.
+     *
+     * NO ARM WAS ADDED FOR `gateway`, and that is correct rather than an omission. A gateway payment
+     * is receiptable, so it takes the FIRST arm and answers `null` — the same answer a portal payment
+     * gives, through the same branch. An arm of its own would be a second spelling of `isReceiptable()`
+     * inside the method that already calls it.
      */
     public function receiptRefusalReason(): ?string
     {

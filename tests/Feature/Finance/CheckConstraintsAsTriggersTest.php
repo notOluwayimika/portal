@@ -53,7 +53,10 @@ function cctRules(): array
         ['finance_fee_schedule_changes', 'finance_fee_schedule_changes_maker_ne_checker', ['finance_fee_schedule_changes_maker_ne_checker']],
         ['finance_opening_balance_batches', 'finance_opening_balance_batches_maker_ne_checker', ['finance_opening_balance_batches_maker_ne_checker']],
         // Rule 7 replaces TWO constraints with ONE predicate: the pairing subsumes the domain rule,
-        // because an origin outside {portal, migrated} fails both of its arms.
+        // because an origin outside the legal set fails EVERY one of its arms. That set gained
+        // `gateway` in 2026_08_25_100000, which REPLACED this pair in place rather than adding a
+        // third trigger — so the stem, the timing and the events asserted here are unchanged and
+        // this test still pins the same two objects.
         ['finance_payments', 'finance_payments_origin_pairing', ['finance_payments_origin_shape', 'finance_payments_bank_account_origin_shape']],
     ];
 }
@@ -246,8 +249,11 @@ it('BITE — the origin/bank-account pairing refuses a mismatched pair and accep
     expect(DB::table('finance_payments')->count())->toBe(0);
 
     // The reachable half of the same predicate: a legal origin with the WRONG pairing is the trigger's.
+    // THE MESSAGE MOVED WITH THE RULE (2026_08_25_100000): it now names the gateway arm too, and it is
+    // asserted in full rather than by substring so a MESSAGE_TEXT truncated past MySQL's 128-character
+    // cap fails here. The sentence is 108 characters; the one it replaced was 97.
     expect(fn () => $insert('portal')) // portal with no bank account
-        ->toThrow(QueryException::class, 'finance_payments: a portal payment needs a bank account and a migrated payment must not have one.');
+        ->toThrow(QueryException::class, 'finance_payments: a portal or gateway payment needs a bank account and a migrated payment must not have one.');
 
     // …and the legal pairing lands, so the trigger is not simply refusing everything.
     ActiveSchool::runFor($school->id, fn () => $insert('migrated'));

@@ -146,8 +146,11 @@ class PaymentReceiptController extends Controller
             // 2026_07_19_100002_create_fee_payments_tables.php:36) that no writer ever overrides, so
             // it says almost nothing on its own; the account the bursar reconciles against is the
             // part of "how was this paid" a parent can actually check. Always present here — the
-            // origin-keyed CHECK makes bank_account_id NOT NULL for every portal payment, and a
-            // receipt is only ever issued for a portal payment.
+            // origin-keyed TRIGGER (`finance_payments_origin_pairing_bi`, not a CHECK, since
+            // 2026_08_17_100000) makes bank_account_id NOT NULL for every portal AND every gateway
+            // payment, and a receipt is only ever issued for one of those two. The null branch below
+            // is therefore unreachable through the pairing and is kept as the same kind of belt the
+            // pairing's own COALESCE is: it survives someone widening the origin set again.
             'bank_account' => $payment->bankAccount === null ? null : [
                 'label' => $payment->bankAccount->label,
                 'bank_name' => $payment->bankAccount->bank_name,

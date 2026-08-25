@@ -38,18 +38,43 @@ final class RecordPayment
     public function __construct(private readonly SubledgerPoster $ledger) {}
 
     /**
+     * @param  User|null  $actor  The person who RECEIVED the money, or null when nobody did.
+     *                            NULLABLE BECAUSE A GATEWAY PAYMENT HAS NO RECEIVER: the provider
+     *                            collected it and settled it; no member of staff took it, so
+     *                            `received_by_user_id` is NULL. A synthetic "system" user is
+     *                            deliberately NOT invented for this — the column would then name a
+     *                            person who did not act, on an append-only row, and every duty and
+     *                            attribution question asked of it afterwards would get a confident
+     *                            wrong answer. NULL says "nobody", which is the truth.
      * @param  string  $receivedAt  The business date the money was RECEIVED (Y-m-d). REQUIRED and
      *                              without a default: a payment handed over on Friday and keyed on Monday belongs to Friday,
      *                              and finance_payments is append-only so the date can never be corrected afterwards. The
      *                              FormRequest requires it at the edge; this refusal is the backstop for every non-HTTP caller.
      * @param  int  $bankAccountId  The account the money LANDED IN. Required and without a default:
      *                              a portal payment that does not say where the cash went cannot be reconciled against a bank
-     *                              statement, which is the only reason finance_bank_accounts exists. The origin-keyed CHECK on
-     *                              finance_payments is the backstop; this is the refusal a caller can act on.
+     *                              statement, which is the only reason finance_bank_accounts exists. A gateway payment names the
+     *                              SETTLEMENT account, for the same reason and with the same force. The origin-keyed TRIGGER on
+     *                              finance_payments — `finance_payments_origin_pairing_bi`, not a CHECK, since 2026_08_17_100000 —
+     *                              is the backstop; this is the refusal a caller can act on.
      * @param  string|null  $receivedAtReason  Why the date is not today. Required when it is not,
      *                                         because a back-dated receipt with no explanation is the first thing an auditor asks about.
+     * @param  string  $origin  Provenance, one of {@see Payment}'s ORIGIN_* constants. Defaults to
+     *                          ORIGIN_PORTAL so every existing caller — the bursar's front door — is
+     *                          unchanged. The DATABASE is the authority: the
+     *                          `finance_payments_origin_pairing_bi` trigger refuses an unrecognised
+     *                          value and refuses a legal one paired with the wrong bank-account
+     *                          state, so a bad argument here is a 1644, not a bad row.
+     * @param  string|null  $externalReference  The provider's own handle on this transaction — a
+     *                                          Paystack reference, and the only way back from a row
+     *                                          here to the provider's record of it. It goes in the
+     *                                          EXISTING `external_reference` column, which
+     *                                          2026_08_07_110000 added for the WCBS receipt
+     *                                          reference: the column's meaning is "the source
+     *                                          system's identifier for this money", which is exactly
+     *                                          what this is. A second column would split one question
+     *                                          across two places.
      */
-    public function handle(Invoice $invoice, Money $amount, string $payerName, User $actor, string $receivedAt, int $bankAccountId, ?string $receivedAtReason = null): Payment
+    public function handle(Invoice $invoice, Money $amount, string $payerName, ?User $actor, string $receivedAt, int $bankAccountId, ?string $receivedAtReason = null, string $origin = Payment::ORIGIN_PORTAL, ?string $externalReference = null): Payment
     {
         if ($amount->isZero() || $amount->isNegative()) {
             throw new BusinessRuleException('A payment amount must be positive.');
@@ -67,7 +92,7 @@ final class RecordPayment
             throw new BusinessRuleException("A payment must be in the invoice's currency ({$invoice->total->currency}).");
         }
 
-        return DB::transaction(function () use ($invoice, $amount, $payerName, $actor, $receivedAt, $receivedAtReason, $bankAccountId) {
+        return DB::transaction(function () use ($invoice, $amount, $payerName, $actor, $receivedAt, $receivedAtReason, $bankAccountId, $origin, $externalReference) {
             // Concurrency anchor (#94, UNCHANGED). Lock the INVOICE ROW first so
             // allocations to the same invoice serialise: a competing allocation blocks
             // here, then reads the winner's committed sum for the outstanding cap below.
@@ -101,10 +126,18 @@ final class RecordPayment
                 'reference' => $reference,
                 'amount' => $amount,
                 'payer_name' => $payerName,
-                'received_by_user_id' => $actor->id,
+                // NULL when nobody received it — see the $actor parameter's note. Not a system user.
+                'received_by_user_id' => $actor?->id,
                 'received_at' => $receivedAt,
                 'received_at_reason' => $receivedAtReason,
                 'bank_account_id' => $bankAccountId,
+                // WRITTEN EXPLICITLY, where it used to be left to the column DEFAULT. The default
+                // ('portal', 2026_08_07_110000) stays and is still the right one, but an Action that
+                // can produce more than one provenance must not express the common case by SILENCE:
+                // "the caller said portal" and "the caller said nothing" would be indistinguishable
+                // in the row and in this file, and finance_payments is append-only.
+                'origin' => $origin,
+                'external_reference' => $externalReference,
             ]);
 
             if ($allocateKobo > 0) {

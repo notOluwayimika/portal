@@ -42,7 +42,37 @@ class RolloverEndOfYearRequest extends FormRequest
         return [
             'source_session_id' => ['required', 'uuid'],
             'target_session_id' => ['required', 'uuid'],
+            // ── WHAT THE OPERATOR ACCEPTED, ECHOED BACK ─────────────────────────────────────────
+            // Destination identities from the preview, sent back VERBATIM. Optional here because
+            // this request serves the preview endpoint too, where there is nothing to acknowledge
+            // yet — commitEndOfYear treats an absent value as "acknowledged nothing", which is the
+            // safe reading: it passes when there is nothing unconfigured and refuses the moment
+            // there is.
+            //
+            // Deliberately NOT validated against the current plan here. A rule that checked these
+            // against a freshly computed set would be doing the comparison in the wrong place —
+            // before the plan the commit actually dispatches has been built — and would leave the
+            // real check looking already done.
+            'acknowledged_unconfigured' => ['sometimes', 'array'],
+            'acknowledged_unconfigured.*' => ['string', 'max:64'],
         ];
+    }
+
+    /**
+     * The destinations the operator accepted as unconfigured, as an opaque set.
+     *
+     * ABSENT MEANS THE EMPTY SET, NOT "SKIP THE CHECK". An older client that never sends the field
+     * acknowledges nothing, so it proceeds while nothing is unconfigured and is refused the moment
+     * something is — which is exactly the direction a missing acknowledgment should fail in.
+     *
+     * @return list<string>
+     */
+    public function acknowledgedUnconfigured(): array
+    {
+        return array_values(array_unique(array_map(
+            static fn ($key) => (string) $key,
+            $this->input('acknowledged_unconfigured', []),
+        )));
     }
 
     public function withValidator(Validator $validator): void

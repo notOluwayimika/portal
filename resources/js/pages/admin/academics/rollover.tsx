@@ -28,6 +28,51 @@ interface RolloverPlan {
     ccm_blockers: Named[];
     no_next_slot: Record<string, string>;
     warnings: string[];
+    placement: Placement;
+}
+
+interface PlacementPupil {
+    id: number;
+    name: string;
+    admission_number: string | null;
+}
+
+interface PlacementRow {
+    source: string;
+    destination: string;
+    /** null means the rollover would CREATE this destination — so it would have no subjects. */
+    destination_curriculum_id: number | null;
+    destination_key: string;
+    destination_is_unconfigured: boolean;
+    pupil_count: number;
+    pupils: PlacementPupil[];
+}
+
+interface Placement {
+    advancers: PlacementRow[];
+    repeaters: PlacementRow[];
+    unplaceable: {
+        source: string;
+        reason: string;
+        explanation: string;
+        pupils: PlacementPupil[];
+    }[];
+    graduating: {
+        source: string;
+        pupils: PlacementPupil[];
+    }[];
+    /** Pupils in every bucket combined — reconciled against `pupil_count` so none can go missing. */
+    accounted_pupils: number;
+    unconfigured_count: number;
+    /**
+     * OPAQUE. Echoed back on commit exactly as received, never rebuilt from the rows above.
+     *
+     * The server compares this against a freshly-planned set built by the same identity function,
+     * so reconstructing it here would be a SECOND implementation of that identity — and a drift
+     * between the two fails in the unsafe direction: a genuinely new unconfigured destination read
+     * as a match, and pupils placed into it with no subjects.
+     */
+    unconfigured_keys: string[];
 }
 
 interface BatchRow {
@@ -119,6 +164,24 @@ export default function RolloverPage({ sessions, terms }: RolloverPageProps) {
             ? { source_session_id: source, target_session_id: target }
             : { term_id: term };
 
+    /**
+     * The commit body: the preview body plus the acknowledgment, ECHOED OPAQUELY.
+     *
+     * `plan.placement.unconfigured_keys` is sent back exactly as the server produced it. It is not
+     * derived from the rendered rows, and it must never be — the server checks it against a freshly
+     * planned set built by the same identity function, so a client-side reconstruction would be a
+     * second implementation of that identity, and a drift would let a destination the operator never
+     * saw take pupils with no subjects.
+     */
+    const commitPayload = () =>
+        kind === 'end-of-year'
+            ? {
+                  ...payload(),
+                  acknowledged_unconfigured:
+                      plan?.placement?.unconfigured_keys ?? [],
+              }
+            : payload();
+
     const ready =
         kind === 'end-of-year' ? Boolean(source && target) : Boolean(term);
 
@@ -161,7 +224,7 @@ export default function RolloverPage({ sessions, terms }: RolloverPageProps) {
         setCommitting(true);
 
         try {
-            const res = await axios.post(endpoint(''), payload());
+            const res = await axios.post(endpoint(''), commitPayload());
 
             // The COMMIT's plan is the outcome. `previewed_jobs` is carried only so the panel can
             // say when the two disagreed — it is never displayed as the result.
@@ -385,6 +448,29 @@ export default function RolloverPage({ sessions, terms }: RolloverPageProps) {
                         <strong>{plan?.curricula.length ?? 0} class(es)</strong>
                         .
                     </p>
+                    {/* THE UNSKIMMABLE HALF OF THE SUBJECT WARNING. The pre-flight panel states the
+                        rule; this states the CONSEQUENCE of proceeding right now, in the one place
+                        the operator cannot scroll past. It earns that place because the failure has
+                        no recovery path — every caller of autoAttachCompulsorySubjects fires at
+                        enrollment-creation time, so nothing re-attaches subjects afterwards. A
+                        warning you must click past is a different object from one you can leave
+                        unread. */}
+                    {kind === 'end-of-year' &&
+                        (plan?.placement?.unconfigured_count ?? 0) > 0 && (
+                            <p className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-xs font-medium text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+                                {plan?.placement.unconfigured_count} destination
+                                {plan?.placement.unconfigured_count === 1
+                                    ? ''
+                                    : 's'}{' '}
+                                {plan?.placement.unconfigured_count === 1
+                                    ? 'has'
+                                    : 'have'}{' '}
+                                no curriculum set up. Pupils placed there will
+                                have <strong>no subjects</strong>, and nothing
+                                will attach them afterwards — set the subjects
+                                up first if you can.
+                            </p>
+                        )}
                     <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
                         The rollover is queued, not instant. It is checked again
                         at this moment — if anything changed since the preview,
@@ -496,6 +582,211 @@ function PlanPanel({ plan, onRun }: { plan: RolloverPlan; onRun: () => void }) {
                     this session.
                 </p>
             )}
+
+            <PlacementPanel plan={plan} />
+        </div>
+    );
+}
+
+/**
+ * WHERE EVERY PUPIL LANDS, and which destinations are not ready for them.
+ *
+ * ── END-OF-YEAR ONLY, AND THAT IS NOT AN OPTIMISATION ───────────────────────────────────────────
+ * End-of-term keeps its class level and CLONES the curriculum's subjects onto the target
+ * (MoveFromTermJob::cloneCurriculumSubjects), so there is no arm distribution to show and no
+ * destination that can arrive subject-less. Rendering a subject warning there would warn about
+ * something that cannot happen — and a screen that warns falsely teaches operators to skip
+ * warnings, which costs more than the panel is worth. The server sends an empty placement for
+ * end-of-term; this renders nothing rather than an empty table.
+ */
+function PlacementPanel({ plan }: { plan: RolloverPlan }) {
+    const placement = plan.placement;
+
+    if (
+        !placement ||
+        (placement.advancers.length === 0 &&
+            placement.repeaters.length === 0 &&
+            placement.unplaceable.length === 0)
+    ) {
+        return null;
+    }
+
+    return (
+        <div className="space-y-3 border-t pt-3">
+            {/* ── THE ORDERING RULE, WHERE THE PERSON ABOUT TO RUN IT WILL READ IT ──────────────
+                Not "you may set subjects up first" — there is no second chance from the app. Every
+                caller of autoAttachCompulsorySubjects fires at enrollment-creation time (the job,
+                the observer's remediation fallback, CurriculumEnrollmentService,
+                CurriculumReassignmentService), and all of them have run by the time anyone
+                notices. */}
+            {placement.unconfigured_count > 0 && (
+                <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+                    <p className="font-medium">
+                        {placement.unconfigured_count} destination
+                        {placement.unconfigured_count === 1 ? '' : 's'} ha
+                        {placement.unconfigured_count === 1 ? 's' : 've'} no
+                        curriculum yet.
+                    </p>
+                    <p className="mt-1">
+                        End-of-year does not carry subjects across — the new
+                        class level defines its own. The rollover will create
+                        these curricula empty, pupils will land with no
+                        subjects, and{' '}
+                        <strong>nothing attaches them afterwards</strong>. Set
+                        them up first if you can.
+                    </p>
+                    {/* THE THREE THINGS THAT MUST MATCH, because a prepared curriculum the job does
+                        not FIND is worse than none — it creates a second one and leaves the
+                        prepared one orphaned, which looks identical to having done nothing. */}
+                    <ul className="mt-2 list-disc space-y-0.5 pl-4">
+                        <li>
+                            the class level&apos;s <strong>first</strong>{' '}
+                            participating slot — not term 1 by assumption
+                        </li>
+                        <li>
+                            the exam type the rollover resolves: the
+                            pupil&apos;s own if the new level runs it, otherwise
+                            that level&apos;s default
+                        </li>
+                        <li>
+                            <strong>every arm</strong> of the receiving level —
+                            a cohort is spread across all of them
+                        </li>
+                    </ul>
+                </div>
+            )}
+
+            <PlacementTable title="Moving up" rows={placement.advancers} />
+            <PlacementTable
+                title="Held (repeating)"
+                rows={placement.repeaters}
+            />
+
+            {placement.graduating.length > 0 && (
+                <div className="rounded-md bg-muted px-3 py-2 text-xs">
+                    <p className="font-medium">
+                        Graduating — not moving (
+                        {placement.graduating.reduce(
+                            (n, g) => n + g.pupils.length,
+                            0,
+                        )}
+                        ):
+                    </p>
+                    <ul className="mt-1 space-y-0.5">
+                        {placement.graduating.map((g) => (
+                            <li key={g.source}>
+                                <strong>{g.source}</strong> — terminal class
+                                level, nobody is promoted out of it (
+                                {g.pupils.length} pupil
+                                {g.pupils.length === 1 ? '' : 's'})
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            )}
+
+            {placement.unplaceable.length > 0 && (
+                <div className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                    <p className="font-medium">
+                        Would not move ({placement.unplaceable.length}):
+                    </p>
+                    <ul className="mt-1 space-y-0.5">
+                        {placement.unplaceable.map((u) => (
+                            <li key={`${u.source}-${u.reason}`}>
+                                <strong>{u.source}</strong> — {u.explanation} (
+                                {u.pupils.length} pupil
+                                {u.pupils.length === 1 ? '' : 's'})
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            )}
+
+            {/* THE TOTAL HAS TO CLOSE. The headline above says "N pupils across M classes"; if the
+                buckets do not sum to N, the difference is pupils nobody has accounted for — and a
+                screen whose own numbers disagree on a bulk destructive action is the count-honesty
+                failure this milestone already paid for once. Rendered only when it does NOT
+                reconcile, so the normal case stays quiet. */}
+            {placement.accounted_pupils !== plan.pupil_count && (
+                <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                    {plan.pupil_count} pupil(s) are in this plan but only{' '}
+                    {placement.accounted_pupils} appear above — check the
+                    difference before running this.
+                </p>
+            )}
+        </div>
+    );
+}
+
+/**
+ * One bucket, grouped by destination, expandable to names.
+ *
+ * GROUPED, NOT FLAT: a year group is hundreds of rows, and the question an operator actually asks is
+ * "which class goes where, and is anyone stranded". Counts answer that; the names answer the
+ * follow-up when a row looks wrong.
+ */
+function PlacementTable({
+    title,
+    rows,
+}: {
+    title: string;
+    rows: PlacementRow[];
+}) {
+    if (rows.length === 0) {
+        return null;
+    }
+
+    return (
+        <div>
+            <p className="mb-1 text-xs font-medium text-muted-foreground">
+                {title}
+            </p>
+            <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                    <tbody>
+                        {rows.map((row) => (
+                            <tr
+                                key={`${row.source}-${row.destination_key}`}
+                                className="border-b last:border-0"
+                            >
+                                <td className="py-1 pr-2">{row.source}</td>
+                                <td className="py-1 pr-2 text-muted-foreground">
+                                    →
+                                </td>
+                                <td className="py-1 pr-2">
+                                    {row.destination}
+                                    {row.destination_is_unconfigured && (
+                                        <span className="ml-2 rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-800 dark:bg-red-950/60 dark:text-red-300">
+                                            no curriculum yet
+                                        </span>
+                                    )}
+                                </td>
+                                <td className="py-1 pr-2 text-right whitespace-nowrap">
+                                    {row.pupil_count} pupil
+                                    {row.pupil_count === 1 ? '' : 's'}
+                                </td>
+                                <td className="py-1">
+                                    <details>
+                                        <summary className="cursor-pointer text-muted-foreground">
+                                            names
+                                        </summary>
+                                        <ul className="mt-1 space-y-0.5">
+                                            {row.pupils.map((p) => (
+                                                <li key={p.id}>
+                                                    {p.name}
+                                                    {p.admission_number
+                                                        ? ` (${p.admission_number})`
+                                                        : ''}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </details>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
         </div>
     );
 }

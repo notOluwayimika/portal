@@ -396,7 +396,11 @@ Route::middleware(['auth:sanctum', 'tenant', 'permission:score.manage'])->group(
 
 Route::middleware(['auth:sanctum', 'tenant', 'permission:student_status.view'])->group(function () {
     // protected guardian routes
-    Route::get('/guardians/{guardian:uuid}/students', [GuardianController::class, 'students']);
+    // `guardian_self`: identity, not custody. A parent may read their own guardian
+    // row's ward list and no other's; the row is resolved server-side from the
+    // acting user and the active School, never trusted from the uuid on the URL.
+    Route::get('/guardians/{guardian:uuid}/students', [GuardianController::class, 'students'])
+        ->middleware('guardian_self');
     Route::get('/students/{student:uuid}/result-status', [StudentController::class, 'activeResultStatus'])->middleware('guardian_ward');
     Route::get('/students/{student:uuid}/curriculum/{curriculum:uuid}/result-status', [CurriculumController::class, 'activeResultStatus'])->middleware('guardian_ward')->withoutScopedBindings();
 });

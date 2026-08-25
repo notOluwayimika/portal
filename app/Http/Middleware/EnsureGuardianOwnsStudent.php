@@ -58,17 +58,11 @@ use Symfony\Component\HttpFoundation\Response;
  *
  * The condition is deliberately "the guardian role AND no other role" rather
  * than the bare `hasRole('guardian')` used by the visibility filters further
- * down these same routes. A teacher who is also a parent at the same school
- * holds both, and the bare test would strip their staff access. Every other role
- * in `RbacSeeder::grantsMap()` is a staff or oversight seat, so "holds anything
- * besides guardian" is a sound and self-maintaining reading of "is staff".
- *
- * NOTE the deliberate divergence this creates: the approval/deadline visibility
- * filters on these routes DO use the bare `hasRole('guardian')`, so a dual-role
- * user passes this ownership check but still sees guardian-filtered content.
- * That is the safe direction of the two (less restrictive about WHICH student,
- * more restrictive about what is shown), and those filters are correct and
- * out of scope here.
+ * down these same routes. It lives in ONE place —
+ * `GuardianService::isActingAsGuardian()`, which carries the full reasoning —
+ * because DenyGuardianBulkRecords and EnsureGuardianOwnsGuardianRecord ask the
+ * same question of four more routes. Three copies of it would drift, and a
+ * drifted copy is a hole or an outage depending on the direction.
  *
  * The refusal says only that the student is not the caller's ward. It reveals
  * nothing about existence beyond what the School scope on the route binding
@@ -87,7 +81,7 @@ class EnsureGuardianOwnsStudent
         /** @var User|null $user */
         $user = $request->user();
 
-        if (! $user || ! $this->isActingAsGuardian($user)) {
+        if (! $user || ! $this->guardians->isActingAsGuardian($user)) {
             return $next($request);
         }
 
@@ -112,20 +106,6 @@ class EnsureGuardianOwnsStudent
         }
 
         return $next($request);
-    }
-
-    /**
-     * A parent account and nothing else. See the class docblock: holding any
-     * other role in the active School means a staff seat, which this check must
-     * leave alone.
-     */
-    private function isActingAsGuardian(User $user): bool
-    {
-        if (! $user->hasRole('guardian')) {
-            return false;
-        }
-
-        return $user->getRoleNames()->diff(['guardian'])->isEmpty();
     }
 
     /**

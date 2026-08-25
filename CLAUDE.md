@@ -119,6 +119,46 @@ operational facts an agent needs most often.
   **Rebuild the frontend after any `staging` pull that touches it**, and note the
   worse cousin — a manifest that is stale but still *resolvable* passes against the
   wrong bundle instead of erroring.
+- **A test proves the property it NAMES only if the fixture makes that property the
+  SOLE explanation for the pass.** The recurring failure is not a wrong assertion —
+  it is a fixture whose degrees of freedom have collapsed until a wrong
+  implementation passes by coincidence, while the test's name stays true throughout.
+  That is what makes it invisible to reading. Four instances, one mechanism:
+  - **one arm on the target level** collapses arm-choice — a preview picking arms by
+    *any* rule lands everyone in the same place, so a parity test cannot see drift;
+  - **every fixture arm labelled `B`** collapses distribution into label-match, so a
+    "distribution" test never evaluates the modulo at all;
+  - **two ids of the same parity** collapse a `% armCount` to one residue, leaving
+    the arm ORDER unpinned while the test reads as though it covered it;
+  - **a single-element acknowledgment set** cannot express a swap, so a count-based
+    check passes every arm and keeps the hole it was written to close.
+
+  Before trusting a green, ask **what else could produce this pass?** and give the
+  fixture enough distinguishing structure that the answer is "nothing but the rule
+  under test": two arms, a non-matching label, ids of different residue, a set with a
+  swap in it. Mutation testing is what surfaces this — it makes the wrong
+  implementation explicit, and a degenerate fixture cannot kill it. This is the
+  general parent of the self-referential cap: not "the test must be able to fail on
+  its axis" but **"the fixture must make the axis the only thing that can pass it."**
+
+  Its other half: **derive the expected value by an INDEPENDENT path, never by
+  restating the rule under test.** An expectation computed the way the code computes
+  it asserts that the implementation equals itself. The arm expectation is built from
+  an explicitly-ordered query, not from the resolver's own ordering — which is why
+  flipping `orderBy('id')` to `orderByDesc('id')` reds it.
+- **An acknowledgment the server never receives is theatre, and theatre is worse than
+  absence.** The rollover confirm asked an operator to accept a risk and sent the
+  server two session ids, so the commit could not distinguish an acknowledged plan
+  from an unacknowledged one, and every divergence signal it emitted came from
+  `queued()` — *after* dispatch. The control existed entirely in the client. Same
+  family as a stated rule with no lint behind it: an unenforced control does not
+  merely fail to protect, it **manufactures the confidence that stops anyone
+  looking**. Before adding a confirmation, ask what crosses the wire and what
+  compares it. And when you enforce one, **acknowledge the SET, not the count** — a
+  count cannot tell "these two" from "some other two", and the swap is the case that
+  slips through. Server-enforce divergence precisely where post-write reporting is
+  too late because the divergence is unrecoverable; leave benign divergences to the
+  client.
 
 ## Workflow
 

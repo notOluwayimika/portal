@@ -437,6 +437,18 @@ Route::middleware(['auth:sanctum', 'tenant', 'permission:parent_portal.access'])
     Route::get('/parent/wards', [GuardianController::class, 'wards']);
 });
 
+/*
+ * The parent portal's FINANCE read — what the authenticated guardian's wards owe.
+ *
+ * ITS OWN GROUP, not folded into the parent_portal group above and emphatically not into the
+ * `finance.access` group further down: same ability, separate declaration, so the finance surface a
+ * parent reaches is one file that can be read in full rather than a line inside a longer list. The
+ * file itself carries the reasoning for the path and the gate.
+ */
+Route::middleware(['auth:sanctum', 'tenant', 'permission:parent_portal.access'])->group(function () {
+    require __DIR__.'/endpoints/parent-finance.php';
+});
+
 // Form teachers may record assessments when the school has no boarding
 // parents (enforced server-side in ResolvesAssessmentAccess).
 Route::middleware(['auth:sanctum', 'tenant', 'permission:assessment.record'])->group(function () {

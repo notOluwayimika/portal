@@ -420,3 +420,52 @@ The background-task notification reported **"completed (exit code 0)"** for the 
 that was the wrapping shell's status, not `bin/quality`'s, which printed `EXIT=1`. Reported as a
 pass it would have put a real regression behind a green claim. Read the exit status of the thing
 being measured, never of its wrapper: the same class as everything else in this report.
+
+---
+
+# The PRE-MERGE gate — what must still happen, and why each item is on it
+
+These are pre-**merge**, not pre-**push**. Pushing opens the pipeline in which they get resolved;
+holding the branch off the remote resolves nothing.
+
+## 1. A SECOND `bin/quality` green
+
+One green run is a single reading of an instrument this repository has recorded producing both
+PASS 14/14 and FAIL 23 over byte-identical code (ADR 0053, cause investigated and not found, one
+failure in twelve runs). A single PASS is therefore evidence, not a determinism claim — and the merge
+decision is exactly where a second reading is worth its cost. It is the same "do not trust one
+reading" discipline this branch spent itself on, turned on the gate itself.
+
+If the second run reds, the rule from ADR 0053 applies and is NOT optional: a red cannot be told from
+a flake by looking at it, and retrying until green is indistinguishable from fixing. The per-run
+suite artefacts exist so that run is diagnosable.
+
+## 2. The browser pass must prove the LOOP, not the pixels
+
+Rendering leg 4's badge and copy is necessary and not sufficient. The toggle exists to steer a
+PLACEMENT, so the gate is the full round trip:
+
+1. set slot 3 CCM **through the progression panel**, not through a seeder or a console;
+2. run the end-of-term migration;
+3. confirm the pupil lands in the **CCM** curriculum — resolved on the five-key construction, not by
+   "the newest curriculum", which would pass whatever arrived;
+4. and the sibling level with the flag OFF lands non-CCM, so the observation is about the FLAG rather
+   than about the rollover.
+
+Without step 3 the drive proves a checkbox writes a row, which was never in doubt. The suite proves
+the participation flag decides the landing (`CcmFoldDriveFixtureTest`), and the panel now proves the
+flag can be set — but nothing yet proves those two are the SAME flag end to end through the screen.
+That join is exactly where a control that looks enforced turns out not to be.
+
+Then, and separately, the rendered failure state: the "CCM fold" kind badge, the
+"Stopped … will not resume on its own" terminal copy, and the reason with no server path in it. A and
+B were both rendering-truth defects; the re-drive proved the panel's DATA through real jobs and real
+controller read-back, never the rendered component. The new toggle has never been rendered at all.
+
+## 3. Cold review findings resolved
+
+Attack targets recorded with the review: whether `pending === failed` is genuinely equivalent to
+"every job resolved" across cancelled, zero-job and mid-retry batches — the load-bearing claim of the
+whole B fix — plus fixture degeneracy in leg 4, the byte-unchanged claim for all 33 `rc_level` call
+sites, whether the idempotence arm really separates a setter from an inverter, and `school_id`
+isolation in the two-school seeder.

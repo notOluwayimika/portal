@@ -18,7 +18,7 @@ import { bulkInvoiceRun as runPage } from '@/routes/admin/finance';
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  * EVERY COUNT ON THIS WIRE IS `number | null`, AND THE NULL IS THE POINT.
  *
- * The eight figures are NULL until the run reconciles. A `pending` run has not been picked up, a
+ * The nine figures are NULL until the run reconciles. A `pending` run has not been picked up, a
  * `running` run is mid-cohort, and a run stopped by a per-run condition never reached the
  * reconciliation at all — `writeFailure()` names three columns and none of them is a count. Typing
  * them as `number` and letting the server's null arrive anyway is how "this run has not said" renders
@@ -26,7 +26,7 @@ import { bulkInvoiceRun as runPage } from '@/routes/admin/finance';
  *
  * The type is what makes the check unforgettable, so the nulls are declared rather than smoothed
  * away, and `has_figures` is the SERVER's answer to whether any of them may be rendered — never
- * re-derived here from eight separate null tests.
+ * re-derived here from nine separate null tests.
  */
 
 /** A term as the page route hands it over. The API listing terms is not reachable by this seat. */
@@ -62,6 +62,13 @@ export interface RunCounts {
     billed: number | null;
     already_billed: number | null;
     failed: number | null;
+    /**
+     * Cohort members the run DELIBERATELY did not bill: their scholarship is a sponsored scheme, so
+     * an outside organisation pays for them, once a session, by hand and off platform. NOT a
+     * failure and NOT a miss — a term of the cohort equality, counted from the rows like the three
+     * above it.
+     */
+    sponsored: number | null;
     unplaceable_listed: number | null;
     unplaceable: number | null;
     billable: number | null;
@@ -76,7 +83,7 @@ export interface RunCounts {
  * imbalance is the only thing that says so. There is no flag column by design.
  */
 export interface RunReconciliation {
-    /** billed + already_billed + failed === cohort */
+    /** billed + already_billed + failed + sponsored === cohort */
     cohort_balances: boolean;
     /** unplaceable === unplaceable_listed */
     unplaceable_balances: boolean;
@@ -103,7 +110,7 @@ export interface BulkInvoiceRunRecord {
     failure_reason: string | null;
     /**
      * The server's answer to "has this run reported its figures". NOT `status === 'completed'`: the
-     * nobody-billed rule writes all eight counts and THEN marks the run `failed`, so one of the five
+     * nobody-billed rule writes all nine counts and THEN marks the run `failed`, so one of the five
      * routes into `failed` is fully counted and its figures are the whole diagnosis.
      */
     has_figures: boolean;
@@ -111,7 +118,12 @@ export interface BulkInvoiceRunRecord {
     reconciliation: RunReconciliation | null;
 }
 
-export type RunOutcome = 'billed' | 'already_billed' | 'failed' | 'unplaceable';
+export type RunOutcome =
+    | 'billed'
+    | 'already_billed'
+    | 'failed'
+    | 'unplaceable'
+    | 'sponsored';
 
 /**
  * The student a row is about, resolved through the ACL port — Finance owns no name and no student

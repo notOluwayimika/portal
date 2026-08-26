@@ -5,6 +5,7 @@ namespace App\Http\Middleware;
 use App\Models\Guardian;
 use App\Models\User;
 use App\Services\GuardianService;
+use App\Support\StudentRecordAccessLog;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -53,6 +54,15 @@ use Symfony\Component\HttpFoundation\Response;
  *
  * STAFF ARE UNTOUCHED via the shared `GuardianService::isActingAsGuardian()`.
  * A registrar, admin or teacher reading a parent's ward list is the job.
+ *
+ * EVERY REFUSAL IS AUDITED as `student_record_access_refused` naming
+ * `guardian_self` — see App\Support\StudentRecordAccessLog. The bound GUARDIAN
+ * ids are recorded rather than a student subject: what was asked for here is a
+ * parent's identity, not a child's record, and recording it as a student view
+ * would put the wrong thing in the column the audit query reads. There is no
+ * VIEW event on the pass arm for the same reason — this route returns a ward
+ * LIST for the caller's own record, which is not a student record read; the
+ * eight routes that are one are covered by `guardian_ward`.
  */
 class EnsureGuardianOwnsGuardianRecord
 {
@@ -120,6 +130,15 @@ class EnsureGuardianOwnsGuardianRecord
 
     private function refuse(Request $request): Response
     {
+        // BEFORE the abort, which throws. $user is non-null on every path that
+        // reaches here: handle() returns early when there is none.
+        /** @var User $user */
+        $user = $request->user();
+
+        StudentRecordAccessLog::refused($user, $request, 'guardian_self', [
+            'guardian_ids' => $this->boundGuardianIds($request),
+        ]);
+
         $message = 'You can only view your own guardian record.';
 
         if ($request->expectsJson() || $request->is('api/*')) {

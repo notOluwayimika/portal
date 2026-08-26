@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use App\Models\User;
 use App\Services\GuardianService;
+use App\Support\StudentRecordAccessLog;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -50,6 +51,14 @@ use Symfony\Component\HttpFoundation\Response;
  * The refusal reveals nothing: the container was already resolvable to anyone
  * holding the ability, and School isolation is enforced ahead of this by the
  * route binding and the controllers' own `abort_unless` on `school_id`.
+ *
+ * EVERY REFUSAL IS AUDITED as `student_record_access_refused` naming
+ * `guardian_no_bulk` — see App\Support\StudentRecordAccessLog. There is no
+ * matching VIEW event here because there is no pass arm for a parent: this
+ * middleware only ever refuses them, and it stands aside for staff without
+ * reaching the log at all. The subject is left empty on purpose — the request
+ * names a container, not a student, so there is no student to hang it on and
+ * inventing one would make the log claim more than the request did.
  */
 class DenyGuardianBulkRecords
 {
@@ -66,6 +75,11 @@ class DenyGuardianBulkRecords
         if (! $user || ! $this->guardians->isActingAsGuardian($user)) {
             return $next($request);
         }
+
+        // BEFORE the abort, which throws. Swallowed by the logger, so a broken
+        // audit trail cannot turn this 403 into a 500 — which, to someone
+        // probing, is indistinguishable from having found something.
+        StudentRecordAccessLog::refused($user, $request, 'guardian_no_bulk');
 
         $message = 'This record covers more than one student and is not available to guardians.';
 

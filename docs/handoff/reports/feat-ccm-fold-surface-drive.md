@@ -526,3 +526,119 @@ the panel says "draining" permanently with no reason: defect B reinstated in a n
 clears. Recorded in `outstandingFailures()`'s docblock and left unguarded: it needs a deliberate
 manual command, nothing schedules a prune here, and the direction is falsely-CAUTIOUS — a warning
 that overstays rather than one that vanishes.
+
+---
+
+# THE BROWSER GATE — RUN, AND PASSED
+
+Driven by a human operator through the Chrome extension against `http://localhost:8001` (the
+decoupled drive instance) on `de3c4153`. Screenshots/GIF: `docs/handoff/drives/2026-08-26-ccm-fold/`.
+
+**Two evidentiary levels, kept separate throughout, because they are not the same claim:**
+
+| | school#1 | school#2 |
+| --- | --- | --- |
+| State | **PRISTINE** — nothing CCM, nothing rolled over | **STAGED** — gate handed to the driver |
+| Claim | the whole loop, end to end | the fold fails and RENDERS correctly *on* that gate |
+| NOT claimed | — | that the gate arose |
+
+## Scenario 1 — the loop, proven as a TRANSITION
+
+Not "the pupil landed in CCM" — that is an endpoint, and an endpoint is equally explained by a
+seeded flag. The pre-state was read BEFORE the click and the row was read AFTER:
+
+1. `/setup` → Class Structure → **Configure progression for Year 7** → all three slots' CCM boxes
+   **OFF**, Term 3 (slot 3 = participation#2) unchecked — zoomed and recorded.
+2. Clicked Term 3's CCM box → checked, blue "CCM" badge appeared, toast **"Slot marked CCM."**
+   Only Term 3 changed. **Persisted on click** — no separate save, which is the inverter→setter
+   conversion behaving as a setter.
+3. DB read-back, independently: `participation#2 slot3 is_ccm=true`, and **every sibling still
+   false** — one row moved, the one clicked.
+4. `/academics/rollover` → End of term → **2026/2027 — Term 1** → preview: *2 class(es), 3 pupil(s)
+   would move* (Year 7's 2 + Year 8's 1), *Progression graph: not applicable*.
+5. Commit → **queued**, batch `rollover:end-of-term:school:1:term:1`, `Done 0/2`, **"Draining — do
+   not change the current session yet."**
+6. Drained by ONE `queue:work --stop-when-empty`, which exited on its own.
+
+**The landing, from the rows:**
+
+```
+Year 7 (toggled CCM)         curriculum#1 term#1 is_ccm=false closed  pupils=2 promoted_out=2
+Year 7 (toggled CCM)         curriculum#5 term#3 is_ccm=TRUE  active  pupils=2
+Year 8 (control, untouched)  curriculum#2 term#1 is_ccm=false closed  pupils=1 promoted_out=1
+Year 8 (control, untouched)  curriculum#6 term#3 is_ccm=false active  pupils=1
+```
+
+Same session, same movement 1→3 (skipping slot 2, as configured), same exam type. **The only
+difference between the two levels is the click.** That is the join nothing had proven: the suite
+showed the flag decides the landing; the panel showed the flag can be set; this shows they are the
+SAME flag end to end through the screen. Screen-side second leg: batch **Done 2/2, Finished**.
+
+**The negative arm, at its honest strength.** `operator@` reaches Class Structure (it holds
+`academic_data.view`) but **403s on `/api/class-levels/{yr7-uuid}/progression`** — the modal opens and
+hangs on "Loading…" with *"Failed to load progression settings"*. Both responses for the SAME uuid
+sat side by side in the network buffer: `setup@` 200, `operator@` 403. Claimed as *the rollover-only
+seat cannot reach the progression surface at all* — NOT "sees rows without the control", which is
+structurally unavailable because the panel's data and its CCM control share one permission.
+
+## Scenario 2 — the refusal, rendered
+
+Gate re-previewed on term#6 → *0 classes, 0 pupils would move* + **"1 CCM class(es) sit in a final
+slot and must be moved first" — Year 9 A**, with an inline **"Fold these now"**. Fold dispatched
+`ccm-fold:school:2:term:6`; ONE worker took it through **three attempts, no backoff**, and exited.
+
+Settled state — the payload and the render agreeing:
+
+```
+BATCH  total=1 pending=1 failed=1 finished_at=NULL cancelled=NULL
+PANEL  kind=ccm-fold settled='stopped' draining=false done=0/1 failed=1 outstanding=1
+```
+
+**`finished_at` is null and the panel says `stopped`.** That is the entire B-fix in one line: Laravel
+never marks this batch finished, because a failed job does not decrement `pending_jobs`. The old rule
+read *draining* forever. The new one settles because `outstanding === pending`, derived from a live
+`failed_jobs` ROW rather than the monotone counter.
+
+Confirmed rendered, by eye:
+
+1. **"CCM fold"** badge on the SETTLED row, not only while draining.
+2. **"Stopped with 1 failure(s) — it will not resume on its own."**
+3. Reason ending at *"…then fold again."* — **no `in /path:line` suffix**. The A-fix holds through
+   the render; the string that crossed the wire is byte-identical to what appeared.
+4. Gate **still up** on re-preview, still naming Year 9 A, "Fold these now" still offered.
+   `curriculum#4 status=active is_ccm=true promoted_out=0` — refused inside its transaction,
+   nothing folded, nothing promoted, and the operator can retry.
+
+## Operator-facing findings from the driver (suggestions, not defects)
+
+**The reason names INTERNAL IDS where the gate names the class.** The message says
+`curriculum#4` and `subject#2`; six lines above, the gate says **"Year 9 A"**. The failure message is
+the one place an operator most needs the human label, and it is the one place that reverts to ids.
+**This is the strongest of the three and arguably crosses from polish into defect** — a remedy
+naming entities the operator cannot look up is a remedy they cannot act on. Ticketed.
+
+**It renders as one unbroken ~150-character line** — past the measure where the eye tracks reliably,
+and it is really two sentences: the diagnosis (ending `(2 score(s)).`) and the remedy (`Add matching
+component(s)…`). Wants a break or visual separation at that period, and a ~70–80ch max-width so it
+wraps deliberately rather than spanning the panel.
+
+**"…it will not resume on its own" is actionable by OMISSION** — it forecloses waiting, which is the
+false hope the B-fix exists to kill, but it is a status, not an instruction; the remedy lives in the
+row beneath. The driver judged that split correct and would not change it: the remedy is genuinely
+too long for a status cell.
+
+## Incidental findings, logged
+
+- **The commit modal states the staleness gate**: *"It is checked again at this moment — if anything
+  changed since the preview, it will be refused rather than run."* That control existed server-side
+  and had never been seen stated to an operator.
+- **`Done 0/2` while draining** — the live count, which is the axis the monotone counter would have
+  misreported.
+- **School#2's panel showed "No rollover batches for this school"** while school#1's finished batch
+  existed — batch-panel school scoping holding, an isolation observation neither of us asked for.
+- **The post-login landing route 403s** for these seats; the pages themselves are reachable directly.
+- **Cross-school reads return 404, not 403** — the correct shape.
+- **Every seat renders the display name "Drive Operator"** — the seeder gives them all the same
+  first/last name. Harmless here only because the driver checked identity by email and by id
+  throughout; it is exactly the label-standing-in-for-identity trap and should be fixed.
+- **The session expired twice mid-drive**, forcing re-authentication.

@@ -23,6 +23,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use RuntimeException;
 use Spatie\Activitylog\CauserResolver;
 
 class MoveFromCcmJob implements ShouldQueue
@@ -211,14 +212,60 @@ class MoveFromCcmJob implements ShouldQueue
         $newByName = $newSubject->effectiveMarkingComponents()
             ->keyBy(fn (MarkingComponent $component) => Str::lower(trim($component->name)));
 
-        return $oldSubject->effectiveMarkingComponents()
-            ->mapWithKeys(function (MarkingComponent $oldComponent) use ($newByName) {
-                $newComponent = $newByName->get(Str::lower(trim($oldComponent->name)));
+        $map = collect();
+        $dropped = [];
 
-                return $newComponent
-                    ? [$oldComponent->id => ['old' => $oldComponent, 'new' => $newComponent]]
-                    : [];
-            });
+        foreach ($oldSubject->effectiveMarkingComponents() as $oldComponent) {
+            $newComponent = $newByName->get(Str::lower(trim($oldComponent->name)));
+
+            if ($newComponent !== null) {
+                $map[$oldComponent->id] = ['old' => $oldComponent, 'new' => $newComponent];
+
+                continue;
+            }
+
+            // ── AN UNMATCHED COMPONENT IS ONLY A PROBLEM IF IT CARRIES MARKS ────────────────────
+            // A CCM component with no non-CCM counterpart and NO scores is ordinary: the two schemes
+            // simply differ. One with scores is data about to be destroyed.
+            $scored = Score::where('curriculum_subject_id', $oldSubject->id)
+                ->where('marking_component_id', $oldComponent->id)
+                ->count();
+
+            if ($scored > 0) {
+                $dropped[] = ['name' => $oldComponent->name, 'scores' => $scored];
+            }
+        }
+
+        // ── REFUSE RATHER THAN DROP ────────────────────────────────────────────────────────────
+        // This match is by NORMALISED NAME, so a CCM component whose name has no counterpart was
+        // silently skipped — and migrateScores only ever queries the components that DID match, so
+        // those marks were never even read. The pupil still promoted, the episode still linked, the
+        // job still reported success: a silent drop is indistinguishable from a clean fold at every
+        // level above this line, which is exactly why the check has to live here at the miss site
+        // rather than in a surface trying to detect it afterwards.
+        //
+        // MEASURED BEFORE BUILDING (2026-08-26): across all 17 folded CCM curricula — 310 subjects,
+        // 11,828 scored component-rows — ZERO were dropped. Not because the matcher is safe, but
+        // because school#1 has no marking schemes at all, so every fold ran the legacy
+        // subject-local path where cloneCurriculumSubjects had copied the components and the names
+        // matched BY CONSTRUCTION. The matcher was handed pre-matched inputs, never tested.
+        //
+        // That changes when CCM arrival is configured rather than hand-made: the target scheme is
+        // resolved by (school, is_ccm, active, latest version), so the CCM and non-CCM schemes
+        // become two independently-editable objects. school#2 already carries the asymmetry — its
+        // CCM scheme has one component where the non-CCM has three — currently in the safe
+        // direction (CCM is a subset). One component the other way and every fold loses marks.
+        if ($dropped !== []) {
+            throw new RuntimeException(
+                'Refusing to fold curriculum#'.$oldSubject->curriculum_id.': '
+                .count($dropped).' scored marking component(s) on subject#'.$oldSubject->subject_id
+                .' have no counterpart on the non-CCM side and their marks would be lost — '
+                .collect($dropped)->map(fn (array $d) => "\"{$d['name']}\" ({$d['scores']} score(s))")->implode(', ')
+                .'. Add matching component(s) to the non-CCM marking scheme, then fold again.'
+            );
+        }
+
+        return $map;
     }
 
     /**

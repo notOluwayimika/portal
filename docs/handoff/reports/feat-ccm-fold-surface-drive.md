@@ -220,6 +220,12 @@ against the message the guard was given, so a path suffix, a class prefix or a t
 
 ## B — fixed in the SHARED panel, as a shared defect
 
+> **⚠️ SUPERSEDED — READ § "B, CORRECTED" BELOW BEFORE TRUSTING THIS SECTION.** The
+> `pending === failed` derivation described here shipped and was WRONG on both sides of a retry;
+> cold review caught it. The section is kept unedited because this project's account of a branch is
+> what was believed at each point, not a tidied version of it — but nothing below describes the code
+> on this branch, and the watched reds it lists are for predicates that no longer exist.
+
 `RolloverController::settledState()` derives the terminal state from counts:
 `pending === failed` ⟺ every job resolved, because pending is decremented **only** by successes.
 It subsumes the clean case (0 === 0 at the same instant `finished_at` is written) rather than
@@ -469,3 +475,54 @@ Attack targets recorded with the review: whether `pending === failed` is genuine
 whole B fix — plus fixture degeneracy in leg 4, the byte-unchanged claim for all 33 `rc_level` call
 sites, whether the idempotence arm really separates a setter from an inverter, and `school_id`
 isolation in the two-school seeder.
+
+---
+
+# B, CORRECTED — the derivation in the section above never should have keyed on `failed_jobs`
+
+Cold review round 1 found the shipped fix wrong on BOTH sides of a retry. The mechanism, verified in
+vendor rather than taken on the finding's word:
+
+`job_batches.failed_jobs` is **monotone**. `DatabaseBatchRepository::decrementPendingJobs` prunes the
+uuid out of `failed_job_ids` on a retry-success but writes `'failed_jobs' => $batch->failed_jobs` —
+unchanged. It counts failures EVER RECORDED, never failures currently outstanding. So
+`pending === failed` compared two accumulators as though they described the batch at this instant:
+
+- after `queue:retry` SUCCEEDS the counter still reads 1 over a complete batch, and the panel
+  rendered "Stopped with 1 failure(s) — it will not resume on its own" with no reason beside it,
+  because the ids had been pruned while the counter had not;
+- and while a retried job was IN FLIGHT the counts were unchanged, so `is_draining` went false and
+  "do not change the current session yet" disappeared with a worker still running. **The
+  `finished_at === null` reading it replaced was CORRECT in exactly that window.**
+
+The second is the one that matters: the fix did not remove the retry-window lie, it swapped which
+half of the window told it, toward the FALSELY-SAFE half. Generalised in `CLAUDE.md` — a monotone
+counter is an accumulator, never a current-state signal, and severity has a sign, not just a
+magnitude.
+
+**What ships instead:** `outstandingFailures()` counts ids in `failed_job_ids` that STILL HAVE a
+`failed_jobs` row, because `queue:retry` deletes the row before re-dispatch — so a listed id with no
+row is a retry in flight. `terminal ⟺ pending === outstanding`. This catches the in-flight case that
+counting the ids alone still gets wrong.
+
+Round 2 then found three more, all fixed: the panel counted **de-duplicated reason sentences**
+instead of failures, so a mass failure with one shared message read "1 failure(s)" beside a
+`failed_jobs` of N — and a vitest arm of mine had **encoded that undercount as expected**, so no
+mutation could red it; the settled state was computed **twice from two independent queries**, and the
+torn pair fell through to the most reassuring word available; and a dead `total_jobs > 0` guard
+carried a test comment claiming coverage it did not have.
+
+Watched reds, each verified applied before measuring — one of which initially reported a false PASS
+because prettier had rewrapped the line my substitution targeted, so the mutation never applied. That
+is the instrument rule biting inside the fix for a review finding: **verify the mutation is in the
+file before believing its result.**
+
+## Known and NOT fixed
+
+`queue:forget`, `queue:prune-failed` and `queue:flush` delete a `failed_jobs` row without a retry,
+leaving the id listed forever — `outstandingFailures()` then reads 0, the batch never settles, and
+the panel says "draining" permanently with no reason: defect B reinstated in a new place.
+`queue:forget` is the likely one, since a fold refusal is deterministic config that retrying never
+clears. Recorded in `outstandingFailures()`'s docblock and left unguarded: it needs a deliberate
+manual command, nothing schedules a prune here, and the direction is falsely-CAUTIOUS — a warning
+that overstays rather than one that vanishes.

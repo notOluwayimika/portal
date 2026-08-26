@@ -248,7 +248,8 @@ it('reads a batch whose every job has RESOLVED as stopped, not as perpetually dr
 it('still reads as DRAINING between retries, so the retry window stays honest', function () {
     $w = ccmf_world();
 
-    // The counter-arm, and the reason the rule is `pending === failed` rather than `failed > 0`:
+    // The counter-arm, and the reason the rule compares pending against OUTSTANDING rather than
+    // firing on `failed > 0`:
     // a doomed job mid-retry has not recorded its failure yet, so pending still EXCEEDS failed.
     // Without this, a fix for the arm above would report "stopped" the moment anything failed and
     // would flip a still-working batch to terminal — the opposite lie, equally invisible.
@@ -363,10 +364,53 @@ it('reads a cancelled batch as cancelled, even though cancel() also stamps finis
 it('does not call an empty batch stopped', function () {
     $w = ccmf_world();
 
-    // total_jobs = 0 has no outstanding failure and nothing in flight. It reads as draining, which is
-    // what it did before this derivation existed — pinned so the `total > 0` guard is not dropped as
-    // redundant.
+    // total_jobs = 0 has no outstanding failure and nothing in flight, so it reads as draining —
+    // what it did before this derivation existed.
+    //
+    // THIS ARM DOES NOT PIN A `total > 0` GUARD, and it used to claim it did. `$outstanding > 0`
+    // already short-circuits on an empty id list, so that guard could never decide anything and the
+    // arm stayed green with it deleted. The guard is gone; this arm pins the zero-job READING, which
+    // is all it ever established.
     ccmf_batchRow($w, total: 0, pending: 0, failed: 0);
 
     expect(ccmf_readBatch($w)['settled_state'])->toBeNull();
+});
+
+it('reports outstanding_failures as a FAILURE count even when every failure shares one message', function () {
+    $w = ccmf_world();
+
+    // THE MASS-FAILURE SHAPE, and it is the common one: a deadlock or a timeout fails every job in a
+    // rollover batch with a byte-identical message. failureReasons() de-duplicates, so the panel had
+    // one sentence and rendered "Stopped with 1 failure(s)" beside a failed_jobs column reading 3 —
+    // understating a dead batch on the surface built not to understate it.
+    $ids = [];
+    foreach (range(1, 3) as $ignored) {
+        $uuid = (string) Str::uuid();
+        ccmf_failedJobRow($uuid, 'Deadlock found when trying to get lock; try restarting transaction.');
+        $ids[] = $uuid;
+    }
+    ccmf_batchRow($w, total: 3, pending: 3, failed: 3, failedIds: $ids);
+
+    $fold = ccmf_readBatch($w);
+
+    expect($fold['settled_state'])->toBe('stopped')
+        // THE COUNT IS THREE...
+        ->and($fold['outstanding_failures'])->toBe(3)
+        // ...while the reason list is legitimately ONE. Both are right; they are different questions,
+        // and the panel must ask the count question of the count.
+        ->and($fold['failure_reasons'])->toHaveCount(1);
+});
+
+it('drops outstanding_failures as failures are retried away, so it is not the monotone counter', function () {
+    $w = ccmf_world();
+
+    // Three recorded failures, two since retried successfully: their ids are pruned from
+    // failed_job_ids and their rows are gone. `failed_jobs` still reads 3 forever; outstanding is 1.
+    $uuid = (string) Str::uuid();
+    ccmf_failedJobRow($uuid);
+    ccmf_batchRow($w, total: 3, pending: 1, failed: 3, failedIds: [$uuid]);
+
+    expect(ccmf_readBatch($w)['outstanding_failures'])->toBe(1)
+        ->and(ccmf_readBatch($w)['failed_jobs'])->toBe(3)
+        ->and(ccmf_readBatch($w)['settled_state'])->toBe('stopped');
 });

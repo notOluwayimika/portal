@@ -187,36 +187,54 @@ class RolloverController extends Controller
             ->get();
 
         return response()->json([
-            'data' => $rows->map(fn ($row) => [
-                'id' => $row->id,
-                'name' => $row->name,
-                'kind' => CcmFoldBatchName::isFold($row->name) ? 'ccm-fold' : 'rollover',
-                'total_jobs' => (int) $row->total_jobs,
-                'pending_jobs' => (int) $row->pending_jobs,
-                'failed_jobs' => (int) $row->failed_jobs,
-                // DERIVED, and the words matter: a batch with pending jobs is DRAINING, never "done".
-                // `done_jobs` counts SUCCESSES only — see settledState() for why pending is the
-                // wrong subtrahend to read as progress once a job has failed.
-                'done_jobs' => (int) $row->total_jobs - (int) $row->pending_jobs,
-                'is_draining' => $this->settledState($row, $this->outstandingFailures($row)) === null,
-                // 'finished' — every job succeeded. 'stopped' — every job has RESOLVED but some
-                // failed, so no worker will touch this batch again without `queue:retry`.
-                // 'cancelled' — killed. Null while genuinely still draining.
-                'settled_state' => $this->settledState($row, $this->outstandingFailures($row)),
-                'finished_at' => $row->finished_at,
-                'cancelled_at' => $row->cancelled_at,
-                // ── WHY IT FAILED, NOT JUST THAT IT DID ────────────────────────────────────────
-                // A fold aborts on a DETERMINISTIC, config-shaped refusal: a CCM component carrying
-                // marks with no non-CCM counterpart never succeeds on retry. "Job failed" would
-                // unblock the operator from "there is no fold button" only to re-block them with
-                // "it failed and I cannot tell you why" — the same dead end one layer in. The
-                // guard's message names the curriculum and the component, which is an action the
-                // operator can take, so it has to survive the queue and reach the panel.
-                //
-                // Note $tries = 3: a deterministic refusal is attempted three times before it lands
-                // in failed_jobs, so what the panel must render is the REASON, not three errors.
-                'failure_reasons' => $this->failureReasons($row),
-            ])->values(),
+            'data' => $rows->map(function ($row) {
+                // ONE read, ONE derivation. This used to call settledState(outstandingFailures())
+                // TWICE — two separate `failed_jobs` queries with no transaction between them — so a
+                // `queue:retry` landing in the gap could return `is_draining: false` alongside
+                // `settled_state: null`, a pair the panel had no branch for and resolved to
+                // "Finished". The safety-critical direction, re-entering through the SEAM rather
+                // than the rule it was fixed in. Derived once, both fields read off the same value.
+                $outstanding = $this->outstandingFailures($row);
+                $settled = $this->settledState($row, $outstanding);
+
+                return [
+                    'id' => $row->id,
+                    'name' => $row->name,
+                    'kind' => CcmFoldBatchName::isFold($row->name) ? 'ccm-fold' : 'rollover',
+                    'total_jobs' => (int) $row->total_jobs,
+                    'pending_jobs' => (int) $row->pending_jobs,
+                    'failed_jobs' => (int) $row->failed_jobs,
+                    // DERIVED, and the words matter: a batch with pending jobs is DRAINING, never "done".
+                    // `done_jobs` counts SUCCESSES only — see settledState() for why pending is the
+                    // wrong subtrahend to read as progress once a job has failed.
+                    'done_jobs' => (int) $row->total_jobs - (int) $row->pending_jobs,
+                    'is_draining' => $settled === null,
+                    // 'finished' — every job succeeded. 'stopped' — every job has RESOLVED but some
+                    // failed, so no worker will touch this batch again without `queue:retry`.
+                    // 'cancelled' — killed. Null while genuinely still draining.
+                    'settled_state' => $settled,
+                    // FINDING 1: the panel's "Stopped with N failure(s)" must count FAILURES, not
+                    // distinct reason sentences. failureReasons() de-duplicates (->unique()) and strips
+                    // the class before doing so, so N jobs failing with one shared message — a deadlock,
+                    // a timeout, anything school-wide — collapse to ONE reason while failed_jobs reads
+                    // N. Rendering that as "1 failure(s)" understates a dead batch on the surface whose
+                    // whole purpose is not understating a dead batch.
+                    'outstanding_failures' => $outstanding,
+                    'finished_at' => $row->finished_at,
+                    'cancelled_at' => $row->cancelled_at,
+                    // ── WHY IT FAILED, NOT JUST THAT IT DID ────────────────────────────────────────
+                    // A fold aborts on a DETERMINISTIC, config-shaped refusal: a CCM component carrying
+                    // marks with no non-CCM counterpart never succeeds on retry. "Job failed" would
+                    // unblock the operator from "there is no fold button" only to re-block them with
+                    // "it failed and I cannot tell you why" — the same dead end one layer in. The
+                    // guard's message names the curriculum and the component, which is an action the
+                    // operator can take, so it has to survive the queue and reach the panel.
+                    //
+                    // Note $tries = 3: a deterministic refusal is attempted three times before it lands
+                    // in failed_jobs, so what the panel must render is the REASON, not three errors.
+                    'failure_reasons' => $this->failureReasons($row),
+                ];
+            })->values(),
         ]);
     }
 
@@ -285,10 +303,16 @@ class RolloverController extends Controller
 
         $pending = (int) $row->pending_jobs;
 
-        // `<=` rather than `===` as a floor: outstanding should never EXCEED pending, and if some
-        // accounting drift made it, "settled" is the safe reading — the alternative is the
-        // perpetual-draining bug this method exists to remove.
-        if ((int) $row->total_jobs > 0 && $outstanding > 0 && $pending <= $outstanding) {
+        // NO `total_jobs > 0` GUARD. It was here and it was DEAD: `$outstanding > 0` means at least
+        // one listed failed id, which means at least one job, so the guard could never decide
+        // anything — and the arm that claimed to pin it stayed green with it deleted. A test comment
+        // naming a property it does not test is how the next defect hides, so the guard is gone
+        // rather than left with a claim attached to it.
+        //
+        // `<=` rather than `===` as a floor: outstanding cannot EXCEED pending today
+        // (`failed_jobs.uuid` is unique, so whereIn cannot overcount), and if drift ever made it,
+        // "settled" is the safe reading — the alternative is the perpetual-draining bug.
+        if ($outstanding > 0 && $pending <= $outstanding) {
             return 'stopped';
         }
 
@@ -312,6 +336,19 @@ class RolloverController extends Controller
      * withdrawing "do not change the current session yet" at exactly the wrong moment. Counting only
      * ids that STILL HAVE a `failed_jobs` row makes an in-flight retry read as draining, which is
      * what it is.
+     *
+     * ── WHAT THIS CANNOT SEE, AND IT IS NOT HYPOTHETICAL ─────────────────────────────────────────
+     * `queue:forget <uuid>`, `queue:prune-failed` and `queue:flush` delete the row WITHOUT a retry,
+     * leaving the id listed forever. This then reads 0 outstanding, the batch never settles, and the
+     * panel says "Draining — do not change the current session yet" permanently with no reason
+     * beside it — defect B reinstated, in a new place, plus the loss of the reason text.
+     *
+     * `queue:forget` is the LIKELY one: a fold refusal is deterministic config that retrying never
+     * clears, so forgetting it is the natural operator response. Nothing schedules a prune here
+     * (`routes/console.php` schedules only `authz:prune`), so it takes a deliberate manual command —
+     * which is why this is recorded rather than guarded, and ticketed for a real answer. The
+     * direction is falsely-CAUTIOUS (a warning that overstays), the opposite of the direction that
+     * makes a reading ship-blocking.
      */
     private function outstandingFailures(object $row): int
     {

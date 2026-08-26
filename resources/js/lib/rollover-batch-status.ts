@@ -20,6 +20,8 @@ export type BatchStatusInput = {
     is_draining: boolean;
     settled_state: 'finished' | 'stopped' | 'cancelled' | null;
     failed_jobs: number;
+    /** Failures still unresolved, counted server-side. NOT the length of `failure_reasons`. */
+    outstanding_failures: number;
     failure_reasons: string[];
 };
 
@@ -39,14 +41,20 @@ export function batchStatus(b: BatchStatusInput): BatchStatus {
     }
 
     if (b.settled_state === 'stopped') {
-        // The count comes from the LIVE reason list where there is one, never from the monotone
-        // counter. `failed_jobs` is the fallback only for a stopped batch whose reasons could not be
-        // resolved, where showing the historical count beats showing nothing.
-        return {
-            kind: 'stopped',
-            failures: b.failure_reasons.length || b.failed_jobs,
-        };
+        // COUNT FAILURES, NOT DISTINCT SENTENCES. This read `failure_reasons.length`, and
+        // failureReasons() de-duplicates — so N jobs failing with one shared message (a deadlock, a
+        // timeout, anything school-wide) collapsed to "Stopped with 1 failure(s)" beside a
+        // failed_jobs column reading N. Understating a dead batch, on the surface built not to.
+        return { kind: 'stopped', failures: b.outstanding_failures };
     }
 
-    return { kind: 'finished' };
+    // FAIL SAFE ON AN UNEXPECTED PAIR. This used to `return finished` for anything that fell
+    // through, so `is_draining: false` with `settled_state: null` — a combination a torn read could
+    // produce — resolved to the single most reassuring word available, for a batch with a job in
+    // flight. Only an explicit 'finished' earns the word now; anything else is treated as still
+    // draining, because the cost of an over-long warning is an operator who waits, and the cost of
+    // a premature "Finished" is one who changes the session underneath a running job.
+    return b.settled_state === 'finished'
+        ? { kind: 'finished' }
+        : { kind: 'draining' };
 }

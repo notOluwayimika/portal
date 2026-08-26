@@ -14,6 +14,7 @@ const base = {
     is_draining: false,
     settled_state: null,
     failed_jobs: 0,
+    outstanding_failures: 0,
     failure_reasons: [],
 } satisfies Parameters<typeof batchStatus>[0];
 
@@ -35,22 +36,44 @@ describe('batchStatus', () => {
         ).toEqual({ kind: 'draining' });
     });
 
-    it('is stopped only when the server says stopped, and counts the LIVE reasons', () => {
+    it('counts FAILURES, not distinct reason sentences', () => {
+        // THE ARM THAT USED TO PIN THE BUG. It asserted failures: 2 for three failures sharing two
+        // messages — encoding the undercount as correct, so no mutation could ever red it. Reasons
+        // are de-duplicated server-side; a school-wide fault fails N jobs with ONE message.
+        expect(
+            batchStatus({
+                ...base,
+                settled_state: 'stopped',
+                failed_jobs: 12,
+                outstanding_failures: 12,
+                failure_reasons: ['the same sentence'],
+            }),
+        ).toEqual({ kind: 'stopped', failures: 12 });
+    });
+
+    it('counts failures below the historical counter too, so it tracks OUTSTANDING not EVER-FAILED', () => {
+        // The other direction, so "just use failed_jobs" cannot pass the arm above: two of three
+        // recorded failures have since been retried away.
         expect(
             batchStatus({
                 ...base,
                 settled_state: 'stopped',
                 failed_jobs: 3,
-                failure_reasons: ['a', 'b'],
+                outstanding_failures: 1,
+                failure_reasons: ['a'],
             }),
-        ).toEqual({ kind: 'stopped', failures: 2 });
+        ).toEqual({ kind: 'stopped', failures: 1 });
     });
 
-    it('falls back to the counter for a stopped batch whose reasons could not be resolved', () => {
-        // Showing the historical count beats showing "0 failure(s)" next to a stopped batch.
+    it('treats an inconsistent pair as draining rather than finished', () => {
+        // A torn read across two queries could return is_draining false with settled_state null.
+        // The old fall-through resolved that to "Finished" — the most reassuring word available for
+        // a batch that may have a job in flight. It fails safe now.
         expect(
-            batchStatus({ ...base, settled_state: 'stopped', failed_jobs: 2 }),
-        ).toEqual({ kind: 'stopped', failures: 2 });
+            batchStatus({ ...base, is_draining: false, settled_state: null }),
+        ).toEqual({
+            kind: 'draining',
+        });
     });
 
     it('is cancelled when the server says cancelled', () => {

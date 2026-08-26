@@ -82,6 +82,8 @@ interface BatchRow {
     total_jobs: number;
     pending_jobs: number;
     failed_jobs: number;
+    /** Failures still unresolved, counted server-side — not the length of failure_reasons. */
+    outstanding_failures: number;
     done_jobs: number;
     is_draining: boolean;
     /** 'finished' all succeeded · 'stopped' all resolved but some failed · 'cancelled' · null = still draining. */

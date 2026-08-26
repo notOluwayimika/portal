@@ -255,7 +255,9 @@ class CcmFoldDriveSeeder extends Seeder
         // ── AND THE READ PERMISSION, WITHOUT WHICH EVERY PAGE RENDERS EMPTY ────────────────────
         // The setup screens fetch their data over XHR, and every read endpoint they call —
         // GET /api/class-structure, /exam-types, /curricula, /sessions — sits in the
-        // `permission:academic_data.view` group (routes/api.php:338). A seat holding the WRITE
+        // `permission:academic_data.view` group in routes/api.php — no line number, because that
+        // group is a Route::middleware(...)->group() with no named symbol to anchor a citation to,
+        // and the permission STRING is the durable identifier anyway. A seat holding the WRITE
         // permission and the SHELL permission still gets 403 on every fetch, so Class Structure
         // renders "No class levels" over two seeded levels and the Overview beside it reports 2.
         //

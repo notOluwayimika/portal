@@ -2,12 +2,16 @@
 
 namespace App\Console\Commands;
 
+use App\Jobs\MoveFromTermJob;
 use App\Models\ClassLevelTermParticipation;
 use App\Models\Curriculum;
+use App\Models\CurriculumSubject;
 use App\Models\MarkingComponent;
 use App\Models\MarkingScheme;
 use App\Models\Scopes\SchoolScope;
+use App\Models\Score;
 use App\Models\StudentCurriculum;
+use App\Support\ActiveSchool;
 use Database\Seeders\CcmFoldDriveSeeder;
 use Database\Seeders\RbacSeeder;
 use Illuminate\Console\Command;
@@ -39,7 +43,7 @@ use Illuminate\Support\Facades\DB;
  */
 class SeedCcmFoldDrive extends Command
 {
-    protected $signature = 'academics:seed-ccm-fold-drive';
+    protected $signature = 'academics:seed-ccm-fold-drive {--stage-fold-failure : Drive school B up to the moment of the refusal, so the browser gate can observe the RENDERED failure without needing score-entry permissions}';
 
     protected $description = 'Seed the CCM fold surface drive fixture (drive DB ONLY) — two worlds, one of which the fold must refuse';
 
@@ -74,9 +78,71 @@ class SeedCcmFoldDrive extends Command
         $seeder = new CcmFoldDriveSeeder;
         $seeder->run();
 
+        if ($this->option('stage-fold-failure')) {
+            $this->stageFoldFailure($seeder);
+        }
+
         $this->report($seeder);
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Leave school B at the exact moment before the fold refuses.
+     *
+     * ── WHY THIS IS STAGED RATHER THAN DRIVEN ────────────────────────────────────────────────────
+     * Leg 4's subject is the RENDERED REFUSAL — the kind badge, the terminal copy, the reason with no
+     * server path in it. Reaching it by hand needs the CCM arrival to exist (an end-of-term rollover)
+     * and marks to sit on the CCM-only component, and marks entry is behind score-entry permissions
+     * these seats do not hold. Staging it means the browser gate observes the thing it is for
+     * instead of spending the session acquiring permissions to set up a precondition.
+     *
+     * SCHOOL A IS DELIBERATELY NOT STAGED. That is where the loop gate is driven — toggle, roll over,
+     * see where the pupil lands — and pre-running any of it would hand the driver the answer.
+     *
+     * It runs the REAL MoveFromTermJob, not a hand-built curriculum, so the CCM arrival is the one
+     * the five-key construction produces. Scores go through the real model, guards and all.
+     */
+    private function stageFoldFailure(CcmFoldDriveSeeder $seeder): void
+    {
+        $w = $seeder->schemeAsymmetric;
+        $schoolId = (int) $w['school']->id;
+
+        ActiveSchool::runFor($schoolId, function () use ($w, $schoolId) {
+            (new MoveFromTermJob($w['source'], (int) $w['operator']->id, $schoolId))->handle();
+
+            $ccm = CcmFoldDriveSeeder::arrival($w['source'], $w['terms'][3], isCcm: true);
+
+            if (! $ccm instanceof Curriculum) {
+                $this->error('STAGING FAILED: the rollover produced no CCM arrival — leg 4 is not drivable.');
+
+                return;
+            }
+
+            $subject = CurriculumSubject::where('curriculum_id', $ccm->id)->firstOrFail();
+            $component = $subject->effectiveMarkingComponents()->firstWhere('name', 'Half Term Project');
+
+            if ($component === null) {
+                $this->error('STAGING FAILED: the CCM-only component is not on the arrival — the fold would SUCCEED and leg 4 would prove nothing.');
+
+                return;
+            }
+
+            foreach (StudentCurriculum::withoutGlobalScopes()->where('curriculum_id', $ccm->id)->get() as $episode) {
+                Score::firstOrCreate([
+                    'student_id' => $episode->student_id,
+                    'curriculum_subject_id' => $subject->id,
+                    'marking_component_id' => $component->id,
+                ], ['score' => 18, 'created_by' => $w['operator']->id]);
+            }
+
+            $scored = Score::where('marking_component_id', $component->id)->count();
+
+            $this->newLine();
+            $this->warn("STAGED: school#{$schoolId} curriculum#{$ccm->id} is CCM and holds {$scored} mark(s) on "
+                ."\"{$component->name}\" (component#{$component->id}), which has NO non-CCM counterpart. "
+                .'The gate is UP and the fold will REFUSE — that refusal is what the browser gate reads.');
+        });
     }
 
     /**
@@ -148,13 +214,29 @@ class SeedCcmFoldDrive extends Command
         $this->line('  → "'.$b['ccmOnlyComponent']->name.'" (component#'.$b['ccmOnlyComponent']->id.') exists on the CCM side ONLY. '
             .'Once leg 2 puts a mark on it, the fold must REFUSE rather than drop it.');
 
-        $this->newLine();
-        $this->line('SEATS (password: '.CcmFoldDriveSeeder::PASSWORD.') — each holds academics.rollover and school access, and NOT academic_setup.manage:');
-        $this->line('  legs 1-3: '.$seeder->subjectLocal['operator']->email.'  (school#'.$seeder->subjectLocal['school']->id.')');
-        $this->line('  leg 4   : '.$seeder->schemeAsymmetric['operator']->email.'  (school#'.$seeder->schemeAsymmetric['school']->id.')');
+        $a = $seeder->subjectLocal;
 
         $this->newLine();
-        $this->line('Both worlds start with pupils in slot 1 and NOTHING rolled over yet — leg 1 is the operator running the');
-        $this->line('end-of-term rollover, which is what builds the CCM arrival. The gate is not up until then.');
+        $this->line('SEATS (password: '.CcmFoldDriveSeeder::PASSWORD.') — all hold school access; the ABILITIES differ and that is the point:');
+        $this->line('  '.str_pad($a['setupOperator']->email, 38).' school#'.$a['school']->id.'  academic_setup.manage + academics.rollover');
+        $this->line('     ^ the ONLY seat that can see the CCM checkbox — it is gated on academic_setup.manage in the panel');
+        $this->line('       AND on the route group. Drives the whole loop in one login: toggle, roll over, see the landing.');
+        $this->line('  '.str_pad($a['operator']->email, 38).' school#'.$a['school']->id.'  academics.rollover ONLY');
+        $this->line('     ^ the NEGATIVE authorization observation: same screen, no CCM control rendered on it.');
+        $this->line('  '.str_pad($seeder->schemeAsymmetric['operator']->email, 38).' school#'.$seeder->schemeAsymmetric['school']->id.'  academics.rollover ONLY');
+        $this->line('     ^ leg 4. Needs no setup ability: its CCM slot is configured by the seeder.');
+
+        $this->newLine();
+
+        if ($this->option('stage-fold-failure')) {
+            $this->line('SCHOOL A IS PRISTINE — nothing rolled over. That is where the loop gate is driven, and pre-running');
+            $this->line('any of it would hand the driver the answer.');
+            $this->line('SCHOOL B IS STAGED to the moment before the refusal (see the STAGED line above): the CCM arrival');
+            $this->line('exists and carries marks on the counterpart-less component, so the gate is UP and Fold will REFUSE.');
+        } else {
+            $this->line('Both worlds start with pupils in slot 1 and NOTHING rolled over yet — leg 1 is the operator running the');
+            $this->line('end-of-term rollover, which is what builds the CCM arrival. The gate is not up until then.');
+            $this->line('For the browser gate, re-run with --stage-fold-failure so leg 4 does not need score-entry permissions.');
+        }
     }
 }

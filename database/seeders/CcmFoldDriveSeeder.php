@@ -87,6 +87,18 @@ class CcmFoldDriveSeeder extends Seeder
 
         return ActiveSchool::runFor((int) $school->id, function () use ($school) {
             $operator = $this->makeOperator($school, 'operator');
+            // ── THE SEAT THAT CAN ACTUALLY REACH THE TOGGLE ────────────────────────────────────
+            // The CCM checkbox is gated on `academic_setup.manage` in BOTH the panel
+            // (progression-panel.tsx) and the route group (routes/api.php), and $operator holds
+            // `academics.rollover` and deliberately NOT that. So the browser gate — set slot 3 CCM
+            // through the panel, roll over, watch where the pupil lands — is UNDRIVABLE with the
+            // rollover seat: the control simply is not rendered. Found by checking the seat's
+            // abilities before handing the fixture over, not by a driver losing a session to it.
+            //
+            // It carries `academics.rollover` TOO, so one login drives the whole loop rather than
+            // forcing a seat switch mid-flow. $operator stays rollover-only on purpose: it is the
+            // negative authorization observation — the same screen, with no CCM control on it.
+            $setupOperator = $this->makeOperator($school, 'setup', withAcademicSetup: true);
             $examType = $this->makeExamType($school);
             [$session, $terms] = $this->makeSession($school, [1, 2, 3, 4]);
 
@@ -130,7 +142,7 @@ class CcmFoldDriveSeeder extends Seeder
             $ccmPupils = $this->enroll($school, $ccmSource, 2, 'Ccm');
             $plainPupils = $this->enroll($school, $plainSource, 1, 'Plain');
 
-            return compact('school', 'operator', 'examType', 'session', 'terms')
+            return compact('school', 'operator', 'setupOperator', 'examType', 'session', 'terms')
                 + ['ccmLevel' => $ccmArm['level'], 'ccmArm' => $ccmArm['arm'], 'ccmSource' => $ccmSource, 'ccmPupils' => $ccmPupils]
                 + ['plainLevel' => $plainArm['level'], 'plainArm' => $plainArm['arm'], 'plainSource' => $plainSource, 'plainPupils' => $plainPupils];
         });
@@ -207,7 +219,7 @@ class CcmFoldDriveSeeder extends Seeder
      * config permission, so borrowing an `admin` seat would hand the operator both and make the
      * drive's authorization observation vacuous.
      */
-    private function makeOperator(School $school, string $localPart): User
+    private function makeOperator(School $school, string $localPart, bool $withAcademicSetup = false): User
     {
         $user = User::forceCreate([
             'uuid' => (string) Str::uuid(),
@@ -232,6 +244,22 @@ class CcmFoldDriveSeeder extends Seeder
 
         setPermissionsTeamId($school->id);
         $user->givePermissionTo($permission);
+
+        if ($withAcademicSetup) {
+            // firstOrCreate, matching the rollover permission above: the suite does not run
+            // RbacSeeder, so firstOrFail() here reds every arm that builds this world — which is
+            // exactly what it did on the first run after this seat was added.
+            $user->givePermissionTo(
+                Permission::where('name', \App\Enums\Permission::ACADEMIC_SETUP_MANAGE->value)
+                    ->where('guard_name', 'web')
+                    ->first()
+                    ?? Permission::create([
+                        'name' => \App\Enums\Permission::ACADEMIC_SETUP_MANAGE->value,
+                        'guard_name' => 'web',
+                    ])
+            );
+        }
+
         $user->flushSchoolAccessCache();
 
         return $user;

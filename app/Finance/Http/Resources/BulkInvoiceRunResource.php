@@ -19,7 +19,7 @@ use Illuminate\Http\Resources\Json\JsonResource;
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  * THE ONE RULE THIS FILE EXISTS TO HOLD: **A NULL COUNT REACHES THE WIRE AS `null`.**
  *
- * Every one of the eight counts is nullable on the table and is NULL until {@see
+ * Every one of the nine counts is nullable on the table and is NULL until {@see
  * ProcessBulkInvoiceRun::reconcile()} writes it. A `pending` run has never been picked up; a
  * `running` run is mid-cohort; a run failed by a per-run condition — no active schedule, a mapper
  * refusal, a death the worker reported — never reached the reconciliation at all, because
@@ -29,19 +29,19 @@ use Illuminate\Http\Resources\Json\JsonResource;
  * zero", which is the §26 state-collapse defect (five recorded instances) committed in the payload
  * rather than in the screen — and a screen cannot recover a distinction its data no longer carries.
  * So the counts are emitted RAW, and `has_figures` below is the server's own answer to "may these be
- * rendered at all", so no consumer has to re-derive it from eight separate null checks.
+ * rendered at all", so no consumer has to re-derive it from nine separate null checks.
  *
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  * `has_figures` IS NOT `status === 'completed'`, AND THAT IS THE INTERESTING PART.
  *
  * A brief for this commit stated the rule as "a FAILED run shows its failure_reason and NO figures;
  * it has none", and that is true of four of the five routes into `failed` and false of the fifth.
- * The NOBODY-BILLED RULE ({@see ProcessBulkInvoiceRun::reconcile()}) writes all eight counts and THEN
+ * The NOBODY-BILLED RULE ({@see ProcessBulkInvoiceRun::reconcile()}) writes all nine counts and THEN
  * sets `failed` in the same update — a run that walked a non-empty cohort and billed nobody is
  * `failed` and fully counted. {@see BulkInvoiceRunStatus} says so in its own words: "a `failed` run
  * must be READ, not assumed: check `cohort_count` and the row counts."
  *
- * Keying the screen off the STATUS would therefore hide the eight figures in the one failure case
+ * Keying the screen off the STATUS would therefore hide the nine figures in the one failure case
  * where they are the entire diagnosis. Keying it off `cohort_count !== null` — the first column
  * `reconcile()` writes and one `writeFailure()` cannot — asks the question that is actually being
  * asked: has this run reported? That covers pending, running and the four count-less failures
@@ -52,12 +52,12 @@ use Illuminate\Http\Resources\Json\JsonResource;
  *
  * The model's docblock names two equalities, each with a persisted-rows side and a walked-list side:
  *
- *     billed + already_billed + failed == cohort_count
- *     unplaceable_count                == unplaceable_listed_count
+ *     billed + already_billed + failed + sponsored == cohort_count
+ *     unplaceable_count                            == unplaceable_listed_count
  *
  * Either can genuinely fail — a per-student row that could not be written is a per-student fault the
  * run survives ({@see ProcessBulkInvoiceRun::attempt()}), and the imbalance is the only thing that
- * says so. There is deliberately no flag column, so a screen that renders eight numbers without
+ * says so. There is deliberately no flag column, so a screen that renders nine numbers without
  * stating whether they add up renders the alarm as decoration. It is computed here, from figures
  * already on the wire, so both sides of each equality travel with the verdict and a reader can
  * disagree with it.
@@ -73,7 +73,7 @@ class BulkInvoiceRunResource extends JsonResource
     {
         // The single question "has this run reported its figures". `cohort_count` is the discriminator
         // rather than `status` — see the class docblock for the failure case that distinction exists
-        // for. It is also the first count reconcile() writes, and all eight are written in one
+        // for. It is also the first count reconcile() writes, and all nine are written in one
         // statement, so it cannot be non-null while a sibling is null.
         $hasFigures = $this->cohort_count !== null;
 
@@ -120,6 +120,7 @@ class BulkInvoiceRunResource extends JsonResource
                 'billed' => $this->billed_count,
                 'already_billed' => $this->already_billed_count,
                 'failed' => $this->failed_count,
+                'sponsored' => $this->sponsored_count,
                 'unplaceable_listed' => $this->unplaceable_listed_count,
                 'unplaceable' => $this->unplaceable_count,
                 'billable' => $this->billable_count,
@@ -132,7 +133,7 @@ class BulkInvoiceRunResource extends JsonResource
 
             // The two equalities, or null when there is nothing to check. See the class docblock.
             'reconciliation' => $hasFigures ? [
-                'cohort_balances' => (int) $this->billed_count + (int) $this->already_billed_count + (int) $this->failed_count === (int) $this->cohort_count,
+                'cohort_balances' => (int) $this->billed_count + (int) $this->already_billed_count + (int) $this->failed_count + (int) $this->sponsored_count === (int) $this->cohort_count,
                 'unplaceable_balances' => (int) $this->unplaceable_count === (int) $this->unplaceable_listed_count,
             ] : null,
         ];

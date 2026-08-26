@@ -131,7 +131,7 @@ function StatusIcon({ status }: { status: RunStatus }) {
 /**
  * A figure, or the no-value glyph when the run has not reported one.
  *
- * `has_figures` decides, NOT the status: the nobody-billed rule writes all eight counts and then
+ * `has_figures` decides, NOT the status: the nobody-billed rule writes all nine counts and then
  * marks the run `failed`, so one of the five routes into `failed` is fully counted and hiding its
  * figures would hide the entire diagnosis of the one failure where they matter most.
  */

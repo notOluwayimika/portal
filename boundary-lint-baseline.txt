@@ -12,6 +12,21 @@
 #   to remove there.
 # finance-table-outside-finance entries expire when Ph2's FinanceModuleStatus
 #   contract (ADR 0030) replaces ModuleClassificationService's direct finance_* reads.
+# finance-escape-hatches / app/Academics/BillableEnrollmentAdapter.php — the FOURTH entry,
+#   `Student::withTrashed()`, is argued for rather than inherited, which is what the rule's
+#   docblock asks of every entry after the sixth withoutGlobalScope call. It is NOT temporary and
+#   does not expire with a column, unlike the entries above: it exists because the cohort read
+#   DELIBERATELY includes soft-deleted students (billableEpisodes() never joins `students`, and
+#   currentEnrollments()' EXISTS clause ignores `deleted_at` to match), while `Student` uses
+#   SoftDeletes. scholarshipIdsFor() has to resolve the scholarship of every student the cohort
+#   contains; letting SoftDeletes apply returns NOTHING for a trashed student, whose scholarship
+#   then reads as "none" — so a trashed SPONSORED student is billed the standard fee schedule on a
+#   run that reports success. Every alternative spelling trips the same rule (SoftDeletingScope,
+#   DB::table) and the one that does not — joining `students` from StudentCurriculum, which skips
+#   the joined model's scopes — would slip past only through the baseline's line-text keying
+#   (docs/handoff/tickets/boundary-lint-baseline-keys-on-line-text.md). Using that hole to avoid an
+#   argued entry is the wallpaper this file exists to prevent. It expires if, and only if, the
+#   cohort stops including soft-deleted students.
 # halting-event-arrow-fn has ZERO baseline entries — every halting-event listener
 #   uses a block closure, so the rule is pure enforcement (no exceptions).
 # approval-seam-missing / approval-seam-count have ZERO baseline entries — every Finance
@@ -24,6 +39,7 @@
 finance-escape-hatches	app/Academics/BillableEnrollmentAdapter.php	$query->withoutGlobalScope(SchoolScope::class)
 finance-escape-hatches	app/Academics/BillableEnrollmentAdapter.php	$unscoped = fn ($query) => $query->withoutGlobalScope(SchoolScope::class);
 finance-escape-hatches	app/Academics/BillableEnrollmentAdapter.php	->withoutGlobalScope(SchoolScope::class)
+finance-escape-hatches	app/Academics/BillableEnrollmentAdapter.php	return Student::withTrashed()
 finance-table-outside-finance	app/Services/Dashboard/ModuleClassificationService.php	foreach (['finance_invoices', 'finance_payments', 'finance_fee_structures'] as $table) {
 school-id-fallback-context	app/Http/Controllers/SuperAdmin/AdminController.php	if (!$target->contains('id', $user->school_id)) {
 school-id-fallback-context	app/Support/ActiveSchool.php	if (! $user->isSuperAdmin() && $user->school_id) {

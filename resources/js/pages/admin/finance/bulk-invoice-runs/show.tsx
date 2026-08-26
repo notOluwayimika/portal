@@ -34,14 +34,14 @@ import type {
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  * THE FIGURES ARE RENDERED ONLY WHEN THE RUN HAS REPORTED THEM, AND `has_figures` DECIDES
  *
- * All eight counts are NULL until the job reconciles. A pending run has not been picked up, a
+ * All nine counts are NULL until the job reconciles. A pending run has not been picked up, a
  * running run is mid-cohort, and a run stopped by a per-run condition — no active schedule, a mapper
  * refusal, a worker that died — never reached the reconciliation at all. Rendering any of those as
  * `0` is §26's state-collapse defect, which this project has shipped five times, and here it would be
  * a confident false statement about a school's billing.
  *
  * `has_figures` IS NOT `status !== 'failed'`, and this is the one place that distinction is load
- * bearing. The NOBODY-BILLED RULE writes all eight counts and THEN marks the run `failed` — a run
+ * bearing. The NOBODY-BILLED RULE writes all nine counts and THEN marks the run `failed` — a run
  * whose whole cohort failed is `failed` AND fully counted, and its figures are the entire diagnosis
  * ("check the rows for the repeated reason before re-running"). So four of the five routes into
  * `failed` show no figures because they have none, and the fifth shows them because it has them.
@@ -92,6 +92,9 @@ const STATUS_LABEL: Record<RunStatus, string> = {
 const BUCKET_ORDER: RunOutcome[] = [
     'unplaceable',
     'failed',
+    // Third, above the two no-action buckets: this list IS an action — somebody has to raise these
+    // invoices by hand — it is simply not an action taken in this run.
+    'sponsored',
     'billed',
     'already_billed',
 ];
@@ -129,6 +132,14 @@ const BUCKET_COPY: Record<
         blurb: 'These already carried a term bill for their episode, so this run raised none. That is not an error — it is what a safe re-run looks like.',
         empty: 'Nobody in the cohort was already billed.',
         tone: 'slate',
+    },
+    sponsored: {
+        title: 'Sponsored — billed by hand',
+        // IT NAMES WHAT IS OWED AND BY WHOM, because the one thing a bursar can get wrong here is
+        // reading it as a miss and re-running to "fix" it. Re-running produces this same list.
+        blurb: 'These students are on a sponsored scholarship, so an organisation pays for them on a different fee basis, once a session, off platform. This run left them alone deliberately — they are not a failure and re-running will not bill them. Their invoices are raised by hand, and this is the list to raise them from.',
+        empty: 'Nobody in the cohort is on a sponsored scholarship.',
+        tone: 'blue',
     },
 };
 
@@ -351,6 +362,11 @@ export default function BulkInvoiceRunShow({ runUuid }: { runUuid: string }) {
                                     </div>
 
                                     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                                        <Figure
+                                            label="Sponsored"
+                                            value={run.counts.sponsored}
+                                            note="Excluded on purpose. Billed by hand, not by this run."
+                                        />
                                         <Figure
                                             label="Could not be placed"
                                             value={run.counts.unplaceable}

@@ -252,6 +252,23 @@ class CcmFoldDriveSeeder extends Seeder
         // still absent for it — which is the thing that observation is about.
         $user->givePermissionTo($this->permission(\App\Enums\Permission::ADMIN_AREA_ACCESS->value));
 
+        // ── AND THE READ PERMISSION, WITHOUT WHICH EVERY PAGE RENDERS EMPTY ────────────────────
+        // The setup screens fetch their data over XHR, and every read endpoint they call —
+        // GET /api/class-structure, /exam-types, /curricula, /sessions — sits in the
+        // `permission:academic_data.view` group (routes/api.php:338). A seat holding the WRITE
+        // permission and the SHELL permission still gets 403 on every fetch, so Class Structure
+        // renders "No class levels" over two seeded levels and the Overview beside it reports 2.
+        //
+        // Found by a driver in a browser, after page-level probes said 200. The lesson from the
+        // shell gap did not go far enough: fetching the PAGE proves the page, not the XHRs the page
+        // makes. Reachability has as many layers as the request chain does.
+        //
+        // The rollover-only seat gets this too, and must: its negative observation is "the CCM
+        // checkbox is absent", which is only meaningful on a panel that has ROWS. Without reads it
+        // would see an empty panel and "no checkbox" would be confounded by "no data" — the same
+        // confounding the shell fix removed, one layer in.
+        $user->givePermissionTo($this->permission(\App\Enums\Permission::ACADEMIC_DATA_VIEW->value));
+
         if ($withAcademicSetup) {
             $user->givePermissionTo($this->permission(\App\Enums\Permission::ACADEMIC_SETUP_MANAGE->value));
         }

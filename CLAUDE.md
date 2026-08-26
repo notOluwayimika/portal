@@ -172,6 +172,18 @@ operational facts an agent needs most often.
   general parent of the self-referential cap: not "the test must be able to fail on
   its axis" but **"the fixture must make the axis the only thing that can pass it."**
 
+  **And check the DOUBLE, not only the instrument.** Laravel's fakes record intent
+  without enforcing the preconditions the real service enforces — `BusFake::batch()`
+  returns a `PendingBatchFake` that skips `ensureJobIsBatchable()` entirely, so a
+  fully-faked suite is green about the FAKE, not the system. Paid for twice:
+  `MoveToNextYearJob` and `MoveFromTermJob` shipped without `Batchable` and `--commit`
+  had never once worked; `MoveFromCcmJob` was caught with the same gap before it
+  shipped. `Queue`, `Mail`, `Notification` and `Http` are all more permissive than
+  what they stand in for. **If correctness rests on a precondition the real service
+  validates, one arm must run against the real service.** Same principle as the
+  instrument, one layer further in: anything standing in for production can diverge
+  from it in exactly the dimension under test.
+
   **And check the instrument, not only the fixture.** A mutation-testing summariser
   that prints only Pest's `failures` bucket under-reports every exception-based kill
   as a SURVIVOR — and throwing is how most guards kill, so it disagrees with reality

@@ -43,7 +43,8 @@ use Illuminate\Support\Facades\DB;
  */
 class SeedCcmFoldDrive extends Command
 {
-    protected $signature = 'academics:seed-ccm-fold-drive {--stage-fold-failure : Drive school B up to the moment of the refusal, so the browser gate can observe the RENDERED failure without needing score-entry permissions}';
+    protected $signature = 'academics:seed-ccm-fold-drive {--stage-fold-failure : Drive school B up to the moment of the refusal, so the browser gate can observe the RENDERED failure without needing score-entry permissions}
+        {--unset-loop-flag : Leave school A\'s CCM slot switched OFF, so the browser gate SETS it through the panel instead of inheriting it from the seeder}';
 
     protected $description = 'Seed the CCM fold surface drive fixture (drive DB ONLY) — two worlds, one of which the fold must refuse';
 
@@ -80,6 +81,10 @@ class SeedCcmFoldDrive extends Command
 
         if ($this->option('stage-fold-failure')) {
             $this->stageFoldFailure($seeder);
+        }
+
+        if ($this->option('unset-loop-flag')) {
+            $this->unsetLoopFlag($seeder);
         }
 
         $this->report($seeder);
@@ -143,6 +148,39 @@ class SeedCcmFoldDrive extends Command
                 ."\"{$component->name}\" (component#{$component->id}), which has NO non-CCM counterpart. "
                 .'The gate is UP and the fold will REFUSE — that refusal is what the browser gate reads.');
         });
+    }
+
+    /**
+     * Switch school A's CCM slot OFF, so the browser gate has something to prove.
+     *
+     * ── OTHERWISE THE LOOP GATE IS A TAUTOLOGY ───────────────────────────────────────────────────
+     * The gate is "set slot 3 CCM THROUGH THE PANEL, run end-of-term, confirm the pupil lands in
+     * CCM" — and its whole point is that the TOGGLE steers the placement. Seeded with the flag
+     * already true, the driver would toggle nothing, the rollover would land pupils in CCM because
+     * the SEEDER put the flag there, and the observation would prove the seeder works. The screen
+     * would look identical either way, which is what makes it worth removing rather than noting.
+     *
+     * Both of school A's levels are left OFF, so the driver turns ON exactly one and the sibling is
+     * a real negative arm rather than a second pre-set fact: Year 7 must land CCM and Year 8 must
+     * not, and the only difference between them is the click.
+     *
+     * NOT done in the seeder itself, because the suite's arms legitimately want the flag seeded —
+     * they assert the participation flag decides the landing, which needs it set. This is drive
+     * scaffolding, so it lives on the drive command.
+     */
+    private function unsetLoopFlag(CcmFoldDriveSeeder $seeder): void
+    {
+        $schoolId = (int) $seeder->subjectLocal['school']->id;
+
+        $cleared = ClassLevelTermParticipation::withoutGlobalScope(SchoolScope::class)
+            ->where('school_id', $schoolId)
+            ->where('is_ccm', true)
+            ->update(['is_ccm' => false]);
+
+        $this->newLine();
+        $this->warn("LOOP FLAG CLEARED: {$cleared} participation row(s) in school#{$schoolId} switched to is_ccm=false. "
+            .'Nothing in school A is CCM until the driver sets it through the progression panel — which is the '
+            .'only way the gate can prove the toggle steers the placement rather than the seeder having done it.');
     }
 
     /**

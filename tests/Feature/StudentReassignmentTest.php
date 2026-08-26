@@ -3,21 +3,16 @@
 use App\Academics\BillableEnrollmentAdapter;
 use App\Enums\StudentMembershipStatus;
 use App\Enums\StudentStatusEnum;
-use App\Models\AcademicSession;
 use App\Models\Arm;
-use App\Models\ClassLevel;
 use App\Models\ClassLevelArm;
 use App\Models\Curriculum;
-use App\Models\CurriculumSubject;
 use App\Models\ExamType;
-use App\Models\Permission;
 use App\Models\School;
 use App\Models\Scopes\SchoolScope;
 use App\Models\Student;
 use App\Models\StudentCurriculum;
 use App\Models\Subject;
 use App\Models\Term;
-use App\Models\User;
 use App\Services\CohortSiblings;
 use App\Support\ActiveSchool;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -30,109 +25,6 @@ uses(RefreshDatabase::class);
 // exists for), plus a Year 9 class as the same-school NON-sibling and a whole
 // second school as the isolation subject.
 // ---------------------------------------------------------------------------
-
-function sr_admin(School $school): User
-{
-    $user = al_makeUser($school->id);
-
-    $permission = Permission::where('name', 'academic_setup.manage')->where('guard_name', 'web')->first()
-        ?? Permission::create(['name' => 'academic_setup.manage', 'guard_name' => 'web']);
-
-    setPermissionsTeamId($school->id);
-    $user->givePermissionTo($permission);
-
-    return $user;
-}
-
-function sr_arm(School $school, ClassLevel $level, string $label): ClassLevelArm
-{
-    return ClassLevelArm::forceCreate([
-        'school_id' => $school->id,
-        'class_level_id' => $level->id,
-        'arm_id' => Arm::firstOrCreate(['school_id' => $school->id, 'label' => $label])->id,
-    ]);
-}
-
-function sr_curriculum(School $school, ClassLevelArm $arm, ExamType $examType, Term $term): Curriculum
-{
-    $curriculum = Curriculum::create([
-        'school_id' => $school->id,
-        'term_id' => $term->id,
-        'class_level_arm_id' => $arm->id,
-        'exam_type_id' => $examType->id,
-        'status' => 'active',
-        'is_ccm' => false,
-        'min_subjects' => 1,
-    ]);
-
-    // A compulsory subject so the service's additive auto-attach actually runs, rather than the
-    // move being proved against a curriculum that requires nothing.
-    CurriculumSubject::create([
-        'curriculum_id' => $curriculum->id,
-        'subject_id' => Subject::create(['school_id' => $school->id, 'name' => 'Subj '.Str::random(5)])->id,
-        'is_compulsory' => true,
-    ]);
-
-    return $curriculum;
-}
-
-function sr_school(string $name): array
-{
-    $school = al_makeSchool();
-    $admin = sr_admin($school);
-
-    $session = AcademicSession::create([
-        'school_id' => $school->id,
-        'name' => '2025/2026',
-        'slug' => 'as-'.Str::random(8),
-    ]);
-    $term = Term::create([
-        'school_id' => $school->id,
-        'academic_session_id' => $session->id,
-        'name' => 'First Term',
-        'slug' => 'tm-'.Str::random(8),
-        'order' => 1,
-        // Both NOT NULL without defaults; the dates are irrelevant to reassignment but the row will
-        // not insert without them.
-        'start_date' => now()->subMonth(),
-        'end_date' => now()->addMonth(),
-    ]);
-    $examType = ExamType::create([
-        'school_id' => $school->id,
-        'name' => 'Internal',
-        'slug' => 'et-'.Str::random(8),
-    ]);
-
-    $y8 = ClassLevel::forceCreate(['school_id' => $school->id, 'name' => 'Year 8', 'order' => 8]);
-    $y9 = ClassLevel::forceCreate(['school_id' => $school->id, 'name' => 'Year 9', 'order' => 9]);
-
-    $c8B = sr_curriculum($school, sr_arm($school, $y8, 'B'), $examType, $term);
-    $c8S = sr_curriculum($school, sr_arm($school, $y8, 'S'), $examType, $term);
-    // SAME school, same term, same exam type — and a different YEAR GROUP. This is the row that
-    // isolates the sibling rule: no school guard can refuse it.
-    $c9B = sr_curriculum($school, sr_arm($school, $y9, 'B'), $examType, $term);
-
-    $student = Student::create([
-        'school_id' => $school->id,
-        'first_name' => 'Pupil',
-        'last_name' => Str::random(6),
-        'gender' => 'male',
-        'admission_number' => 'ADM-'.Str::random(8),
-    ]);
-
-    $episode = StudentCurriculum::create([
-        'student_id' => $student->id,
-        'curriculum_id' => $c8B->id,
-        'status' => StudentStatusEnum::ACTIVE,
-    ]);
-
-    return compact('school', 'admin', 'session', 'term', 'examType', 'y8', 'y9', 'c8B', 'c8S', 'c9B', 'student', 'episode');
-}
-
-function sr_world(): array
-{
-    return sr_school('primary');
-}
 
 function sr_post(array $w, string $destinationUuid, ?StudentCurriculum $episode = null)
 {
@@ -508,4 +400,118 @@ it('cannot reach another school’s episode through the route binding', function
             ->whereKey($other['episode']->id)
             ->value('status')
     )->toBe(StudentStatusEnum::ACTIVE);
+});
+
+// ---------------------------------------------------------------------------
+// Exam type left the eligibility key — the single-move half
+// ---------------------------------------------------------------------------
+
+/**
+ * CROSS-EXAM-TYPE IS ALLOWED, AND NOTHING PINNED IT ON THIS PATH UNTIL NOW.
+ *
+ * M3 shipped with exam type IN the key, so it never needed an arm for crossing it; when the key
+ * changed, all 26 of these tests stayed green while the behaviour underneath them changed. Green
+ * here meant "M3 still does what it did", not "the new rule is right", and the two are different
+ * claims. This is the arm that makes the second one testable on the single path.
+ *
+ * It is also the mutation guard for the single move: re-add `exam_type_id` to CohortSiblings and
+ * this reds.
+ *
+ * The destination shares c8B's ARM and differs only on exam type, which exercises both halves of
+ * the change at once — the dropped exam-type match, and the exclusion moving from arm to
+ * curriculum. Under the old arm-exclusion this destination was unreachable even with exam type gone.
+ */
+it('reassigns into a different exam type within the same level and term', function () {
+    $w = sr_world();
+
+    $otherExamType = ExamType::create([
+        'school_id' => $w['school']->id,
+        'name' => 'External',
+        'slug' => 'et-'.Str::random(8),
+    ]);
+
+    $sameArmOtherExam = sr_curriculum(
+        $w['school'],
+        ClassLevelArm::find($w['c8B']->class_level_arm_id),
+        $otherExamType,
+        $w['term'],
+    );
+
+    // The picker must OFFER it, not merely accept it — an offer/guard disagreement is the failure
+    // CohortSiblings' one-definition rule exists to prevent.
+    sr_options($w)
+        ->assertOk()
+        ->assertJsonPath('destinations', fn (array $d) => collect($d)->pluck('id')->contains($sameArmOtherExam->uuid));
+
+    sr_post($w, $sameArmOtherExam->uuid)->assertOk();
+
+    expect($w['episode']->fresh()->status)->toBe(StudentStatusEnum::TRANSFERRED)
+        ->and(StudentCurriculum::where('student_id', $w['student']->id)
+            ->where('curriculum_id', $sameArmOtherExam->id)
+            ->whereNull('ended_at')
+            ->exists())->toBeTrue();
+});
+
+/**
+ * BILLING FOLLOWS THE EPISODE ACROSS AN EXAM-TYPE CHANGE.
+ *
+ * The four-point transition already proved billability moves across an ARM change. Crossing exam
+ * type changes the marking scheme and the compulsory subject set, so it is the case where a
+ * billing adapter keyed on anything but the episode's status would diverge — and it was not
+ * reachable at all while the eligibility rule forbade the move.
+ *
+ * Same fixture discipline as the arm version: the destination episode EXISTS throughout, ended and
+ * TRANSFERRED, holding the higher id, so "not billable before" is a real decision about the status
+ * filter rather than a statement about a row that did not exist yet.
+ */
+it('moves billability across an exam-type change, not only across arms', function () {
+    $w = sr_world();
+
+    $otherExamType = ExamType::create([
+        'school_id' => $w['school']->id,
+        'name' => 'External',
+        'slug' => 'et-'.Str::random(8),
+    ]);
+
+    $destination = sr_curriculum(
+        $w['school'],
+        ClassLevelArm::find($w['c8B']->class_level_arm_id),
+        $otherExamType,
+        $w['term'],
+    );
+
+    $prior = StudentCurriculum::create([
+        'student_id' => $w['student']->id,
+        'curriculum_id' => $destination->id,
+        'status' => StudentStatusEnum::ACTIVE,
+    ]);
+    $prior->update(['status' => StudentStatusEnum::TRANSFERRED, 'ended_at' => now()]);
+
+    expect($prior->id)->toBeGreaterThan($w['episode']->id);
+
+    $billableUuids = fn (): array => ActiveSchool::runFor($w['school']->id, fn () => array_map(
+        fn ($enrollment) => $enrollment->enrollmentUuid,
+        app(BillableEnrollmentAdapter::class)->listForCohort(
+            (int) $w['school']->id,
+            (int) $w['term']->id,
+            (int) $w['y8']->id,
+        )
+    ));
+
+    $before = $billableUuids();
+
+    expect($before)->toContain($w['episode']->uuid)
+        ->and($before)->not->toContain($prior->uuid);
+
+    sr_post($w, $destination->uuid)->assertOk();
+
+    $after = $billableUuids();
+
+    expect($after)->not->toContain($w['episode']->uuid)
+        ->and($after)->toContain($prior->uuid);
+
+    // Revived, not duplicated — the same row, across an exam-type boundary.
+    expect(StudentCurriculum::where('student_id', $w['student']->id)
+        ->where('curriculum_id', $destination->id)
+        ->count())->toBe(1);
 });

@@ -21,6 +21,7 @@ use App\Http\Controllers\ScholarshipController;
 use App\Http\Controllers\SessionController;
 use App\Http\Controllers\SetupController;
 use App\Http\Controllers\SportHouseController;
+use App\Http\Controllers\StudentBulkReassignmentController;
 use App\Http\Controllers\StudentController;
 use App\Http\Controllers\StudentCurriculumController;
 use App\Http\Controllers\StudentReassignmentController;
@@ -214,6 +215,9 @@ Route::middleware(['auth:sanctum', 'tenant', 'permission:academic_setup.manage']
     Route::get('/student-curricula/{studentCurriculum:uuid}/reassignment-options', [StudentReassignmentController::class, 'show']);
     Route::post('/student-curricula/{studentCurriculum:uuid}/reassign', [StudentReassignmentController::class, 'store']);
 
+    // The cohort form of the same correction: every pupil in 9B to 9S in one all-or-nothing batch.
+    // Same permission as the single move above — it is the same operation, applied to a selection.
+    Route::post('/students/bulk-reassign', [StudentBulkReassignmentController::class, 'store']);
 });
 
 // ── M4 · ROLLOVER OPERATOR SURFACE ────────────────────────────────────────────────────────────────
@@ -435,6 +439,18 @@ Route::middleware(['auth:sanctum', 'tenant', 'permission:parent_portal.access'])
     // then silently failed to fill it. Takes no guardian id: see
     // GuardianController::wards.
     Route::get('/parent/wards', [GuardianController::class, 'wards']);
+});
+
+/*
+ * The parent portal's FINANCE read — what the authenticated guardian's wards owe.
+ *
+ * ITS OWN GROUP, not folded into the parent_portal group above and emphatically not into the
+ * `finance.access` group further down: same ability, separate declaration, so the finance surface a
+ * parent reaches is one file that can be read in full rather than a line inside a longer list. The
+ * file itself carries the reasoning for the path and the gate.
+ */
+Route::middleware(['auth:sanctum', 'tenant', 'permission:parent_portal.access'])->group(function () {
+    require __DIR__.'/endpoints/parent-finance.php';
 });
 
 // Form teachers may record assessments when the school has no boarding

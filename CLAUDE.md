@@ -44,9 +44,21 @@ operational facts an agent needs most often.
   third time on this very branch, from a substitution that expanded to nothing:
 
   ```bash
-  files=$(git diff --name-only HEAD -- '*.php')
-  [ -n "$files" ] && ./vendor/bin/pint $files
+  files=($(git diff --name-only HEAD -- '*.php'))
+  [ ${#files[@]} -gt 0 ] && ./vendor/bin/pint "${files[@]}"
   ```
+
+  **An ARRAY, not a string, and that is not style.** The scalar form
+  `pint $files` depends on the shell word-splitting an unquoted parameter —
+  which bash does and **zsh does not**. This project's shell is zsh, so the
+  scalar form passes all N paths as ONE argument: pint reports
+  `The path "a.php b.php c.php" is not readable` and lints nothing. It failed
+  loudly here (2026-08-25), but it is the same class as the empty-list bug one
+  line up — a substitution that does not expand to the arguments you think it
+  does — and the next pint version that tolerates a joined path would fail
+  SILENTLY, reporting success having formatted nothing. The array form is
+  correct in both shells, so the guard covers the empty case and the shell
+  difference at once. Fix the class, not the instance.
 
   And read `git diff --stat` against your own model of the change before
   pushing — no gate objects to a commit full of correct formatting, and none
@@ -107,6 +119,88 @@ operational facts an agent needs most often.
   **Rebuild the frontend after any `staging` pull that touches it**, and note the
   worse cousin — a manifest that is stale but still *resolvable* passes against the
   wrong bundle instead of erroring.
+- **Never build a test's input from the value under test.** A cap test written as
+  `while (count($ids) <= MAX_BATCH) { … }` submits "cap + 1" whatever the cap is, so
+  it proves a limit exists and is _structurally incapable_ of noticing that limit
+  loosening. Bit once on `feat/reassignment-ui`: `MAX_BATCH` raised 60 → 100000, arm
+  stayed green. That is worse than an untested cap, because it reads as covered.
+  Pin the **value** (`expect(MAX_BATCH)->toBe(60)`) and use a **literal** payload
+  (61), plus the accepting side (60) so an off-by-one reds in both directions. The
+  general form: an assertion that derives from the thing it guards can only ever
+  restate it. Same family as "assert the transition, not the endpoints" and "isolate
+  the guard where it acts alone".
+- **A green suite after you change a rule's KEY means the old behaviour survived — not
+  that the new rule is right.** Two different claims; only the first is being tested.
+  Bit on `feat/reassignment-ui`: exam type was removed from the reassignment
+  eligibility key and all 26 M3 tests stayed green, because M3 shipped with exam type
+  IN the key and so never had an arm that crossed it. Nothing was wrong with those
+  tests — they were blind to the axis that moved. **When a key changes, the new arms
+  are the ones that cross the axis you removed or added**, and a removal needs a
+  POSITIVE arm (the newly-allowed move succeeds) as its mutation guard, or the old
+  predicate drifts back in as a "restored" match with nothing going red.
+  Corollary for the axes you KEPT: "drop X and its arm reds" proves each is
+  **necessary**, never that the key contains nothing else. Completeness is established
+  by reading the predicate list, not by mutation — a seventh filter hiding in a query
+  makes a derived set silently narrower while every existing arm stays green.
+- **A test proves the property it NAMES only if the fixture makes that property the
+  SOLE explanation for the pass.** The recurring failure is not a wrong assertion —
+  it is a fixture whose degrees of freedom have collapsed until a wrong
+  implementation passes by coincidence, while the test's name stays true throughout.
+  That is what makes it invisible to reading. Four instances, one mechanism:
+  - **one arm on the target level** collapses arm-choice — a preview picking arms by
+    *any* rule lands everyone in the same place, so a parity test cannot see drift;
+  - **every fixture arm labelled `B`** collapses distribution into label-match, so a
+    "distribution" test never evaluates the modulo at all;
+  - **two ids of the same parity** collapse a `% armCount` to one residue, leaving
+    the arm ORDER unpinned while the test reads as though it covered it;
+  - **a single-element acknowledgment set** cannot express a swap, so a count-based
+    check passes every arm and keeps the hole it was written to close;
+  - **and it happens in DRIVES, not only in suites** (2026-08-25). Re-planning a
+    rollover immediately after its batch drained returned `unconfigured=0`, which
+    read as proof the readiness flag was satisfied. It was not: every pupil was
+    already `promoted` with a link set, so there were no advancers and the flag was
+    never evaluated. The demonstration only became real once the unresolved-pupil
+    state was reconstructed. **A drive is an artifact too** — "I clicked it and it
+    looked right" degenerates exactly as a fixture does, and the browser gives you
+    no assertion to inspect afterwards, so ask what else could produce this screen.
+
+  Before trusting a green, ask **what else could produce this pass?** and give the
+  fixture enough distinguishing structure that the answer is "nothing but the rule
+  under test": two arms, a non-matching label, ids of different residue, a set with a
+  swap in it. Mutation testing is what surfaces this — it makes the wrong
+  implementation explicit, and a degenerate fixture cannot kill it. This is the
+  general parent of the self-referential cap: not "the test must be able to fail on
+  its axis" but **"the fixture must make the axis the only thing that can pass it."**
+
+  Its other half: **derive the expected value by an INDEPENDENT path, never by
+  restating the rule under test.** An expectation computed the way the code computes
+  it asserts that the implementation equals itself. The arm expectation is built from
+  an explicitly-ordered query, not from the resolver's own ordering — which is why
+  flipping `orderBy('id')` to `orderByDesc('id')` reds it.
+- **A control the server never receives is theatre, and theatre is worse than
+  absence.** The rollover commit took two session ids and nothing else, so it could
+  not distinguish a plan the operator had read from one a client had merely fetched,
+  and every divergence signal it emitted came from `queued()` — *after* dispatch. The
+  check existed entirely in the client. Same family as a stated rule with no lint
+  behind it: an unenforced control does not merely fail to protect, it **manufactures
+  the confidence that stops anyone looking**. Before adding one, ask what crosses the
+  wire and what compares it. And when you enforce one over a set of things, **compare
+  the SET, not the count** — a count cannot tell "these two" from "some other two",
+  and the swap is the case that slips through. Server-enforce divergence precisely
+  where post-write reporting is too late because the divergence is unrecoverable;
+  leave benign divergences to the client.
+
+  **Name it for what it is.** What was built here is a **staleness gate**: the server
+  re-plans and refuses if the unsafe set grew since the client's last preview. It is
+  NOT an acknowledgment — no operator gesture is bound to it, and the client echoes
+  the last preview automatically, so it cannot tell "the operator read the warning and
+  accepted it" from "a client fetched a preview". Calling it an acknowledgment was an
+  overclaim, and it was caught by cold review *in the very entry describing this
+  lesson* — which is the lesson twice over: **a claim wider than its artifact is the
+  same defect as a control with no enforcement, one level up.** Resolve it by asking
+  whether the claim is the GOAL — if it is, fix the artifact; if the artifact is right
+  and the words overreached, fix the words. Leaving the gap open is the theatre this
+  rule warns about.
 
 ## Workflow
 

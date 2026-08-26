@@ -31,6 +31,16 @@ return [
         'rbac.impersonation_started',
         'rbac.impersonation_ended',
         'auth.password_reset',
+        // DELIBERATELY ABSENT: `guardian.student_record_viewed` and
+        // `guardian.student_record_access_refused`
+        // (App\Support\StudentRecordAccessLog). These two exist to answer "did a
+        // parent read a child who is not theirs", and an entry listed here is
+        // hidden ENTIRELY from anyone without `activity_log.view_sensitive`
+        // (ActivityLogQueryService::excludeSensitive). An audit trail of who
+        // read whose records that the people auditing cannot see is not a
+        // control — it is the 2026-08-25 answer ("it cannot be determined")
+        // reproduced deliberately. They carry no credential material and no
+        // request body; the properties are actor, subject, route and rule.
     ],
 
     'fields' => [

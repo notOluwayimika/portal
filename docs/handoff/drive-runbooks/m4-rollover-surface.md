@@ -40,7 +40,11 @@ SELECT c.id, c.school_id, c.term_id, c.is_ccm, c.status,
          WHERE sc.curriculum_id = c.id AND sc.ended_at IS NULL) AS live_pupils
 FROM curricula c
 JOIN class_level_arms cla ON cla.id = c.class_level_arm_id
-JOIN class_level_term_participations p
+-- SINGULAR. ClassLevelTermParticipation sets `protected $table = 'class_level_term_participation'`
+-- explicitly, so Laravel's plural convention does not apply. The plural name fails with
+-- "Base table or view not found" and hands you no answer at all — which reads like a broken
+-- environment rather than a typo, on the one query that exists to tell you the data is drivable.
+JOIN class_level_term_participation p
   ON p.class_level_id = cla.class_level_id AND p.school_id = c.school_id
 JOIN terms t ON t.id = c.term_id AND t.`order` = p.term_order
 WHERE c.status = 'active' AND c.is_ccm = 0 AND t.academic_session_id = <closing session id>;
@@ -158,7 +162,70 @@ saying the preview showed N and M were queued, with an instruction to check whic
 **Fail:** the result echoing the **previewed** number. "Previewed 240, dispatched 238, screen says
 240" is the moved-vs-skipped lie, and the re-plan makes it a real state rather than a hypothetical.
 
-## 8. Isolation
+## 8. The placement table — where every pupil actually lands
+
+The count never answered this. Arm placement is the least obvious part of the operation (an explicit
+map, then a stream-aware label match, then `student_id % armCount` over the receiving level's arms by
+id), and before this it was invisible until the batch had drained.
+
+**Steps** — Preview a runnable end-of-year plan over a level whose **receiving level has two or more
+arms** · read the **Moving up** table · expand **names** on one row · note one pupil by name and the
+class the preview says they land in · commit, let the batch drain, then open that pupil's record.
+
+**Watch for:** the pupil sitting in **exactly the class the preview named**. Also that the table is
+grouped by destination with counts, not a flat list of every pupil in the year group.
+
+**Fail:** any pupil landing somewhere other than the previewed class. That is preview/commit drift,
+and it is the whole reason the placement rules were extracted to one resolver both sides call.
+
+**Also check the two other buckets exist when they should:** a pupil marked `repeated` appears under
+**Held (repeating)** and *not* under Moving up; a level whose receiving level has no arms (or is
+`explicit_only` with no match) appears under **Would not move** with a reason, not silently absent.
+
+## 9. The subject warning — and the ordering it is telling you about
+
+End-of-year does **not** carry subjects across; the new class level defines its own. If the
+destination curriculum does not exist yet, the rollover creates it **empty** and the pupils land with
+no subjects — and **nothing re-attaches them afterwards**, because every path that attaches
+compulsory subjects runs at enrollment-creation time.
+
+**Steps** — With a destination curriculum that does **not** yet exist, preview · read the red panel ·
+press **Run rollover** and read the **confirm dialogue** before confirming · cancel · now create that
+destination curriculum (right term slot, right exam type, right arm) · preview again.
+
+**Watch for:** the red panel naming the count and the three things that must match; the **confirm
+dialogue repeating it** — that is the half you cannot scroll past, and it is there because the failure
+is unrecoverable; and after the curriculum is created, the warning **gone** and the row no longer
+badged "no curriculum yet".
+
+**Fail:** the warning appearing on an **end-of-term** rollover. That kind clones its subjects onto the
+target, so the warning would be false there — and a screen that warns about something that cannot
+happen teaches operators to skip warnings.
+
+**Fail:** the warning still showing after the destination exists. A flag stuck on is as useless as one
+stuck off.
+
+## 10. The swap — the acknowledgment is binding, not decorative
+
+The confirm used to be theatre: the commit received two session ids and nothing else, so the server
+could not tell an acknowledged plan from an unacknowledged one. This is that fix, and it is the arm a
+count-based check cannot catch.
+
+**Steps** — Arrange **two** destinations with no curriculum · preview (the panel says 2) · in another
+tab, **create** one of those two curricula **and delete** a different destination's curriculum that
+did exist · return and confirm.
+
+**Watch for:** the commit **refused** with a message saying a destination became unconfigured, and
+**nothing queued** — even though the count is still 2.
+
+**Fail:** the rollover running. The number did not move, so a check comparing counts sees nothing
+wrong while a destination the operator never saw takes pupils with no subjects.
+
+**Then check the other direction:** preview with an unconfigured destination, configure it, and
+confirm. That must **proceed** — refusing someone for fixing the thing they were warned about teaches
+people to stop fixing it.
+
+## 11. Isolation
 
 Sign in as a second school's admin seat. Its `/academics/rollover` must offer **only its own
 sessions**, and its batch panel must show **only its own batches** — checked by **id**, not by
@@ -173,6 +240,14 @@ looking at names.
   queued message; the batch panel mid-drain;
 - a **GIF of §6** — the stale preview is a transition between two screens and a still cannot show it;
 - for §7, the two numbers as digits (previewed N, queued M) and whether the divergence line appeared;
+- for §8, the **Moving up** table with one row expanded, plus the pupil id and the class the preview
+  named against the class they actually landed in — **by id**, not by name;
+- for §9, three shots: the red panel, the **confirm dialogue** carrying the same warning, and the
+  panel gone after the destination curriculum exists. Also state plainly whether the warning appeared
+  on end-of-term (it must not);
+- a **GIF of §10** — the swap is a transition and the count is unchanged across it, so a still of
+  either end proves nothing; note whether the refusal named the destination and whether the
+  configure-then-commit direction proceeded.
 - for §8, the **ids** seen in each school, not the names.
 
 Anything rendering differently is a finding, including "it worked but read wrong" — this pass exists

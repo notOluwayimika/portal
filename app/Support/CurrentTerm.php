@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Enums\TermStatusEnum;
 use App\Http\Controllers\SetupController;
 use App\Models\School;
 use App\Models\Term;
@@ -18,18 +19,39 @@ use App\Models\Term;
  * endpoint now reads this too, so there is one definition and not one-plus-a-comment.
  *
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
- * THE RESOLUTION, AND ITS FALLBACK, BOTH PRESERVED EXACTLY
+ * THE RESOLUTION, AND ITS FALLBACK — WHICH READS `status`, NOT `order` ALONE
  *
  *   1. The school's CURRENT SESSION — `academic_sessions.is_current`, via
  *      {@see School::currentSession()}.
  *   2. Inside it, the term whose `status` is `active`.
- *   3. If no term in that session is active, THE LAST ONE BY `order`.
+ *   3. Else the LAST `completed` term by `order` — the term the school most recently FINISHED.
+ *   4. Else the FIRST term by `order` — nothing is active and nothing is completed, so the school
+ *      has not started this session and the term it is about to begin is the first one.
+ *   5. Else null.
  *
- * Step 3 is the part worth stating rather than tidying away. Between terms — the holiday, or a
- * session that has been rolled over but not yet started — no term is `active`, and a resolver that
- * returned null there would leave the screen with no default at the exact moment an operator is most
- * likely to be billing the term that just ended. The last term by `order` is the one the school was
- * most recently in, which is the better guess and is the guess the setup endpoint has always made.
+ * THE FALLBACK IS WHY THIS CLASS IS INTERESTING, and steps 3 and 4 answer TWO DIFFERENT SITUATIONS
+ * that an earlier revision named in one sentence and then gave one answer to. Between terms — the
+ * holiday — no term is `active`, and a resolver that returned null there would leave the screen with
+ * no default at the exact moment an operator is most likely to be billing the term that just ended.
+ * That is step 3's case. A session that has been ROLLED OVER BUT NOT YET STARTED has no term active
+ * either, but the school is not between terms: it is before all of them, and the term an operator is
+ * about to bill is the FIRST. That is step 4's case, and it is the opposite end of the session.
+ *
+ * `terms.status` is what tells them apart — an enum of THREE values, `active | upcoming | completed`,
+ * defaulting to `upcoming`, declared at
+ * `database/migrations/2026_05_06_082137_create_terms_table.php:22 (status)`. An earlier revision
+ * tested only `active` and fell back to the last term by `order`, which cannot distinguish a term the
+ * school has FINISHED from one it has not REACHED, and so answered the last term of the session in
+ * both cases. Live consequence, twice over: with the 2026/2027 session opened and Term 1 starting
+ * 2026-09-05, every term was `upcoming` and the bulk-run screen pre-filled Summer/Term 3 — a term
+ * starting in April 2027 — so the session's first bulk run would have billed every enrolled student
+ * against a term seven months away. Mid-session it failed the same way in miniature: Term 1 completed
+ * with Terms 2 and 3 upcoming answered Term 3 rather than the term that had just ended.
+ *
+ * Step 4 does NOT filter on `upcoming`. Reaching it already means no term in the session is active or
+ * completed, so every remaining row is upcoming; leaving the filter off means a session whose rows
+ * somehow carry neither state still yields a default rather than null, which is the behaviour the
+ * whole fallback exists to guarantee. Step 5 is then reached only by a session with NO terms.
  *
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
  * "TERM" MEANS `terms.id` HERE, AND THERE IS NO SECOND MEANING LEFT TO CONFUSE IT WITH.
@@ -60,7 +82,8 @@ final class CurrentTerm
 {
     /**
      * The school's current term, or null when it has no current session — or a current session with
-     * no terms in it at all, which is a school that has not been set up rather than an error.
+     * no terms in it at all, which is a school that has not been set up rather than an error. Null
+     * for an unknown school id for the same reason: absence, not failure.
      */
     public static function forSchool(int $schoolId): ?Term
     {
@@ -85,13 +108,13 @@ final class CurrentTerm
             return null;
         }
 
-        return Term::query()
-            ->where('academic_session_id', $session->id)
-            ->where('status', 'active')
-            ->first()
-            ?? Term::query()
-                ->where('academic_session_id', $session->id)
-                ->orderByDesc('order')
-                ->first();
+        // One base query, re-derived per step rather than cloned, so each step reads as the whole
+        // question it asks. The steps are ordered and short-circuit: the second runs only when no
+        // term is active, the third only when none is completed either.
+        $inSession = fn () => Term::query()->where('academic_session_id', $session->id);
+
+        return $inSession()->where('status', TermStatusEnum::ACTIVE->value)->first()
+            ?? $inSession()->where('status', TermStatusEnum::COMPLETED->value)->orderByDesc('order')->first()
+            ?? $inSession()->orderBy('order')->first();
     }
 }

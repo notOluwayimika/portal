@@ -239,7 +239,14 @@ export interface Student {
         stream: string | null;
         full_class: string;
     };
+    /** @deprecated raw auto-increment id — use `curriculum_uuid`. See the ticket on the leak. */
     curriculum_id?: number;
+    /** The pupil's current enrolment episode, by uuid. Bulk reassignment sends these, not `id`. */
+    current_episode_id?: string | null;
+    /** The current curriculum by uuid. Not the lock key — see `cohort_key`. */
+    curriculum_uuid?: string | null;
+    /** (class level, term, is_ccm) as an opaque equality token. The bulk lock compares THIS. */
+    cohort_key?: string | null;
     guardians?: Guardian[];
     student_curricula: StudentCurriculum[];
     admission_date?: string | null;

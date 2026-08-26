@@ -97,6 +97,12 @@ it('pins the plan result shape', function () {
         'curricula',
         'kind',
         'noNextSlot',
+        // WHERE the pupils land. Added deliberately, and this pin is why it could not arrive
+        // quietly: an additive readonly field with a default compiles at every existing call site
+        // and would otherwise have entered the contract with nothing noticing. Empty for
+        // end-of-term, which keeps its class level and clones its subjects and so has no
+        // distribution to preview.
+        'placement',
         // Distinct from `progressionCycle`, and the reason is the whole point of the pair: null on
         // the cycle means ACYCLIC, while an end-of-term plan never runs the check at all. One field
         // could not say both without the reader branching on `kind`.

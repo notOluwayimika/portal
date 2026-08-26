@@ -1,5 +1,6 @@
 import { Head } from '@inertiajs/react';
 import axios from 'axios';
+import { batchStatus } from '@/lib/rollover-batch-status';
 import { AlertTriangle, ArrowRight, Loader2 } from 'lucide-react';
 import { Fragment, useEffect, useState } from 'react';
 import { toast } from 'react-toastify';
@@ -957,35 +958,53 @@ function BatchPanel({
                                     <td className="py-1">{b.pending_jobs}</td>
                                     <td className="py-1">{b.failed_jobs}</td>
                                     <td className="py-1">
-                                        {/* NOT keyed on finished_at — a batch holding a failed job
-                                            never gets one, so this used to read "Draining" forever
-                                            over a batch no worker would touch again. The server
-                                            derives the terminal state from the counts; see
-                                            RolloverController::settledState. */}
-                                        {b.is_draining ? (
-                                            <span className="text-amber-700 dark:text-amber-400">
-                                                Draining — do not change the
-                                                current session yet
-                                            </span>
-                                        ) : b.settled_state === 'cancelled' ? (
-                                            <span className="text-destructive">
-                                                Cancelled
-                                            </span>
-                                        ) : b.failed_jobs > 0 ? (
-                                            /* "Stopped", not "Finished": these jobs are still
-                                               pending in the queue's own sense, awaiting a retry
-                                               someone must issue. Saying "finished" would claim a
-                                               completeness the batch has not reached. */
-                                            <span className="text-destructive">
-                                                Stopped with {b.failed_jobs}{' '}
-                                                failure(s) — it will not resume
-                                                on its own
-                                            </span>
-                                        ) : (
-                                            <span className="text-muted-foreground">
-                                                Finished
-                                            </span>
-                                        )}
+                                        {/* THE DECISION IS batchStatus(), NOT A TERNARY HERE.
+                                            It used to branch on `failed_jobs > 0`, a counter Laravel
+                                            never decrements — so a batch whose failure had been
+                                            retried successfully rendered "Stopped … will not resume".
+                                            The server computes the truthful value; this maps it to
+                                            copy and colour and judges nothing.
+                                            See resources/js/lib/rollover-batch-status.ts. */}
+                                        {(() => {
+                                            const status = batchStatus(b);
+
+                                            if (status.kind === 'draining') {
+                                                return (
+                                                    <span className="text-amber-700 dark:text-amber-400">
+                                                        Draining — do not change
+                                                        the current session yet
+                                                    </span>
+                                                );
+                                            }
+
+                                            if (status.kind === 'cancelled') {
+                                                return (
+                                                    <span className="text-destructive">
+                                                        Cancelled
+                                                    </span>
+                                                );
+                                            }
+
+                                            if (status.kind === 'stopped') {
+                                                /* "Stopped", not "Finished": those jobs are still
+                                                   pending in the queue's own sense, awaiting a retry
+                                                   someone must issue. */
+                                                return (
+                                                    <span className="text-destructive">
+                                                        Stopped with{' '}
+                                                        {status.failures}{' '}
+                                                        failure(s) — it will not
+                                                        resume on its own
+                                                    </span>
+                                                );
+                                            }
+
+                                            return (
+                                                <span className="text-muted-foreground">
+                                                    Finished
+                                                </span>
+                                            );
+                                        })()}
                                     </td>
                                 </tr>
 

@@ -201,14 +201,24 @@ it('reports no failure reasons for a clean fold batch', function () {
 // ---------------------------------------------------------------------------
 
 /** Insert a batch row with the counts a real bus would have written. */
-function ccmf_batchRow(array $w, int $total, int $pending, int $failed, array $failedIds = [], ?int $finishedAt = null): void
+function ccmf_batchRow(array $w, int $total, int $pending, int $failed, array $failedIds = [], ?int $finishedAt = null, ?int $cancelledAt = null): void
 {
     DB::table('job_batches')->insert([
         'id' => (string) Str::uuid(),
         'name' => CcmFoldBatchName::forTerm((int) $w['school']->id, (int) $w['term']->id),
         'total_jobs' => $total, 'pending_jobs' => $pending, 'failed_jobs' => $failed,
         'failed_job_ids' => json_encode($failedIds), 'options' => '',
-        'created_at' => time(), 'finished_at' => $finishedAt,
+        'created_at' => time(), 'finished_at' => $finishedAt, 'cancelled_at' => $cancelledAt,
+    ]);
+}
+
+/** A failed_jobs row for $uuid — its PRESENCE is what makes a listed failure outstanding. */
+function ccmf_failedJobRow(string $uuid, string $message = 'Refusing to fold curriculum#7.'): void
+{
+    DB::table('failed_jobs')->insert([
+        'uuid' => $uuid, 'connection' => 'database', 'queue' => 'default', 'payload' => '{}',
+        'exception' => ccmf_stringifiedThrowable(new CcmFoldRefused($message)),
+        'failed_at' => now(),
     ]);
 }
 
@@ -225,7 +235,9 @@ it('reads a batch whose every job has RESOLVED as stopped, not as perpetually dr
     // this: one job, three attempts exhausted, finished_at NULL. Laravel sets finished_at only from
     // recordSuccessfulJob when pending hits zero, and incrementFailedJobs holds pending constant,
     // so a batch with a failure NEVER emits the completion signal the panel used to wait for.
-    ccmf_batchRow($w, total: 1, pending: 1, failed: 1, failedIds: [(string) Str::uuid()]);
+    $uuid = (string) Str::uuid();
+    ccmf_failedJobRow($uuid);
+    ccmf_batchRow($w, total: 1, pending: 1, failed: 1, failedIds: [$uuid]);
 
     $fold = ccmf_readBatch($w);
 
@@ -253,7 +265,9 @@ it('is still DRAINING when one job has already failed but others are still worki
     // ordinary mid-flight state — one fold refused, two still going — and it is what stops the fix
     // being written as "failed > 0 means stopped", which would flip a live batch to terminal and
     // invite a rollover confirmation against folds still in the air. pending(3) > failed(1).
-    ccmf_batchRow($w, total: 3, pending: 3, failed: 1, failedIds: [(string) Str::uuid()]);
+    $uuid = (string) Str::uuid();
+    ccmf_failedJobRow($uuid);
+    ccmf_batchRow($w, total: 3, pending: 3, failed: 1, failedIds: [$uuid]);
 
     expect(ccmf_readBatch($w)['is_draining'])->toBeTrue()
         ->and(ccmf_readBatch($w)['settled_state'])->toBeNull();
@@ -265,7 +279,9 @@ it('reads a MIXED batch as stopped once the survivors have landed and the rest h
     // Two succeeded (pending 3 -> 1), one failed and holds pending at 1. pending === failed, so
     // every job has resolved. A count-only rule that keyed on `pending === 0` would call this
     // draining forever too — the mixed case is where allowFailures actually lives.
-    ccmf_batchRow($w, total: 3, pending: 1, failed: 1, failedIds: [(string) Str::uuid()]);
+    $uuid = (string) Str::uuid();
+    ccmf_failedJobRow($uuid);
+    ccmf_batchRow($w, total: 3, pending: 1, failed: 1, failedIds: [$uuid]);
 
     expect(ccmf_readBatch($w)['settled_state'])->toBe('stopped')
         ->and(ccmf_readBatch($w)['done_jobs'])->toBe(2);
@@ -281,4 +297,76 @@ it('still reads a clean finished batch as finished, by the same one rule', funct
 
     expect(ccmf_readBatch($w)['is_draining'])->toBeFalse()
         ->and(ccmf_readBatch($w)['settled_state'])->toBe('finished');
+});
+
+// ── THE RETRY PATH: `failed_jobs` is MONOTONE, and both sides of it lied ────────────────────────
+
+it('reads a batch whose failure was RETRIED AND SUCCEEDED as finished, not as stopped', function () {
+    $w = ccmf_world();
+
+    // THE SHAPE LARAVEL ACTUALLY LEAVES after `queue:retry` succeeds: decrementPendingJobs prunes the
+    // uuid out of failed_job_ids and writes `failed_jobs => $batch->failed_jobs` UNCHANGED, then
+    // markAsFinished stamps finished_at. So the counter still reads 1 over a batch that is complete.
+    // Keying the panel on `failed_jobs > 0` rendered this as "Stopped … will not resume on its own",
+    // with NO reason beside it because the ids were pruned — a finished batch reported dead.
+    ccmf_batchRow($w, total: 3, pending: 0, failed: 1, failedIds: [], finishedAt: time());
+
+    $fold = ccmf_readBatch($w);
+
+    expect($fold['settled_state'])->toBe('finished')
+        ->and($fold['is_draining'])->toBeFalse()
+        // AND the count the panel renders comes from the live reasons, not the monotone counter.
+        ->and($fold['failure_reasons'])->toBe([]);
+});
+
+it('is still DRAINING while a retried job is in flight, so the session warning is not withdrawn', function () {
+    $w = ccmf_world();
+
+    // `queue:retry` pushes the job back and then DELETES the failed_jobs row, while the uuid stays in
+    // failed_job_ids until that retry resolves. So the id is listed with no row behind it — and a
+    // rule counting ids alone still calls this stopped while a worker is executing the job, dropping
+    // "do not change the current session yet" at exactly the wrong moment. No failed_jobs row planted.
+    $uuid = (string) Str::uuid();
+    ccmf_batchRow($w, total: 3, pending: 1, failed: 1, failedIds: [$uuid]);
+
+    expect(ccmf_readBatch($w)['is_draining'])->toBeTrue()
+        ->and(ccmf_readBatch($w)['settled_state'])->toBeNull();
+});
+
+it('is stopped again once the retried job fails a second time', function () {
+    $w = ccmf_world();
+
+    // The worker re-creates the failed_jobs row, so the failure is outstanding again and the batch is
+    // terminal again. Without this, "in flight means draining" could be written as "any listed id
+    // with no row means draining forever", which never settles.
+    $uuid = (string) Str::uuid();
+    ccmf_failedJobRow($uuid);
+    ccmf_batchRow($w, total: 3, pending: 1, failed: 1, failedIds: [$uuid]);
+
+    expect(ccmf_readBatch($w)['settled_state'])->toBe('stopped');
+});
+
+// ── THE TWO OUTCOMES THAT HAD NO ARM ───────────────────────────────────────────────────────────
+
+it('reads a cancelled batch as cancelled, even though cancel() also stamps finished_at', function () {
+    $w = ccmf_world();
+
+    // DatabaseBatchRepository::cancel() writes BOTH cancelled_at and finished_at, so the guard ORDER
+    // is load-bearing: swap the two checks and every cancelled batch reads "finished" with nothing
+    // going red, and the panel's Cancelled branch becomes dead code.
+    ccmf_batchRow($w, total: 2, pending: 1, failed: 0, finishedAt: time(), cancelledAt: time());
+
+    expect(ccmf_readBatch($w)['settled_state'])->toBe('cancelled')
+        ->and(ccmf_readBatch($w)['is_draining'])->toBeFalse();
+});
+
+it('does not call an empty batch stopped', function () {
+    $w = ccmf_world();
+
+    // total_jobs = 0 has no outstanding failure and nothing in flight. It reads as draining, which is
+    // what it did before this derivation existed — pinned so the `total > 0` guard is not dropped as
+    // redundant.
+    ccmf_batchRow($w, total: 0, pending: 0, failed: 0);
+
+    expect(ccmf_readBatch($w)['settled_state'])->toBeNull();
 });

@@ -198,11 +198,11 @@ class RolloverController extends Controller
                 // `done_jobs` counts SUCCESSES only — see settledState() for why pending is the
                 // wrong subtrahend to read as progress once a job has failed.
                 'done_jobs' => (int) $row->total_jobs - (int) $row->pending_jobs,
-                'is_draining' => $this->settledState($row) === null,
+                'is_draining' => $this->settledState($row, $this->outstandingFailures($row)) === null,
                 // 'finished' — every job succeeded. 'stopped' — every job has RESOLVED but some
                 // failed, so no worker will touch this batch again without `queue:retry`.
                 // 'cancelled' — killed. Null while genuinely still draining.
-                'settled_state' => $this->settledState($row),
+                'settled_state' => $this->settledState($row, $this->outstandingFailures($row)),
                 'finished_at' => $row->finished_at,
                 'cancelled_at' => $row->cancelled_at,
                 // ── WHY IT FAILED, NOT JUST THAT IT DID ────────────────────────────────────────
@@ -220,15 +220,6 @@ class RolloverController extends Controller
         ]);
     }
 
-    /**
-     * The guard messages behind a batch's failures, de-duplicated.
-     *
-     * `job_batches.failed_job_ids` holds the uuids; `failed_jobs.exception` holds the throwable as a
-     * string whose FIRST LINE is the class and message. Only that line is surfaced — a stack trace
-     * on an operator screen is noise that hides the sentence they need.
-     *
-     * @return list<string>
-     */
     /**
      * Has this batch stopped moving, and how — read off the COUNTS, never off `finished_at` alone.
      *
@@ -251,27 +242,38 @@ class RolloverController extends Controller
      * where a batch failure is a DESIGNED, reachable outcome rather than an accident, which is why
      * it is the first to expose it. Fixing it here hardens the rollover surface retroactively.
      *
-     * ── THE DERIVATION ───────────────────────────────────────────────────────────────────────────
-     * Pending starts at total and is decremented ONLY by successes, so at any moment
-     * `pending = total - successes`, and a job is resolved when it has either succeeded or failed:
+     * ── THE DERIVATION, AND WHY IT IS NOT THE `failed_jobs` COUNTER ──────────────────────────────
+     * Pending starts at total and is decremented ONLY by successes, so `pending = total - successes`.
+     * A job is outstanding when it has failed and has not since been resolved. Then:
      *
-     *     resolved = successes + failed = (total - pending) + failed
-     *     resolved === total   <=>   failed === pending
+     *     in-flight = total - successes - outstanding = pending - outstanding
+     *     terminal   <=>   in-flight === 0   <=>   pending === outstanding
      *
-     * So `pending === failed` is exactly "every job has resolved". It stays false while a doomed job
-     * is between retries — the failure has not been recorded yet, so pending still exceeds failed —
-     * which is what keeps the $tries = 3 retry window honestly reading as draining.
+     * `$outstanding` MUST NOT come from `job_batches.failed_jobs`. That column is MONOTONE:
+     * `decrementPendingJobs` prunes the uuid out of `failed_job_ids` on a retry-success but writes
+     * `'failed_jobs' => $batch->failed_jobs` — unchanged. It counts failures EVER RECORDED, not
+     * failures currently outstanding, and keying on it made this method wrong on both sides of a
+     * retry: it called a genuinely finished batch "stopped" (the counter still reads 1 after the
+     * retry succeeded), and it withdrew the draining warning while a worker was mid-flight. The
+     * pre-change `finished_at === null` reading was CORRECT in that second window, so the first
+     * version of this fix swapped which half of the retry window lied. Caught in cold review.
      *
-     * It also subsumes the clean case rather than special-casing it: zero failures drives pending to
-     * zero, and `0 === 0` settles at the same instant `finished_at` is written. One rule, both paths.
+     * See {@see outstandingFailures()} for how outstanding is counted, including the in-flight case.
+     *
+     * The clean path is SUBSUMED rather than special-cased: zero failures drives pending to zero and
+     * `0 === 0` settles at the same instant `finished_at` is written. One rule, both paths.
      *
      * NOT "FINISHED" WHEN IT HOLDS FAILURES, and the word is chosen: those jobs are still pending in
      * the framework's own sense — awaiting a `queue:retry` a human may issue. 'stopped' says the
      * batch will not move on its own without saying it is complete, which it is not.
      *
+     * ORDER IS LOAD-BEARING: `DatabaseBatchRepository::cancel()` writes BOTH `cancelled_at` and
+     * `finished_at`, so the cancelled check must come first or every cancelled batch reads finished.
+     *
+     * @param  int  $outstanding  failures still unresolved — {@see outstandingFailures()}
      * @return 'finished'|'stopped'|'cancelled'|null null while genuinely still draining
      */
-    private function settledState(object $row): ?string
+    private function settledState(object $row, int $outstanding): ?string
     {
         if ($row->cancelled_at !== null) {
             return 'cancelled';
@@ -281,20 +283,56 @@ class RolloverController extends Controller
             return 'finished';
         }
 
-        $total = (int) $row->total_jobs;
         $pending = (int) $row->pending_jobs;
-        $failed = (int) $row->failed_jobs;
 
-        // `<=` rather than `===` purely as a floor: pending should never fall BELOW failed, and if
-        // some future accounting made it, "settled" is the safe reading — the alternative is the
+        // `<=` rather than `===` as a floor: outstanding should never EXCEED pending, and if some
+        // accounting drift made it, "settled" is the safe reading — the alternative is the
         // perpetual-draining bug this method exists to remove.
-        if ($total > 0 && $failed > 0 && $pending <= $failed) {
+        if ((int) $row->total_jobs > 0 && $outstanding > 0 && $pending <= $outstanding) {
             return 'stopped';
         }
 
         return null;
     }
 
+    /**
+     * Failures that are still outstanding — NOT `job_batches.failed_jobs`, and not merely the length
+     * of `failed_job_ids` either.
+     *
+     * Two prunings happen at different times and only one of them is in the batch row:
+     *
+     *   - a retry that SUCCEEDS removes the uuid from `failed_job_ids` (`decrementPendingJobs`), so
+     *     the id list is live where the counter is not;
+     *   - but `queue:retry` deletes the `failed_jobs` ROW first (`RetryCommand::handle` pushes the
+     *     job, then `$this->laravel['queue.failer']->forget($id)`) and the uuid STAYS in
+     *     `failed_job_ids` until that retry resolves.
+     *
+     * So between `queue:retry` and the job finishing, the id is listed while its row is gone — and a
+     * count of the ids alone would still call that batch stopped while a worker is executing it,
+     * withdrawing "do not change the current session yet" at exactly the wrong moment. Counting only
+     * ids that STILL HAVE a `failed_jobs` row makes an in-flight retry read as draining, which is
+     * what it is.
+     */
+    private function outstandingFailures(object $row): int
+    {
+        $ids = json_decode($row->failed_job_ids ?? '[]', true) ?: [];
+
+        if ($ids === []) {
+            return 0;
+        }
+
+        return DB::table('failed_jobs')->whereIn('uuid', $ids)->count();
+    }
+
+    /**
+     * The guard messages behind a batch's failures, de-duplicated.
+     *
+     * `job_batches.failed_job_ids` holds the uuids; `failed_jobs.exception` holds the throwable as a
+     * string whose FIRST LINE is the class and message. Only that line is surfaced — a stack trace
+     * on an operator screen is noise that hides the sentence they need.
+     *
+     * @return list<string>
+     */
     private function failureReasons(object $row): array
     {
         if ((int) $row->failed_jobs === 0) {

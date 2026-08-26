@@ -45,6 +45,11 @@ class DiscountPolicyChangeResource extends JsonResource
             'value_minor' => $this->value_minor,
             'value_currency' => $this->value_currency,
             'percent' => $this->percent,
+            // AXIS C, ON THE CHECKER'S SIDE. A checker approves what this resource shows them, so a
+            // proposed term absent from here is a term decided unseen — "50%" reads identically
+            // whether it means half the tuition or half the whole bill, and those are different
+            // amounts of money. Nullable: a retire proposes no terms and an amount basis has none.
+            'base' => $this->base?->value,
             'requires_approval' => $this->requires_approval,
             'reason' => $this->reason,
             // The queue reads every type's free text under one column.

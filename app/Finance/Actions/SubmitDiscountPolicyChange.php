@@ -81,6 +81,12 @@ final class SubmitDiscountPolicyChange
                 'value_minor' => $terms['value_minor'] ?? null,
                 'value_currency' => $terms['value_currency'] ?? null,
                 'percent' => $terms['percent'] ?? null,
+                // AXIS C. THE SECOND WHITELIST IN THIS CHAIN, and both had to move: cold review
+                // found `base` missing from ApproveDiscountPolicyChange::insertPolicy(), and it was
+                // missing here too — so carrying it only there would have carried a column that is
+                // always null. A term is end-to-end when every array between the wire and the
+                // catalog names it; there are two, and this is the first.
+                'base' => $terms['base'] ?? null,
                 'requires_approval' => $terms['requires_approval'] ?? false,
             ];
 

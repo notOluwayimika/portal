@@ -11,9 +11,12 @@ use App\Finance\DTOs\InvoiceLineSpec;
 use App\Finance\Enums\BulkInvoiceRunOutcome;
 use App\Finance\Enums\BulkInvoiceRunStatus;
 use App\Finance\Enums\InvoiceKind;
+use App\Finance\Enums\InvoiceLineKind;
 use App\Finance\Models\BulkInvoiceRun;
 use App\Finance\Models\BulkInvoiceRunRow;
+use App\Finance\Models\DiscountPolicy;
 use App\Finance\Models\FeeSchedule;
+use App\Finance\Models\StudentDiscountAward;
 use App\Finance\Services\FeeScheduleLineMapper;
 use App\Finance\Services\FeeScheduleLookup;
 use App\Finance\Services\InvoiceReadModel;
@@ -50,13 +53,25 @@ use Throwable;
  * there is no second table tracking the queue and no payload field that a retry cannot read.
  *
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
- * ONE SCHEDULE, ONE SET OF LINES, MAPPED ONCE
+ * ONE SCHEDULE, ONE SET OF CHARGE LINES, MAPPED ONCE
  *
- * The lines of a term bill do not vary by student — {@see FeeScheduleLineMapper} maps the
+ * The CHARGES of a term bill do not vary by student — {@see FeeScheduleLineMapper} maps the
  * schedule's MANDATORY items and nothing in the schema records which child takes the bus — so the
  * schedule is resolved once, the lines are mapped once, and every invoice in the run is raised from
  * that same array. Re-resolving per student would let an approval or a supersession landing mid-run
  * split one cohort silently across two price lists.
+ *
+ * WHAT DOES VARY BY STUDENT IS THE REDUCTION, and this paragraph used to say nothing varied at all.
+ * A student holding a standing discount award ({@see StudentDiscountAward}) gets ONE percentage
+ * reduction spec appended — see {@see reductionSpecFor()}. It is appended to a COPY: the mapped
+ * array is shared by the whole cohort and is never written to, and {@see InvoiceLineSpec} is
+ * `final readonly`, so "per student" cannot leak into the next student. A student with no award is
+ * billed the array itself, unchanged.
+ *
+ * THE MAPPER STILL RECEIVES NO STUDENT, and that ruling stands (see its docblock). Which child gets
+ * which discount is not a fact about a PRICE LIST, and pushing it into the mapper would make one
+ * cohort's shared lines a per-student object again — which is the thing the paragraph above exists
+ * to prevent.
  *
  * A THIRD PER-RUN CONDITION: THE COHORT'S SCHOLARSHIPS MUST SAY WHICH SCHEME THEY ARE.
  *
@@ -285,6 +300,13 @@ class ProcessBulkInvoiceRun implements ShouldQueue
             return;
         }
 
+        // ONE QUERY FOR THE WHOLE COHORT, and this placement is the reason it is one. A lookup per
+        // student inside the loop below is an N+1 in a job whose whole purpose is to bill a class
+        // level at once — the same shape as the schedule, mapped once above rather than re-read per
+        // child. It is NOT a per-run CONDITION: an award that cannot be applied fails one student,
+        // not the run (see reductionSpecFor()), so nothing here refuses and nothing here writes.
+        $awards = $this->awardsForCohort($cohort);
+
         // ── Per-student work ─────────────────────────────────────────────────────────────────
         // Unplaceable first, and recorded rather than merely counted: these are the students no
         // cohort query anyone runs will ever return, which is precisely why they have to be written
@@ -306,7 +328,14 @@ class ProcessBulkInvoiceRun implements ShouldQueue
                 continue;
             }
 
-            $this->attempt($run, $enrollment, fn () => $this->bill($run, $enrollment, $lines, $generate, $invoices));
+            $this->attempt($run, $enrollment, fn () => $this->bill(
+                $run,
+                $enrollment,
+                $lines,
+                $awards[$enrollment->studentId] ?? null,
+                $generate,
+                $invoices,
+            ));
         }
 
         $this->reconcile(
@@ -507,12 +536,14 @@ class ProcessBulkInvoiceRun implements ShouldQueue
      * places decide it is how the two `record()` sites outside a `try` came to exist in the first
      * place.
      *
-     * @param  list<InvoiceLineSpec>  $lines
+     * @param  list<InvoiceLineSpec>  $lines  the cohort's SHARED mapped lines. Read, never written.
+     * @param  ?StudentDiscountAward  $award  this student's standing discount, or null.
      */
     private function bill(
         BulkInvoiceRun $run,
         BillableEnrollment $enrollment,
         array $lines,
+        ?StudentDiscountAward $award,
         GenerateInvoice $generate,
         InvoiceReadModel $invoices,
     ): void {
@@ -525,7 +556,26 @@ class ProcessBulkInvoiceRun implements ShouldQueue
         }
 
         try {
-            $invoice = $generate->handle($enrollment->enrollmentUuid, $lines, InvoiceKind::Scheduled, $run->started_by_user_id);
+            // INSIDE THE `try`, AND THAT PLACEMENT IS THE WHOLE OF WHAT THIS LINE GUARANTEES. It sat
+            // one line above the `try` and cold review measured the cost: reductionSpecFor()'s throw
+            // went straight past this catch into attempt(), which only LOGS — so a student whose
+            // reduction could not be built got NO row at all. Not `billed`, not `failed`. The run
+            // then reported `completed` with a null failure_reason while
+            // billed + already + failed + sponsored < cohort_count, and the docblock on
+            // reductionSpecFor() claimed a `failed` row was written. Recording a refusal and
+            // SURVIVING it are two different properties; only one of them was built, which is the
+            // same defect attempt() itself exists to fix, one level in.
+            //
+            // A COPY, AND THE COPY IS THE POINT. `$lines` is ONE array shared by every student in
+            // the cohort — mapped once from the schedule, deliberately (see the class docblock) —
+            // so a student's own reduction may not be pushed onto it. The spread builds a new
+            // array; the specs inside it are `final readonly` and are not touched. A student with
+            // no award gets `$lines` itself, unchanged, and is billed exactly as they were before
+            // this axis existed.
+            $reduction = $this->reductionSpecFor($award);
+            $studentLines = $reduction === null ? $lines : [...$lines, $reduction];
+
+            $invoice = $generate->handle($enrollment->enrollmentUuid, $studentLines, InvoiceKind::Scheduled, $run->started_by_user_id);
 
             $this->record($run, $enrollment, BulkInvoiceRunOutcome::Billed, invoiceId: $invoice->id);
         } catch (Throwable $e) {
@@ -542,6 +592,122 @@ class ProcessBulkInvoiceRun implements ShouldQueue
 
             $this->record($run, $enrollment, BulkInvoiceRunOutcome::Failed, reason: $e->getMessage());
         }
+    }
+
+    /**
+     * EVERY STANDING DISCOUNT IN THIS COHORT, IN ONE QUERY — `student_id => award`, awarded students
+     * only, each with its policy already loaded.
+     *
+     * ISOLATION IS THE ARGUMENT, not the ambient context — `$this->schoolId` is stated, the same
+     * decision and the same reason as {@see record()} and {@see schemesForCohort()}. The eager-loaded
+     * policy is reached under `DiscountPolicy`'s own `SchoolScope`, which under `SchoolAware` is this
+     * School; the table's composite FK means it could not be another School's row in any case.
+     *
+     * NOTHING IS FILTERED OUT HERE, and that is a decision rather than an omission. Filtering to
+     * `status = active` would look like tidiness and would be the worst available behaviour: a policy
+     * RETIRED since the award was made would simply vanish from this map, and the child it prices
+     * would be billed FULL PRICE on a run that reported success — the silent-overcharge shape this
+     * whole branch exists to remove. Left in, the reduction line reaches
+     * `finance_invoice_lines_reduction_guard`, is refused, and that student gets a `failed` row
+     * carrying the trigger's own sentence. A loud per-student failure is the correct outcome; a
+     * quiet full-price invoice is not.
+     *
+     * @param  list<BillableEnrollment>  $cohort
+     * @return array<int, StudentDiscountAward> keyed by student id
+     */
+    private function awardsForCohort(array $cohort): array
+    {
+        $studentIds = array_values(array_unique(array_map(
+            fn (BillableEnrollment $enrollment) => $enrollment->studentId,
+            $cohort,
+        )));
+
+        if ($studentIds === []) {
+            return [];
+        }
+
+        return StudentDiscountAward::query()
+            ->where('school_id', $this->schoolId)
+            ->whereIn('student_id', $studentIds)
+            ->with('policy')
+            ->get()
+            ->keyBy('student_id')
+            ->all();
+    }
+
+    /**
+     * ONE percentage-reduction spec for one student's award, or null when there is nothing to add.
+     *
+     * ONE SPEC, NEVER MORE. The table carries `UNIQUE(student_id)`, so a student has at most one
+     * award and therefore at most one reduction line. That is a property of the schema, not of a
+     * loop written carefully here.
+     *
+     * THE TERMS COME OFF THE POLICY, not off the award: `percent` and `base` are the policy's, which
+     * is why a per-student discount is expressed as each student naming their own policy rather than
+     * each award carrying its own number. Two students on different policies get different figures
+     * from this one method.
+     *
+     * IT DOES NOT RE-CHECK THE POLICY. `AwardStudentDiscount` refused a non-active,
+     * approval-requiring, cross-School or fixed-amount policy when the award was made, and
+     * `finance_invoice_lines_reduction_guard` refuses the line at INSERT if the policy has moved
+     * since. Re-testing in the middle would be a third copy of one rule, and the copy in the weakest
+     * position — it cannot hold under concurrency and it is not what the database enforces.
+     *
+     * The two states it does defend against are a policy that failed to eager-load (a row deleted
+     * between the two reads — impossible today, since `finance_discount_policies` denies DELETE by
+     * trigger) and one whose `percent` is NULL (an `amount`-basis policy; `AwardStudentDiscount`
+     * refuses to award one, and this is the second line behind that). Either would otherwise become
+     * a spec with neither an amount nor a percentage, and `resolvedAmount()` would raise a
+     * `LogicException` — a PHP fault wearing a billing failure's clothes. Returning null instead
+     * would bill that student the standard schedule, which is the WRONG AMOUNT quietly; so it does
+     * not return null, it throws — and the call sits INSIDE `bill()`'s `try`, so the catch records a
+     * `failed` row naming the student and the run's cohort equality still balances. That placement
+     * is load-bearing and is pinned by a test: outside the `try` the throw reaches `attempt()`,
+     * which only logs, and the student vanishes from the run's accounting entirely. Nobody is
+     * silently billed full price, and nobody silently disappears.
+     *
+     * `base` IS NOT CHECKED HERE and must not be: the column is NOT NULL with a default, so the
+     * model's `base` is non-nullable and a `=== null` arm is dead code Larastan rejects outright
+     * (identical.alwaysFalse). Its domain is held by
+     * `finance_discount_policies_base_shape_bi`/`_bu`.
+     */
+    private function reductionSpecFor(?StudentDiscountAward $award): ?InvoiceLineSpec
+    {
+        if ($award === null) {
+            return null;
+        }
+
+        $policy = $award->policy;
+
+        if (! $policy instanceof DiscountPolicy || $policy->percent === null) {
+            throw new BusinessRuleException(
+                'This student has a discount award whose policy could not be read as a percentage, so the '
+                .'invoice was not raised rather than billed at full price. Check the award and its policy.'
+            );
+        }
+
+        return new InvoiceLineSpec(
+            // The policy NAME is the line a parent reads on the bill, which is the only reason a
+            // school-authored free-text field is used for it.
+            description: $policy->name,
+            // Null: this is the percentage's null window, resolved inside GenerateInvoice.
+            amount: null,
+            feeItemId: null,
+            kind: InvoiceLineKind::Discount,
+            note: null,
+            percent: $policy->percent,
+            discountPolicyId: $policy->id,
+            // Irrelevant on a reduction — resolvePercentages() reads it only on charge lines — and
+            // stated rather than defaulted so nobody reads the default as a claim.
+            isDiscountable: true,
+            // DESCRIBING, NOT DECIDING. GenerateInvoice::resolveDiscountBase() re-reads this off the
+            // cited policy and overwrites whatever arrives here, so this line cannot be the reason
+            // the run and the bursar's modal agree — they agree because neither of them decides.
+            // Set anyway, exactly as FeeScheduleLineMapper sets `isDiscountable` from the fee item
+            // under the same arrangement: the value is right at the point of construction, and a
+            // wrong one would be silently corrected rather than billed.
+            percentBase: $policy->base,
+        );
     }
 
     /**

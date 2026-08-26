@@ -36,7 +36,7 @@ use Illuminate\Routing\Controller;
  * That bites HERE and not only on the page routes, and this is the caller where it shipped.
  * GenerateInvoice applies carry-forward credit inside its own transaction: it writes
  * PaymentAllocation rows against the invoice it has just created, through
- * `applyCreditForward` (app/Finance/Actions/GenerateInvoice.php:479), and then returns that
+ * `applyCreditForward` (app/Finance/Actions/GenerateInvoice.php:576), and then returns that
  * freshly created model. Serialising it directly answered `settlement_state:
  * 'unpaid'`, the full total outstanding, `can_record_payment: true` and `can_request_void: true`
  * with no blocked reason, for an invoice that had just been settled on the way in.

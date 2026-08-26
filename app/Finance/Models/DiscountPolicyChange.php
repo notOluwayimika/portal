@@ -4,6 +4,7 @@ namespace App\Finance\Models;
 
 use App\Concerns\AddUuid;
 use App\Concerns\BelongsToSchool;
+use App\Finance\Enums\DiscountBase;
 use App\Finance\Enums\DiscountBasis;
 use App\Finance\Enums\DiscountPolicyChangeKind;
 use App\Finance\Enums\DiscountPolicyChangeStatus;
@@ -27,6 +28,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int|null $value_minor
  * @property string|null $value_currency
  * @property int|null $percent
+ * @property DiscountBase|null $base
  * @property bool|null $requires_approval
  * @property string $reason
  * @property DiscountPolicyChangeStatus $status
@@ -44,6 +46,10 @@ class DiscountPolicyChange extends Model
     protected $casts = [
         'kind' => DiscountPolicyChangeKind::class,
         'basis' => DiscountBasis::class,
+        // NULLABLE here, unlike the catalog's: a `retire` proposes no terms and an `amount` basis has
+        // no percentage to take of anything. ApproveDiscountPolicyChange coalesces NULL to
+        // discountable, which is the value the catalog column defaults to.
+        'base' => DiscountBase::class,
         'status' => DiscountPolicyChangeStatus::class,
         'requires_approval' => 'boolean',
         'decided_at' => 'datetime',

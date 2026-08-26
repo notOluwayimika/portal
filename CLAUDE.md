@@ -172,6 +172,19 @@ operational facts an agent needs most often.
   general parent of the self-referential cap: not "the test must be able to fail on
   its axis" but **"the fixture must make the axis the only thing that can pass it."**
 
+  **And check the instrument, not only the fixture.** A mutation-testing summariser
+  that prints only Pest's `failures` bucket under-reports every exception-based kill
+  as a SURVIVOR — and throwing is how most guards kill, so it disagrees with reality
+  for exactly the controls most likely to be guards. Bit once (2026-08-26): a
+  silent-drop guard's mutant was reported green; the mutation was working and the
+  guard was raising a `RuntimeException`, which Pest files as an **error**. Count
+  errors as kills. Same shape one layer out: **a measurement that mis-measures itself
+  manufactures a wrong conclusion with nobody in the room to catch it.** Two
+  corollaries paid for in the same hour: verify a mutation was APPLIED before
+  trusting its result (a substitution that silently does not match reads as a
+  survivor), and keep the mutation a one-line edit — a clever loop that escaped its
+  replacement corrupted the file and reported six reds that measured nothing.
+
   Its other half: **derive the expected value by an INDEPENDENT path, never by
   restating the rule under test.** An expectation computed the way the code computes
   it asserts that the implementation equals itself. The arm expectation is built from

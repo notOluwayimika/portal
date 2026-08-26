@@ -14,6 +14,7 @@ use App\Models\Score;
 use App\Models\StudentCurriculum;
 use App\Models\StudentSubject;
 use App\Models\User;
+use Illuminate\Bus\Batchable;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -28,7 +29,12 @@ use Spatie\Activitylog\CauserResolver;
 
 class MoveFromCcmJob implements ShouldQueue
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+    // Batchable is REQUIRED, not decorative: the inline fold control dispatches N of these through
+    // Bus::batch, and PendingBatch refuses any job without the trait. The rollover jobs shipped
+    // without it and `--commit` had never once worked — every test fakes the bus, and
+    // BusFake::batch() returns a PendingBatchFake that SKIPS ensureJobIsBatchable() entirely, so a
+    // faked suite is structurally incapable of noticing. Same trap, caught before it bit this time.
+    use Batchable, Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public int $tries = 3;
 

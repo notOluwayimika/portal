@@ -4,7 +4,9 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\RolloverEndOfTermRequest;
 use App\Http\Requests\RolloverEndOfYearRequest;
+use App\Jobs\MoveFromCcmJob;
 use App\Models\Curriculum;
+use App\Services\Rollover\CcmFoldBatchName;
 use App\Services\Rollover\PlacementGroup;
 use App\Services\Rollover\RolloverBatchName;
 use App\Services\Rollover\RolloverDispatcher;
@@ -14,6 +16,7 @@ use App\Support\ActiveSchool;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -106,6 +109,60 @@ class RolloverController extends Controller
     }
 
     /**
+     * FOLD the CCM curricula that are blocking this term's rollover.
+     *
+     * ── IT LIVES AT THE GATE BECAUSE THAT IS WHERE THE BLOCK IS FELT ────────────────────────────
+     * The ccm-active gate names N classes and says they "must be moved first" — and until now the
+     * only thing that moves them was an endpoint no screen called. That is a dead end for exactly
+     * the operators who will meet it: the ones who configured a CCM slot rather than hand-creating
+     * the curriculum, and who therefore have never touched the API or a console. Resolution belongs
+     * where the refusal is read.
+     *
+     * ── THE BLOCKERS ARE RE-DERIVED, NEVER ACCEPTED FROM THE CLIENT ─────────────────────────────
+     * Same discipline as the rollover commit: the plan is recomputed here, and the batch is built
+     * from ITS ccmBlockers. A client-supplied list of curricula would be a second definition of
+     * "what is blocking", and a stale one would fold a curriculum the gate is no longer naming.
+     *
+     * ── allowFailures, DELIBERATELY ─────────────────────────────────────────────────────────────
+     * A fold can refuse — the silent-drop guard aborts when a scored CCM component has no non-CCM
+     * counterpart — and that refusal is deterministic config, not a transient error. At a school
+     * with marking schemes some folds will abort while others succeed, and the successful ones
+     * SHOULD land: partial progress is real progress, and any remaining active CCM curriculum still
+     * holds the gate up, which is correct. Halting the batch on the first refusal would throw away
+     * folds that were fine.
+     */
+    public function foldCcm(RolloverEndOfTermRequest $request): JsonResponse
+    {
+        $term = $request->term();
+        $plan = $this->planner->planEndOfTerm($term);
+
+        if ($plan->ccmBlockers->isEmpty()) {
+            return response()->json([
+                'message' => 'Nothing to fold — no active CCM classes are blocking this rollover.',
+                'plan' => $this->present($plan),
+            ], 422);
+        }
+
+        $batch = Bus::batch(
+            $plan->ccmBlockers->map(fn (Curriculum $c) => new MoveFromCcmJob(
+                $c, (int) $request->user()->id, (int) $c->school_id,
+            ))->all(),
+        )->name(CcmFoldBatchName::forTerm((int) $term->school_id, (int) $term->id))
+            ->allowFailures()
+            ->dispatch();
+
+        return response()->json([
+            // QUEUED, never "folded". The batch has to drain before the gate can clear, and an
+            // operator who reads "done" will confirm a rollover against folds still in flight.
+            'message' => "Queued {$plan->ccmBlockers->count()} fold(s). The rollover stays blocked "
+                .'until they finish — re-preview once the batch has drained.',
+            'batch_id' => $batch->id,
+            'batch_name' => CcmFoldBatchName::forTerm((int) $term->school_id, (int) $term->id),
+            'queued_jobs' => $plan->ccmBlockers->count(),
+        ], 202);
+    }
+
+    /**
      * Rollover batches for the active school, newest first.
      *
      * Reads `job_batches` through RolloverBatchName's own matcher rather than a hand-written LIKE —
@@ -118,7 +175,13 @@ class RolloverController extends Controller
         $schoolId = (int) ActiveSchool::getOrFail()->id;
 
         $rows = DB::table('job_batches')
-            ->where('name', 'like', RolloverBatchName::likeForSchool($schoolId))
+            ->where(function ($q) use ($schoolId) {
+                $q->where('name', 'like', RolloverBatchName::likeForSchool($schoolId))
+                    // FOLD batches appear in the same panel, because they are dispatched from the
+                    // same screen to clear the gate that stops the rollover — an operator who
+                    // clicks Fold and sees nothing drain has no way to know whether to wait.
+                    ->orWhere('name', 'like', CcmFoldBatchName::likeForSchool($schoolId));
+            })
             ->orderByDesc('created_at')
             ->limit(20)
             ->get();
@@ -127,6 +190,7 @@ class RolloverController extends Controller
             'data' => $rows->map(fn ($row) => [
                 'id' => $row->id,
                 'name' => $row->name,
+                'kind' => CcmFoldBatchName::isFold($row->name) ? 'ccm-fold' : 'rollover',
                 'total_jobs' => (int) $row->total_jobs,
                 'pending_jobs' => (int) $row->pending_jobs,
                 'failed_jobs' => (int) $row->failed_jobs,
@@ -135,8 +199,55 @@ class RolloverController extends Controller
                 'is_draining' => $row->finished_at === null && $row->cancelled_at === null,
                 'finished_at' => $row->finished_at,
                 'cancelled_at' => $row->cancelled_at,
+                // ── WHY IT FAILED, NOT JUST THAT IT DID ────────────────────────────────────────
+                // A fold aborts on a DETERMINISTIC, config-shaped refusal: a CCM component carrying
+                // marks with no non-CCM counterpart never succeeds on retry. "Job failed" would
+                // unblock the operator from "there is no fold button" only to re-block them with
+                // "it failed and I cannot tell you why" — the same dead end one layer in. The
+                // guard's message names the curriculum and the component, which is an action the
+                // operator can take, so it has to survive the queue and reach the panel.
+                //
+                // Note $tries = 3: a deterministic refusal is attempted three times before it lands
+                // in failed_jobs, so what the panel must render is the REASON, not three errors.
+                'failure_reasons' => $this->failureReasons($row),
             ])->values(),
         ]);
+    }
+
+    /**
+     * The guard messages behind a batch's failures, de-duplicated.
+     *
+     * `job_batches.failed_job_ids` holds the uuids; `failed_jobs.exception` holds the throwable as a
+     * string whose FIRST LINE is the class and message. Only that line is surfaced — a stack trace
+     * on an operator screen is noise that hides the sentence they need.
+     *
+     * @return list<string>
+     */
+    private function failureReasons(object $row): array
+    {
+        if ((int) $row->failed_jobs === 0) {
+            return [];
+        }
+
+        $ids = json_decode($row->failed_job_ids ?? '[]', true) ?: [];
+
+        if ($ids === []) {
+            return [];
+        }
+
+        return DB::table('failed_jobs')
+            ->whereIn('uuid', $ids)
+            ->pluck('exception')
+            ->map(function (?string $exception) {
+                $first = trim(strtok((string) $exception, "\n"));
+
+                // Strip the leading class name so the operator reads the sentence, not the FQCN.
+                return (string) preg_replace('/^[\w\\\\]+Exception:\s*/', '', $first);
+            })
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
     }
 
     /**

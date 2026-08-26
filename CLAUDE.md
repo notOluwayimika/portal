@@ -202,6 +202,24 @@ operational facts an agent needs most often.
   it asserts that the implementation equals itself. The arm expectation is built from
   an explicitly-ordered query, not from the resolver's own ordering — which is why
   flipping `orderBy('id')` to `orderByDesc('id')` reds it.
+- **A monotone counter is an ACCUMULATOR, never a current-state signal — derive live state from
+  live rows.** `job_batches.failed_jobs` only ever goes up: `decrementPendingJobs` prunes the uuid
+  out of `failed_job_ids` on a retry-success but writes `'failed_jobs' => $batch->failed_jobs`
+  unchanged. So a rule reading it as "failures outstanding right now" inherits history that has
+  stopped being true, and `pending === failed` compared two accumulators as though they described
+  the batch at this instant. Bit once (2026-08-26) on the CCM fold panel, and note WHICH DIRECTION it
+  failed in: it withdrew "do not change the current session yet" while a retried worker was still
+  running — the FALSELY-SAFE direction. It did not remove the retry-window lie, it swapped which half
+  of the window told it, toward the worse half. The prior `finished_at === null` reading had been
+  CORRECT in exactly that window.
+  The fix keys on the `failed_jobs` ROW, which is live — `queue:retry` deletes it before re-dispatch
+  — rather than the counter, which is a tombstone. That a listed id with no row means "retry in
+  flight" is the tell that the new signal is ground truth and not a proxy: it catches a case a
+  count of the ids alone still gets wrong. Same family as the fixture whose degrees of freedom
+  collapsed and the wrapper exit code — an instrument that agrees with itself but not with reality,
+  this time one layer below the surface, in the data model. **Before comparing two numbers from a
+  row, ask of each: does anything ever DECREMENT this?**
+
 - **A control the server never receives is theatre, and theatre is worse than
   absence.** The rollover commit took two session ids and nothing else, so it could
   not distinguish a plan the operator had read from one a client had merely fetched,

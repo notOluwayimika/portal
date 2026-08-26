@@ -221,10 +221,15 @@ class CcmFoldDriveSeeder extends Seeder
      */
     private function makeOperator(School $school, string $localPart, bool $withAcademicSetup = false): User
     {
+        // NAMED FOR THE SEAT, not all three "Drive Operator". The drive found both school#1 seats
+        // rendering an identical display name in the user menu, which is the label-standing-in-for-
+        // identity trap this project keeps paying for: the driver had to check the EMAIL every time
+        // to know which seat they were acting as. A fixture whose seats are indistinguishable on
+        // screen invites exactly the by-label reasoning the drive is supposed to avoid.
         $user = User::forceCreate([
             'uuid' => (string) Str::uuid(),
-            'first_name' => 'Drive',
-            'last_name' => 'Operator',
+            'first_name' => ucfirst(str_replace('-', ' ', $localPart)),
+            'last_name' => 'Seat',
             'email' => $localPart.'@ccm-fold.drive.test',
             'password' => bcrypt(self::PASSWORD),
             'school_id' => $school->id,

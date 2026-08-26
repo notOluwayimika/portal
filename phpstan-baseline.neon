@@ -1928,12 +1928,6 @@ parameters:
 			path: app/Jobs/ExportActivityLogJob.php
 
 		-
-			message: '#^Method App\\Jobs\\MoveFromCcmJob\:\:mapOverlappingMarkingComponents\(\) should return Illuminate\\Support\\Collection\<int, array\{old\: App\\Models\\MarkingComponent, new\: App\\Models\\MarkingComponent\}\> but returns Illuminate\\Support\\Collection\<int, array\{old\: App\\Models\\MarkingComponent, new\: mixed\}\>\.$#'
-			identifier: return.type
-			count: 1
-			path: app/Jobs/MoveFromCcmJob.php
-
-		-
 			message: '#^Access to an undefined property App\\Http\\Resources\\UserResource\:\:\$full_name\.$#'
 			identifier: property.notFound
 			count: 1

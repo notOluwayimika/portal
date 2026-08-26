@@ -1,5 +1,6 @@
 <?php
 
+use App\Exceptions\CcmFoldRefused;
 use App\Jobs\MoveFromCcmJob;
 use App\Services\Rollover\CcmFoldBatchName;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -40,6 +41,18 @@ function ccmf_fold(array $w)
     return test()->actingAs($w['admin'])->postJson('/api/rollover/fold-ccm', [
         'term_id' => $w['term']->uuid,
     ]);
+}
+
+/**
+ * The string Laravel would actually persist for this throwable.
+ *
+ * `DatabaseFailedJobProvider::log()` stores `(string) $exception`, so a fixture that wants to stand
+ * in for a failed job must be stringified the SAME way rather than typed by hand — the hand-typed
+ * one differed from reality in exactly the dimension the assertions were about.
+ */
+function ccmf_stringifiedThrowable(Throwable $e): string
+{
+    return (string) $e;
 }
 
 it('dispatches one fold per blocking CCM class, and says QUEUED rather than done', function () {
@@ -111,12 +124,23 @@ it('surfaces the guard reason behind a failed fold, not a bare failure count', f
     // A batch row carrying a failed job whose exception is the guard's refusal — the shape the
     // panel must read. Written directly because driving a real queue failure through three retries
     // in a test proves the retry machinery, not the reporting this arm is about.
+    // The guard's real sentence, held in a variable so the assertion can compare against the
+    // MESSAGE itself rather than a re-typed copy of it — the round trip under test is
+    // stringify -> persist -> read, and the message is the independent path through it.
+    $message = 'Refusing to fold curriculum#7: 1 scored marking component(s) on subject#3 have no'
+        .' counterpart on the non-CCM side and their marks would be lost — "Project" (4 score(s)).'
+        .' Add matching component(s) to the non-CCM marking scheme, then fold again.';
+
     $uuid = (string) Str::uuid();
     DB::table('failed_jobs')->insert([
         'uuid' => $uuid, 'connection' => 'database', 'queue' => 'default', 'payload' => '{}',
-        'exception' => 'RuntimeException: Refusing to fold curriculum#7: 1 scored marking component(s)'
-            .' on subject#3 have no counterpart on the non-CCM side and their marks would be lost —'
-            .' "Project" (4 score(s)).'."\n#0 /app/Jobs/MoveFromCcmJob.php(259)\n#1 stack noise",
+        // A REAL stringified throwable, produced by throwing and catching one — NOT hand-written.
+        // The hand-written version this replaces omitted the ` in /abs/path/File.php:LINE` suffix
+        // that every real PHP exception carries, so this arm was green about a string the system
+        // does not produce, and the panel shipped rendering a server path at the end of the
+        // operator's sentence. A drive against the real queue is what found it. The double must be
+        // built by the thing it stands in for.
+        'exception' => ccmf_stringifiedThrowable(new CcmFoldRefused($message)),
         'failed_at' => now(),
     ]);
     DB::table('job_batches')->insert([
@@ -138,7 +162,18 @@ it('surfaces the guard reason behind a failed fold, not a bare failure count', f
         ->and($fold['failure_reasons'][0])->toContain('Project')
         ->and($fold['failure_reasons'][0])->toContain('no counterpart')
         // And NOT the stack trace: a trace on an operator screen hides the sentence they need.
-        ->and($fold['failure_reasons'][0])->not->toContain('#0 /app/Jobs')
+        ->and($fold['failure_reasons'][0])->not->toContain('#0 ')
+        // ── THE ARM THE OLD LOOKALIKE COULD NOT CARRY ──────────────────────────────────────────
+        // No absolute server path, and no `:LINE` tail. A real PHP exception stringifies as
+        // `Class: message in /abs/path/File.php:265`, so first-line-only strips the FRAMES but not
+        // that suffix — which is how a server path reached the panel and stayed invisible to a
+        // suite whose fixture omitted it. CcmFoldRefused::__toString() is what keeps this true.
+        ->and($fold['failure_reasons'][0])->not->toContain('/app/Jobs')
+        ->and($fold['failure_reasons'][0])->not->toContain(base_path())
+        // EXACTLY the message and nothing appended. Stronger than a tail check: a path suffix, a
+        // class prefix or a truncation all red here, and the expectation is the message the guard
+        // was given rather than a restatement of what the reader does to it.
+        ->and($fold['failure_reasons'][0])->toBe($message)
         // The FQCN is stripped too — they read the sentence, not the exception class.
         ->and($fold['failure_reasons'][0])->not->toStartWith('RuntimeException');
 });
@@ -159,4 +194,91 @@ it('reports no failure reasons for a clean fold batch', function () {
     // The negative arm: a reason list that was always populated would pass the arm above.
     expect($fold['failure_reasons'])->toBe([])
         ->and($fold['kind'])->toBe('ccm-fold');
+});
+
+// ---------------------------------------------------------------------------
+// THE TERMINAL STATE — derived from counts, because the failing case emits no completion event
+// ---------------------------------------------------------------------------
+
+/** Insert a batch row with the counts a real bus would have written. */
+function ccmf_batchRow(array $w, int $total, int $pending, int $failed, array $failedIds = [], ?int $finishedAt = null): void
+{
+    DB::table('job_batches')->insert([
+        'id' => (string) Str::uuid(),
+        'name' => CcmFoldBatchName::forTerm((int) $w['school']->id, (int) $w['term']->id),
+        'total_jobs' => $total, 'pending_jobs' => $pending, 'failed_jobs' => $failed,
+        'failed_job_ids' => json_encode($failedIds), 'options' => '',
+        'created_at' => time(), 'finished_at' => $finishedAt,
+    ]);
+}
+
+function ccmf_readBatch(array $w): array
+{
+    return collect(test()->actingAs($w['admin'])->getJson('/api/rollover/batches')->json('data'))
+        ->firstWhere('kind', 'ccm-fold');
+}
+
+it('reads a batch whose every job has RESOLVED as stopped, not as perpetually draining', function () {
+    $w = ccmf_world();
+
+    // THE SHAPE A REAL BUS LEAVES BEHIND, and it is not hypothetical — a drive produced exactly
+    // this: one job, three attempts exhausted, finished_at NULL. Laravel sets finished_at only from
+    // recordSuccessfulJob when pending hits zero, and incrementFailedJobs holds pending constant,
+    // so a batch with a failure NEVER emits the completion signal the panel used to wait for.
+    ccmf_batchRow($w, total: 1, pending: 1, failed: 1, failedIds: [(string) Str::uuid()]);
+
+    $fold = ccmf_readBatch($w);
+
+    expect($fold['is_draining'])->toBeFalse()
+        ->and($fold['settled_state'])->toBe('stopped');
+});
+
+it('still reads as DRAINING between retries, so the retry window stays honest', function () {
+    $w = ccmf_world();
+
+    // The counter-arm, and the reason the rule is `pending === failed` rather than `failed > 0`:
+    // a doomed job mid-retry has not recorded its failure yet, so pending still EXCEEDS failed.
+    // Without this, a fix for the arm above would report "stopped" the moment anything failed and
+    // would flip a still-working batch to terminal — the opposite lie, equally invisible.
+    ccmf_batchRow($w, total: 3, pending: 3, failed: 0);
+
+    expect(ccmf_readBatch($w)['is_draining'])->toBeTrue()
+        ->and(ccmf_readBatch($w)['settled_state'])->toBeNull();
+});
+
+it('is still DRAINING when one job has already failed but others are still working', function () {
+    $w = ccmf_world();
+
+    // THE AXIS NEITHER OTHER ARM CROSSES: failures > 0 AND work outstanding. This is allowFailures'
+    // ordinary mid-flight state — one fold refused, two still going — and it is what stops the fix
+    // being written as "failed > 0 means stopped", which would flip a live batch to terminal and
+    // invite a rollover confirmation against folds still in the air. pending(3) > failed(1).
+    ccmf_batchRow($w, total: 3, pending: 3, failed: 1, failedIds: [(string) Str::uuid()]);
+
+    expect(ccmf_readBatch($w)['is_draining'])->toBeTrue()
+        ->and(ccmf_readBatch($w)['settled_state'])->toBeNull();
+});
+
+it('reads a MIXED batch as stopped once the survivors have landed and the rest have failed', function () {
+    $w = ccmf_world();
+
+    // Two succeeded (pending 3 -> 1), one failed and holds pending at 1. pending === failed, so
+    // every job has resolved. A count-only rule that keyed on `pending === 0` would call this
+    // draining forever too — the mixed case is where allowFailures actually lives.
+    ccmf_batchRow($w, total: 3, pending: 1, failed: 1, failedIds: [(string) Str::uuid()]);
+
+    expect(ccmf_readBatch($w)['settled_state'])->toBe('stopped')
+        ->and(ccmf_readBatch($w)['done_jobs'])->toBe(2);
+});
+
+it('still reads a clean finished batch as finished, by the same one rule', function () {
+    $w = ccmf_world();
+
+    // The clean path is SUBSUMED, not special-cased: zero failures drives pending to zero and the
+    // bus writes finished_at. If this reds, the derivation broke the ordinary case to fix the
+    // exceptional one.
+    ccmf_batchRow($w, total: 2, pending: 0, failed: 0, finishedAt: time());
+
+    expect(ccmf_readBatch($w)['is_draining'])->toBeFalse()
+        ->and(ccmf_readBatch($w)['settled_state'])->toBe('finished');
 });

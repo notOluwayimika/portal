@@ -195,8 +195,14 @@ class RolloverController extends Controller
                 'pending_jobs' => (int) $row->pending_jobs,
                 'failed_jobs' => (int) $row->failed_jobs,
                 // DERIVED, and the words matter: a batch with pending jobs is DRAINING, never "done".
+                // `done_jobs` counts SUCCESSES only — see settledState() for why pending is the
+                // wrong subtrahend to read as progress once a job has failed.
                 'done_jobs' => (int) $row->total_jobs - (int) $row->pending_jobs,
-                'is_draining' => $row->finished_at === null && $row->cancelled_at === null,
+                'is_draining' => $this->settledState($row) === null,
+                // 'finished' — every job succeeded. 'stopped' — every job has RESOLVED but some
+                // failed, so no worker will touch this batch again without `queue:retry`.
+                // 'cancelled' — killed. Null while genuinely still draining.
+                'settled_state' => $this->settledState($row),
                 'finished_at' => $row->finished_at,
                 'cancelled_at' => $row->cancelled_at,
                 // ── WHY IT FAILED, NOT JUST THAT IT DID ────────────────────────────────────────
@@ -223,6 +229,72 @@ class RolloverController extends Controller
      *
      * @return list<string>
      */
+    /**
+     * Has this batch stopped moving, and how — read off the COUNTS, never off `finished_at` alone.
+     *
+     * ── THE SIGNAL THE FAILING CASE NEVER EMITS ──────────────────────────────────────────────────
+     * `finished_at` is set in exactly ONE place: `Illuminate\Bus\Batch::recordSuccessfulJob`, and
+     * only when `pendingJobs` reaches zero. `DatabaseBatchRepository::incrementFailedJobs` writes
+     * `'pending_jobs' => $batch->pending_jobs` — an EXPLICIT no-op, deliberate rather than an
+     * omission — so a permanently-failed job never decrements pending, `finished_at` stays null,
+     * and a batch holding ANY failure is never "finished" as far as the framework is concerned.
+     *
+     * Read literally, `finished_at === null` therefore means "draining" FOREVER for such a batch:
+     * the panel invites the operator to keep waiting on something no worker will touch again. A
+     * drive against the real queue observed exactly that — three attempts exhausted,
+     * `pending_jobs=1 failed_jobs=1 finished_at=null`, rendered as "Draining — do not change the
+     * current session yet", permanently.
+     *
+     * ── WHY THIS IS NOT A CCM DEFECT ─────────────────────────────────────────────────────────────
+     * Fold batches and ROLLOVER batches share this panel and this method. Nothing above is specific
+     * to folds; a failed `MoveFromTermJob` batch reads identically. CCM is merely the first surface
+     * where a batch failure is a DESIGNED, reachable outcome rather than an accident, which is why
+     * it is the first to expose it. Fixing it here hardens the rollover surface retroactively.
+     *
+     * ── THE DERIVATION ───────────────────────────────────────────────────────────────────────────
+     * Pending starts at total and is decremented ONLY by successes, so at any moment
+     * `pending = total - successes`, and a job is resolved when it has either succeeded or failed:
+     *
+     *     resolved = successes + failed = (total - pending) + failed
+     *     resolved === total   <=>   failed === pending
+     *
+     * So `pending === failed` is exactly "every job has resolved". It stays false while a doomed job
+     * is between retries — the failure has not been recorded yet, so pending still exceeds failed —
+     * which is what keeps the $tries = 3 retry window honestly reading as draining.
+     *
+     * It also subsumes the clean case rather than special-casing it: zero failures drives pending to
+     * zero, and `0 === 0` settles at the same instant `finished_at` is written. One rule, both paths.
+     *
+     * NOT "FINISHED" WHEN IT HOLDS FAILURES, and the word is chosen: those jobs are still pending in
+     * the framework's own sense — awaiting a `queue:retry` a human may issue. 'stopped' says the
+     * batch will not move on its own without saying it is complete, which it is not.
+     *
+     * @return 'finished'|'stopped'|'cancelled'|null null while genuinely still draining
+     */
+    private function settledState(object $row): ?string
+    {
+        if ($row->cancelled_at !== null) {
+            return 'cancelled';
+        }
+
+        if ($row->finished_at !== null) {
+            return 'finished';
+        }
+
+        $total = (int) $row->total_jobs;
+        $pending = (int) $row->pending_jobs;
+        $failed = (int) $row->failed_jobs;
+
+        // `<=` rather than `===` purely as a floor: pending should never fall BELOW failed, and if
+        // some future accounting made it, "settled" is the safe reading — the alternative is the
+        // perpetual-draining bug this method exists to remove.
+        if ($total > 0 && $failed > 0 && $pending <= $failed) {
+            return 'stopped';
+        }
+
+        return null;
+    }
+
     private function failureReasons(object $row): array
     {
         if ((int) $row->failed_jobs === 0) {
@@ -239,9 +311,19 @@ class RolloverController extends Controller
             ->whereIn('uuid', $ids)
             ->pluck('exception')
             ->map(function (?string $exception) {
+                // ── THE DESIGNED REFUSAL ARRIVES CLEAN; THIS IS THE FALLBACK ────────────────────
+                // A fold's own refusal is an App\Exceptions\CcmFoldRefused, whose __toString() is
+                // the message — so what Laravel persisted is already the sentence and nothing below
+                // alters it. That is deliberate: repairing a stringified throwable HERE means a
+                // path-stripping regex over a message that may itself contain " in ", which is a
+                // heuristic that passes against a fixture and fails against reality.
+                //
+                // What remains is defence for an UNEXPECTED throwable — a deadlock, a timeout —
+                // which still stringifies the PHP way. For those the operator gets the first line
+                // rather than forty lines of trace, and yes, it still carries a path: that is a
+                // debugging aid on a path nobody designed, not the refusal this surface is for.
                 $first = trim(strtok((string) $exception, "\n"));
 
-                // Strip the leading class name so the operator reads the sentence, not the FQCN.
                 return (string) preg_replace('/^[\w\\\\]+Exception:\s*/', '', $first);
             })
             ->filter()

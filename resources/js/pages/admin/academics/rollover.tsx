@@ -83,6 +83,8 @@ interface BatchRow {
     failed_jobs: number;
     done_jobs: number;
     is_draining: boolean;
+    /** 'finished' all succeeded · 'stopped' all resolved but some failed · 'cancelled' · null = still draining. */
+    settled_state: 'finished' | 'stopped' | 'cancelled' | null;
     /** 'ccm-fold' or 'rollover'. Rendered, not merely carried — see the panel. */
     kind: string;
     /** The guard's sentences behind a failure. Empty on a clean batch. */
@@ -955,15 +957,29 @@ function BatchPanel({
                                     <td className="py-1">{b.pending_jobs}</td>
                                     <td className="py-1">{b.failed_jobs}</td>
                                     <td className="py-1">
+                                        {/* NOT keyed on finished_at — a batch holding a failed job
+                                            never gets one, so this used to read "Draining" forever
+                                            over a batch no worker would touch again. The server
+                                            derives the terminal state from the counts; see
+                                            RolloverController::settledState. */}
                                         {b.is_draining ? (
                                             <span className="text-amber-700 dark:text-amber-400">
                                                 Draining — do not change the
                                                 current session yet
                                             </span>
-                                        ) : b.failed_jobs > 0 ? (
+                                        ) : b.settled_state === 'cancelled' ? (
                                             <span className="text-destructive">
-                                                Finished with {b.failed_jobs}{' '}
-                                                failure(s)
+                                                Cancelled
+                                            </span>
+                                        ) : b.failed_jobs > 0 ? (
+                                            /* "Stopped", not "Finished": these jobs are still
+                                               pending in the queue's own sense, awaiting a retry
+                                               someone must issue. Saying "finished" would claim a
+                                               completeness the batch has not reached. */
+                                            <span className="text-destructive">
+                                                Stopped with {b.failed_jobs}{' '}
+                                                failure(s) — it will not resume
+                                                on its own
                                             </span>
                                         ) : (
                                             <span className="text-muted-foreground">

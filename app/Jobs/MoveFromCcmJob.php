@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Enums\StudentStatusEnum;
 use App\Enums\StudentSubjectStatus;
+use App\Exceptions\CcmFoldRefused;
 use App\Jobs\Middleware\SchoolAware;
 use App\Models\Curriculum;
 use App\Models\CurriculumSubject;
@@ -24,7 +25,6 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
-use RuntimeException;
 use Spatie\Activitylog\CauserResolver;
 
 class MoveFromCcmJob implements ShouldQueue
@@ -262,7 +262,7 @@ class MoveFromCcmJob implements ShouldQueue
         // CCM scheme has one component where the non-CCM has three — currently in the safe
         // direction (CCM is a subset). One component the other way and every fold loses marks.
         if ($dropped !== []) {
-            throw new RuntimeException(
+            throw new CcmFoldRefused(
                 'Refusing to fold curriculum#'.$oldSubject->curriculum_id.': '
                 .count($dropped).' scored marking component(s) on subject#'.$oldSubject->subject_id
                 .' have no counterpart on the non-CCM side and their marks would be lost — '

@@ -232,37 +232,46 @@ class CcmFoldDriveSeeder extends Seeder
             'email_verified_at' => now(),
         ]);
 
-        $permission = Permission::where('name', \App\Enums\Permission::ACADEMICS_ROLLOVER->value)
-            ->where('guard_name', 'web')
-            ->first()
-            ?? Permission::create([
-                'name' => \App\Enums\Permission::ACADEMICS_ROLLOVER->value,
-                'guard_name' => 'web',
-            ]);
+        $permission = $this->permission(\App\Enums\Permission::ACADEMICS_ROLLOVER->value);
 
         $user->grantSchoolAccess($school, 'registrar');
 
         setPermissionsTeamId($school->id);
         $user->givePermissionTo($permission);
 
+        // ── THE PAGE SHELL, WITHOUT WHICH NONE OF THIS IS REACHABLE ────────────────────────────
+        // `/setup` and `/academics/rollover` both sit inside the `permission:admin_area.access`
+        // group in routes/web.php. A seat can hold `academics.rollover` and `academic_setup.manage`
+        // and still get a 403 on every page that uses them — which is what all three seats did,
+        // found by driving a real login over HTTP rather than by asking the ability directly.
+        // `$user->can(...)` answers the FEATURE question; it says nothing about whether the route
+        // that renders the feature will let you in.
+        //
+        // It does NOT weaken the authorization observation: admin_area.access is the shell, not the
+        // control. The rollover-only seat still lacks academic_setup.manage, so the CCM checkbox is
+        // still absent for it — which is the thing that observation is about.
+        $user->givePermissionTo($this->permission(\App\Enums\Permission::ADMIN_AREA_ACCESS->value));
+
         if ($withAcademicSetup) {
-            // firstOrCreate, matching the rollover permission above: the suite does not run
-            // RbacSeeder, so firstOrFail() here reds every arm that builds this world — which is
-            // exactly what it did on the first run after this seat was added.
-            $user->givePermissionTo(
-                Permission::where('name', \App\Enums\Permission::ACADEMIC_SETUP_MANAGE->value)
-                    ->where('guard_name', 'web')
-                    ->first()
-                    ?? Permission::create([
-                        'name' => \App\Enums\Permission::ACADEMIC_SETUP_MANAGE->value,
-                        'guard_name' => 'web',
-                    ])
-            );
+            $user->givePermissionTo($this->permission(\App\Enums\Permission::ACADEMIC_SETUP_MANAGE->value));
         }
 
         $user->flushSchoolAccessCache();
 
         return $user;
+    }
+
+    /**
+     * A `web`-guard permission row, created if absent.
+     *
+     * firstOrCreate rather than firstOrFail: the suite does not run RbacSeeder, so a strict lookup
+     * reds every arm that builds this world — which is exactly what it did the first time a second
+     * permission was added here.
+     */
+    private function permission(string $name): Permission
+    {
+        return Permission::where('name', $name)->where('guard_name', 'web')->first()
+            ?? Permission::create(['name' => $name, 'guard_name' => 'web']);
     }
 
     private function makeExamType(School $school): ExamType

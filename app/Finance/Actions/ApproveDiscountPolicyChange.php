@@ -3,7 +3,6 @@
 namespace App\Finance\Actions;
 
 use App\Exceptions\BusinessRuleException;
-use App\Finance\Enums\DiscountBase;
 use App\Finance\Enums\DiscountPolicyChangeKind;
 use App\Finance\Enums\DiscountPolicyChangeStatus;
 use App\Finance\Enums\DiscountPolicyStatus;
@@ -60,9 +59,12 @@ final class ApproveDiscountPolicyChange
         // insert — the same supersede-before-activate ordering the fee schedule follows.
         $target = DiscountPolicy::query()->whereKey($change->target_policy_id)->lockForUpdate()->firstOrFail();
         $target->update(['status' => DiscountPolicyStatus::Superseded]);
-        // THE TARGET ITSELF, not just its id — insertPolicy() inherits any term the change leaves
-        // unstated from the policy being amended. Reading it AFTER the supersede is safe: the update
-        // guard on this table permits `status` and nothing else to move, so every term is untouched.
+        // THE TARGET ITSELF, not just its id — see insertPolicy()'s @param. effectiveBase() re-reads
+        // this same row through the relation rather than taking this instance: the row is X-locked by
+        // THIS transaction, so the re-read is our own view, and `$change->target` is unloaded here
+        // (route-model binding does not eager-load it) so it is a fresh read, not a stale cache.
+        // Reading it AFTER the supersede is safe either way: the update guard on this table permits
+        // `status` and nothing else to move, so every term is untouched.
         $this->insertPolicy($change, $target);
     }
 
@@ -73,18 +75,16 @@ final class ApproveDiscountPolicyChange
     }
 
     /**
-     * @param  ?DiscountPolicy  $supersedes  the policy being amended, or null on a create. It is the
-     *                                       MODEL and not an id because a term the change leaves
-     *                                       unstated is inherited from it — see `base` below.
+     * @param  ?DiscountPolicy  $supersedes  the policy being amended, or null on a create. Only its
+     *                                       id is written here; the inheritance of an unstated term
+     *                                       moved onto DiscountPolicyChange::effectiveBase(), which
+     *                                       resolves the target itself so the Resource can ask the
+     *                                       same question without an approval in hand. It stays the
+     *                                       MODEL rather than an int so the row this transaction
+     *                                       LOCKED is the row named here.
      */
     private function insertPolicy(DiscountPolicyChange $change, ?DiscountPolicy $supersedes): DiscountPolicy
     {
-        // RESOLVED HERE RATHER THAN INLINE, because the inline form is `$supersedes?->base ?? …` and
-        // Larastan refuses it (nullsafe.neverNull): `??` already suppresses the null-property read,
-        // so the `?->` is dead syntax. The explicit instanceof says the same thing and says which
-        // branch is the create path.
-        $inherited = $supersedes instanceof DiscountPolicy ? $supersedes->base : DiscountBase::Discountable;
-
         try {
             return DiscountPolicy::create([
                 'school_id' => $change->school_id,
@@ -96,29 +96,24 @@ final class ApproveDiscountPolicyChange
                 'percent' => $change->percent,
                 // AXIS C, AND IT MUST BE CARRIED RATHER THAN LEFT TO THE COLUMN DEFAULT. This array
                 // is the whole of what an approved change becomes, so a term missing from it is a
-                // term the governance path silently discards. It did: before this line, amending a
-                // `total` policy superseded it and inserted a replacement that had fallen back to
-                // `discountable` — 50% of the whole bill became 50% of tuition, the family billed
-                // MORE, through the flow whose entire purpose is that terms cannot move without a
-                // checker. And `base` is immutable on the catalog row, so it could not be put back
-                // except by another amend, which dropped it again.
+                // term the governance path silently discards. It did: before `base` reached this
+                // array, amending a `total` policy superseded it and inserted a replacement that had
+                // fallen back to `discountable` — 50% of the whole bill became 50% of tuition, the
+                // family billed MORE, through the flow whose entire purpose is that terms cannot
+                // move without a checker. And `base` is immutable on the catalog row, so it could
+                // not be put back except by another amend, which dropped it again.
                 //
-                // THE THREE-STEP COALESCE, IN THIS ORDER, AND EACH STEP EARNS ITS PLACE:
+                // THE RULE ITSELF LIVES ON THE MODEL, in ONE place, because it has a SECOND reader:
+                // DiscountPolicyChangeResource shows the checker what they are approving. Resolved
+                // twice, the write and the screen agree only until one is edited — and a checker
+                // shown a base the catalog will not receive is the original defect wearing a screen.
+                // effectiveBase() carries the reasoning; read it there, not here.
                 //
-                //   $change->base    — the maker said so. Stating a term is always authoritative.
-                //   $supersedes      — the maker said NOTHING and there is a policy being amended,
-                //                      so nothing is what changes. This is the step that makes
-                //                      omission SAFE rather than merely refused: a `total` policy
-                //                      raised from 50% to 55% stays whole-bill even if the maker
-                //                      never mentions the base, which is the realistic shape of the
-                //                      mistake. Requiring the field would have moved the defect onto
-                //                      the maker remembering; this removes it.
-                //   Discountable     — a CREATE that stated nothing, or a pre-axis change row whose
-                //                      `base` is NULL because it was submitted before the column
-                //                      existed. Both land on the behaviour they were authored under,
-                //                      which is a statement of fact rather than a guess. An `amount`
-                //                      basis lands here too and the value is inert.
-                'base' => $change->base ?? $inherited,
+                // NEVER NULL ON THIS PATH: effectiveBase() returns null only for a `retire`, and a
+                // retire never reaches insertPolicy() (the match in handle() sends it to retire()).
+                // If that ever stops holding, the catalog's NOT NULL refuses the insert loudly,
+                // which is the direction to fail in.
+                'base' => $change->effectiveBase(),
                 'requires_approval' => $change->requires_approval,
                 'status' => DiscountPolicyStatus::Active,
                 'supersedes_policy_id' => $supersedes?->id,

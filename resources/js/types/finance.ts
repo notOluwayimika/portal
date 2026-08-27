@@ -156,6 +156,14 @@ export type DiscountPolicyChangeApproval = {
     percent?: number | null;
     value_minor?: number | null;
     value_currency?: string | null;
+    // AXIS C, AND THE TWO KEYS ARE NOT INTERCHANGEABLE. `base` is the raw proposed term — null
+    // whenever the maker said nothing, which is the ordinary amend. `effective_base` is what the
+    // catalog will actually be stamped with, resolved server-side by the one method that also
+    // writes it (DiscountPolicyChange::effectiveBase()). RENDER `effective_base`: a checker shown
+    // the raw term is shown nothing in exactly the case where "55%" could mean either half the
+    // tuition or half the whole bill. Null on a retire, which approves no policy at all.
+    base?: 'discountable' | 'total' | null;
+    effective_base?: 'discountable' | 'total' | null;
     reason: string;
     note?: string | null;
     amount?: Money | null;

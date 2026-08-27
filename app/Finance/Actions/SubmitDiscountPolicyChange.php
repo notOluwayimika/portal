@@ -20,7 +20,13 @@ use Illuminate\Support\Facades\DB;
  * The friendly shape/one-open checks here mirror the DB CHECKs and open_key that are the real guarantees.
  *
  * @param  array<string, mixed>  $terms  name, description, basis, value_minor, value_currency, percent,
- *                                       requires_approval — present for create/amend, ignored for retire.
+ *                                       base, requires_approval — present for create/amend, ignored
+ *                                       for retire. THIS LIST IS LOAD-BEARING: `base` was missing
+ *                                       from it while the whitelist below carried the column, and an
+ *                                       incomplete @param is exactly what made the original omission
+ *                                       invisible to the reader who added the column. If you add a
+ *                                       term, it goes here, in $proposed, and in
+ *                                       ApproveDiscountPolicyChange::insertPolicy() — all three.
  */
 final class SubmitDiscountPolicyChange
 {

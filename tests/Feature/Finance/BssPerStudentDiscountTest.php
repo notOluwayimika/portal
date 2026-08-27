@@ -795,6 +795,171 @@ it('the change table refuses a base outside the domain, and freezes it once subm
 });
 
 /*
+ * CROSSING THE BASIS AXIS — the arms the percent→percent arm above is structurally incapable of
+ * seeing. That arm pins ONE hop between two policies of the same basis, so an implementation that
+ * inherits unconditionally and one that inherits only within a basis are indistinguishable to it.
+ * The distinguishing fixture is a ROUND TRIP through `amount`, and it is not hypothetical: rule 58
+ * of SubmitDiscountPolicyChangeRequest is `prohibited_if:basis,amount`, so on the outbound hop the
+ * maker CANNOT state a base and on the return hop they need not — two changes, no base typed on
+ * either, no base shown on either screen, and a live percentage at the end of it.
+ */
+it('a percent→AMOUNT amend does NOT carry the base across, and the round trip back to percent lands on the default', function () {
+    $ctx = bdSchool();
+    [$maker, $checker] = bdGovernance($ctx);
+
+    $percent = bdGovern($ctx, $maker, $checker, [
+        'kind' => 'create', 'name' => 'Round trip', 'basis' => 'percent', 'percent' => 50,
+        'base' => 'total', 'reason' => 'BSS scheme',
+    ]);
+    expect($percent->base)->toBe(DiscountBase::Total);
+
+    // (i) THE OUTBOUND HOP. `base` is not merely unstated — rule 58 REFUSES it on an amount basis,
+    // so there is no payload that states it. Inheriting here stamps the amount policy with a value
+    // that is inert, that no maker typed and that no checker was shown.
+    $amount = bdGovern($ctx, $maker, $checker, [
+        'kind' => 'amend', 'target' => $percent->uuid, 'name' => 'Round trip', 'basis' => 'amount',
+        'value_minor' => 500000, 'value_currency' => 'NGN', 'reason' => 'switch to a flat sum',
+    ]);
+
+    expect($amount->basis->value)->toBe('amount')
+        ->and($amount->base)->toBe(DiscountBase::Discountable)
+        ->and((int) $amount->supersedes_policy_id)->toBe($percent->id);
+
+    // (ii) THE RETURN HOP, AND THE ONE THAT SPENDS MONEY. Under an unconditional inherit the
+    // `total` set on the FIRST policy reaches this one through a row where it meant nothing, and
+    // `base` is immutable on the catalog, so 25% of the whole bill cannot be put back to 25% of
+    // tuition except by another amend. The maker typed nothing on either hop.
+    $back = bdGovern($ctx, $maker, $checker, [
+        'kind' => 'amend', 'target' => $amount->uuid, 'name' => 'Round trip', 'basis' => 'percent',
+        'percent' => 25, 'reason' => 'back to a rate',
+    ]);
+
+    expect($back->basis->value)->toBe('percent')
+        ->and($back->percent)->toBe(25)
+        ->and($back->base)->toBe(DiscountBase::Discountable)
+        ->and((int) $back->supersedes_policy_id)->toBe($amount->id);
+});
+
+/*
+ * (iii) THE MUTATION GUARD ON THE ARM ABOVE. Without this, the round-trip arm also passes against
+ * an implementation that ignores the maker entirely and hardcodes `discountable` on any cross-basis
+ * amend — the same shape of hole the percent→percent arm closes with its third hop. The default is a
+ * DEFAULT: a maker reshaping a policy gets it, and may say otherwise on the same change.
+ */
+it('a maker converting a policy BACK to percent may state the base, and is obeyed', function () {
+    $ctx = bdSchool();
+    [$maker, $checker] = bdGovernance($ctx);
+
+    $percent = bdGovern($ctx, $maker, $checker, [
+        'kind' => 'create', 'name' => 'Stated on return', 'basis' => 'percent', 'percent' => 50,
+        'base' => 'total', 'reason' => 'BSS scheme',
+    ]);
+
+    $amount = bdGovern($ctx, $maker, $checker, [
+        'kind' => 'amend', 'target' => $percent->uuid, 'name' => 'Stated on return',
+        'basis' => 'amount', 'value_minor' => 500000, 'value_currency' => 'NGN',
+        'reason' => 'switch to a flat sum',
+    ]);
+    expect($amount->base)->toBe(DiscountBase::Discountable);
+
+    $back = bdGovern($ctx, $maker, $checker, [
+        'kind' => 'amend', 'target' => $amount->uuid, 'name' => 'Stated on return',
+        'basis' => 'percent', 'percent' => 25, 'base' => 'total', 'reason' => 'whole bill again',
+    ]);
+
+    expect($back->base)->toBe(DiscountBase::Total);
+});
+
+/*
+ * (v) THE CHECKER'S VIEW, ASSERTED ON THE HTTP RESPONSE rather than on the Resource in isolation.
+ * The Resource is only half the claim: a key it emits that no route reaches, or that the queue
+ * query cannot populate, is a term still decided unseen. This goes through the pending queue as the
+ * ED, which is the screen where the decision is actually taken.
+ *
+ * THE FIXTURE IS THE ORDINARY AMEND — a rate raised, the base unmentioned — because that is exactly
+ * where the raw `base` column is NULL and where an unlabelled "55%" could mean either of two
+ * different amounts of money. The raw key is asserted NULL in the same breath: without that half
+ * this arm would also pass against a Resource that had simply started requiring the maker to state
+ * a base, which is a different (and weaker) design.
+ */
+it('the checker’s pending queue shows the EFFECTIVE base of an amend that states none', function () {
+    $ctx = bdSchool();
+    [$maker, $checker] = bdGovernance($ctx);
+
+    $v1 = bdGovern($ctx, $maker, $checker, [
+        'kind' => 'create', 'name' => 'Seen by the checker', 'basis' => 'percent', 'percent' => 50,
+        'base' => 'total', 'reason' => 'BSS scheme',
+    ]);
+    expect($v1->base)->toBe(DiscountBase::Total);
+
+    $changeId = $this->actingAs($maker)->withSession(['school_id' => $ctx['school']->id])
+        ->postJson('/api/v1/finance/discount-policy-changes', [
+            'kind' => 'amend', 'target' => $v1->uuid, 'name' => 'Seen by the checker',
+            'basis' => 'percent', 'percent' => 55, 'reason' => 'raise the rate',
+        ])->assertCreated()->json('id');
+
+    $queue = collect(
+        $this->actingAs($checker)->withSession(['school_id' => $ctx['school']->id])
+            ->getJson('/api/v1/finance/discount-policy-changes/pending')
+            ->assertOk()->json('data')
+    );
+
+    // THE PRESENCE CHECK IS POSITIVE, AND IT PRINTS WHAT THE QUEUE ACTUALLY HELD.
+    //
+    // `expect($row)->not->toBeNull($message)` is the obvious form and is the one
+    // PestNegatedExpectationMessagesTest exists to refuse: `->not->` runs the POSITIVE assertion,
+    // and when that succeeds it discards the exception and composes its own sentence out of
+    // shortened-exported arguments — so the sentence written there is never the failure description
+    // and is truncated mid-string. On a POSITIVE matcher the same `$message` IS the description and
+    // prints whole, which is the whole of the fix.
+    //
+    // WHY NOT `->toContain($changeId)`, WHICH IS THE TIDIER LINE. MEASURED, not assumed: PHPUnit's
+    // TraversableContains exports only the NEEDLE, so its failure reads `Failed asserting that an
+    // array contains '<uuid>'.` and the haystack never appears. That is strictly less than the
+    // discarded sentence carried, and it cannot answer the question a reader hitting this line has
+    // — was the change ABSENT, or present under a DIFFERENT id? The ids go in the message because
+    // that is the only channel that prints them.
+    //
+    // Not `toBe([$changeId])` either, which would print a full array diff: it would assert the queue
+    // holds nothing ELSE, a stronger claim than this arm is about and one that reds on any future
+    // fixture that submits a second change.
+    $queuedIds = $queue->pluck('id')->all();
+
+    expect(in_array($changeId, $queuedIds, true))->toBeTrue(
+        'the submitted change was absent from the checker’s queue; it held: '
+        .(count($queuedIds) === 0 ? '(nothing)' : implode(', ', $queuedIds))
+    );
+
+    $row = $queue->firstWhere('id', $changeId);
+
+    // The proposed term IS absent — this is the case the inheritance exists for, and the case a
+    // screen rendering only `base` shows nothing at all in.
+    expect($row)->toHaveKey('base')
+        ->and($row['base'])->toBeNull();
+
+    // And the value the catalog will actually be stamped with is on the wire under its own key.
+    expect($row)->toHaveKey('effective_base')
+        ->and($row['effective_base'])->toBe('total');
+
+    // The rate it qualifies arrives beside it, so the queue can render one phrase rather than two
+    // fields a checker has to combine themselves.
+    expect($row['percent'])->toBe(55)
+        ->and($row['basis'])->toBe('percent');
+
+    // NOT VACUOUS ON THE VALUE: approve it and the catalog receives the same base the checker was
+    // shown. Without this the arm pins a key that agrees with nothing.
+    $this->actingAs($checker)->withSession(['school_id' => $ctx['school']->id])
+        ->postJson("/api/v1/finance/discount-policy-changes/{$changeId}/approve")
+        ->assertOk();
+
+    $v2 = DiscountPolicy::withoutGlobalScopes()
+        ->where('school_id', $ctx['school']->id)->where('status', 'active')
+        ->latest('id')->firstOrFail();
+
+    expect($v2->base->value)->toBe($row['effective_base']);
+});
+
+/*
 |--------------------------------------------------------------------------
 | 7 — the base is resolved from the POLICY, so the two apply paths agree
 |--------------------------------------------------------------------------

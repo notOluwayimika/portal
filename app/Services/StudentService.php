@@ -30,6 +30,10 @@ class StudentService
                 'currentCurriculum.curriculum.classLevelArm.classLevel',
                 'currentCurriculum.curriculum.classLevelArm.arm',
                 'currentCurriculum.curriculum.classLevelArm.stream',
+                // The index renders a Scholarship column, and StudentResource reads the relation
+                // once per row — so without this it is one extra query per pupil on the page, the
+                // same N+1 StudentsExport already eager-loads its way out of.
+                'scholarship',
             ])
             ->latest()
             ->paginate($request->integer('per_page', 25));

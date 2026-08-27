@@ -231,6 +231,9 @@ Route::middleware(['auth:sanctum', 'tenant', 'permission:academics.rollover'])->
     Route::post('/rollover/end-of-term', [RolloverController::class, 'commitEndOfTerm']);
     Route::post('/rollover/end-of-year/preview', [RolloverController::class, 'previewEndOfYear']);
     Route::post('/rollover/end-of-year', [RolloverController::class, 'commitEndOfYear']);
+    // Resolution AT the block: the ccm-active gate names the classes and this folds them. Same
+    // permission as the rollover it unblocks — it is a step of that operation, not a separate one.
+    Route::post('/rollover/fold-ccm', [RolloverController::class, 'foldCcm']);
     Route::get('/rollover/batches', [RolloverController::class, 'batches']);
 });
 

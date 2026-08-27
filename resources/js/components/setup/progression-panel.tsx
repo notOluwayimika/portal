@@ -104,6 +104,9 @@ export function ProgressionPanel({
     const [warnings, setWarnings] = useState<string[]>([]);
     const [newSlot, setNewSlot] = useState('');
     const [confirmSlot, setConfirmSlot] = useState<string | null>(null);
+    // Which slot has a CCM write in flight — disables just that row's control, so a
+    // double-click cannot queue a second write against a row the first has not returned.
+    const [pendingSlot, setPendingSlot] = useState<string | null>(null);
     const { errors, setErrors, handle } = useApiErrors();
 
     const [nextId, setNextId] = useState('');
@@ -184,6 +187,36 @@ export function ProgressionPanel({
             handle(error, 'Failed to remove term slot');
         } finally {
             setConfirmSlot(null);
+        }
+    };
+
+    // ── SETS THE FLAG, NEVER FLIPS IT ────────────────────────────────────────
+    // The desired state is sent explicitly, because the endpoint behind this is a
+    // SETTER: it takes `is_ccm` as `required|boolean` rather than inverting what it
+    // finds. Sending `!slot.is_ccm` from the client would reintroduce the same defect
+    // one layer up — a double-submit, a retry, or a stale panel would land the flag
+    // opposite to what the operator saw, with no error, because inverting twice is
+    // legal. `next` is computed once here and is what crosses the wire, so the request
+    // carries a decision the server can apply idempotently.
+    const setSlotCcm = async (slotId: string, next: boolean) => {
+        setErrors({});
+        setPendingSlot(slotId);
+
+        try {
+            const response = await axios.patch(
+                `/api/class-levels/${classLevel.id}/participation/${slotId}`,
+                { is_ccm: next },
+            );
+            hydrate(response.data.progression);
+            toast.success(next ? 'Slot marked CCM' : 'CCM removed from slot');
+        } catch (error) {
+            // NOT rolled back optimistically, because nothing was applied optimistically:
+            // the row re-renders from the server's own progression payload on success and
+            // is left untouched on failure, so the screen never shows a state the server
+            // did not confirm.
+            handle(error, 'Failed to update the CCM flag for this slot');
+        } finally {
+            setPendingSlot(null);
         }
     };
 
@@ -355,6 +388,26 @@ export function ProgressionPanel({
                                             )}
                                         </span>
                                         <Can permission="academic_setup.manage">
+                                            <label className="mr-2 flex items-center gap-1.5">
+                                                <input
+                                                    type="checkbox"
+                                                    className="h-3.5 w-3.5"
+                                                    checked={slot.is_ccm}
+                                                    disabled={
+                                                        pendingSlot === slot.id
+                                                    }
+                                                    onChange={(e) =>
+                                                        setSlotCcm(
+                                                            slot.id,
+                                                            e.target.checked,
+                                                        )
+                                                    }
+                                                    aria-label={`Term ${slot.term_order} is a CCM slot`}
+                                                />
+                                                <span className="text-[11px] text-gray-500">
+                                                    CCM
+                                                </span>
+                                            </label>
                                             <button
                                                 className="btn btn-ghost btn-sm btn-icon"
                                                 onClick={() =>

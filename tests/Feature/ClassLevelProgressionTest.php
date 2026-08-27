@@ -203,6 +203,81 @@ it('creates participation NON-CCM in v1', function () {
     expect($response->json('progression.participation.0.term_order'))->toBe(2);
 });
 
+// ---------------------------------------------------------------------------
+// THE CCM FLAG IS SET, NOT FLIPPED — the endpoint the progression panel's toggle calls
+// ---------------------------------------------------------------------------
+
+/** Create a slot and return its model, so the PATCH has a uuid to address. */
+function clp_slot(array $w, ClassLevel $level, int $termOrder): ClassLevelTermParticipation
+{
+    test()->actingAs($w['admin'])
+        ->postJson("/api/class-levels/{$level->uuid}/participation", ['term_order' => $termOrder])
+        ->assertStatus(201);
+
+    return ClassLevelTermParticipation::withoutGlobalScope(SchoolScope::class)
+        ->where('class_level_id', $level->id)->where('term_order', $termOrder)->firstOrFail();
+}
+
+it('sets the CCM flag to the state the caller asked for, and sending it TWICE lands the same row', function () {
+    $w = clp_world();
+    $slot = clp_slot($w, $w['a'], 2);
+
+    $patch = fn (bool $isCcm) => test()->actingAs($w['admin'])
+        ->patchJson("/api/class-levels/{$w['a']->uuid}/participation/{$slot->uuid}", ['is_ccm' => $isCcm]);
+
+    $patch(true)->assertOk();
+    expect($slot->fresh()->is_ccm)->toBeTrue();
+
+    // ── IDEMPOTENCE IS THE ASSERTION, NOT THE FIRST WRITE ──────────────────────────────────────
+    // The endpoint this replaced INVERTED whatever it found, so the same request sent twice landed
+    // the flag back where it started — a double-submit, a retry or a stale panel silently produced
+    // the opposite of what the operator saw, with no error, because inverting twice is legal. A
+    // test that only asserted the first write would pass against the inverter too. The second call
+    // is what tells them apart, and it is why the panel sends an explicit `next` rather than
+    // `!slot.is_ccm`.
+    $patch(true)->assertOk();
+    expect($slot->fresh()->is_ccm)->toBeTrue();
+
+    // And the other direction, so "always writes true" cannot pass the arms above.
+    $patch(false)->assertOk();
+    expect($slot->fresh()->is_ccm)->toBeFalse();
+
+    $patch(false)->assertOk();
+    expect($slot->fresh()->is_ccm)->toBeFalse();
+});
+
+it('refuses a CCM update that states no flag, rather than defaulting it to false', function () {
+    $w = clp_world();
+    $slot = clp_slot($w, $w['a'], 2);
+
+    test()->actingAs($w['admin'])
+        ->patchJson("/api/class-levels/{$w['a']->uuid}/participation/{$slot->uuid}", ['is_ccm' => true])
+        ->assertOk();
+
+    // `required`, NOT `sometimes`: on an update there is no default to fall back to, so an absent
+    // key would mean "make it false" — a change nobody asked for, applied to a row that was true.
+    test()->actingAs($w['admin'])
+        ->patchJson("/api/class-levels/{$w['a']->uuid}/participation/{$slot->uuid}", [])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors('is_ccm');
+
+    // The refusal left the row ALONE. A 422 that had already written is the failure this arm is for.
+    expect($slot->fresh()->is_ccm)->toBeTrue();
+});
+
+it('refuses to set the CCM flag on a slot belonging to a different level', function () {
+    // Same nested-route integrity the delete path enforces — a slot of Year 8 must not be
+    // reachable through Year 7's URL, or the panel could write across levels within a school.
+    $w = clp_world();
+    $slot = clp_slot($w, $w['b'], 1);
+
+    test()->actingAs($w['admin'])
+        ->patchJson("/api/class-levels/{$w['a']->uuid}/participation/{$slot->uuid}", ['is_ccm' => true])
+        ->assertStatus(404);
+
+    expect($slot->fresh()->is_ccm)->toBeFalse();
+});
+
 it('refuses to remove a term slot belonging to a different level', function () {
     // Nested-route integrity: both are School-scoped, so this closes the remaining same-school
     // mismatch — a slot of Year 8 cannot be deleted through Year 7's URL.

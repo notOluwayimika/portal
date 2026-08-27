@@ -228,6 +228,25 @@ class SeedDriveFixture extends Command
         // expression of either in this command would report a population the run does not bill.
         $schedules = fn (int $schoolId): int => ActiveSchool::runFor($schoolId, fn () => $states->activeFeeScheduleCount($schoolId));
 
+        /*
+         * THE SCHOLARSHIPS TAB'S TWO COLUMNS, and the split is the point rather than a nicety — the
+         * same shape as `Payments (portal)` / `Payments (migrated)` beside them.
+         *
+         * That screen classifies a scholarship as `discount` or `sponsored`, and the ONLY state it can
+         * act on is an UNCONFIGURED one (`kind IS NULL`). A single `Scholarships` count would read as
+         * coverage on a fixture whose rows were all already classified — which is precisely what the
+         * fixture looks like AFTER a drive has run, since re-seeding is the only thing that puts them
+         * back. So the second column is the one a drive actually reads before opening a browser: zero
+         * there means there is nothing to classify and the drive is worthless before it starts.
+         *
+         * `scholarships` is a core table, not a `finance_` one, so the boundary lint does not apply and
+         * the count is taken here rather than routed through DriveFinanceStates.
+         */
+        $scholarships = fn (int $schoolId): int => $count('scholarships', $schoolId);
+
+        $unconfiguredScholarships = fn (int $schoolId): int => (int) DB::table('scholarships')
+            ->where('school_id', $schoolId)->whereNull('kind')->count();
+
         $port = app(BillableEnrollmentProvider::class);
 
         $cohort = fn (int $schoolId): int => count($port->listForCohort(
@@ -255,12 +274,12 @@ class SeedDriveFixture extends Command
         // duplicate-warning and the reuse backstop are measured against, so a drive that
         // reports "one guardian row after two submissions" can be checked against where it
         // started rather than asserted.
-        $this->info('Authoring slot per school — the fee-schedules screen selects a term, a class level and an account; the discount-policies screen amends and retires a policy; the receipt screen (U11) renders ONE payment and refuses for a migrated one; the guardians screen links a new guardian to students by admission number:');
+        $this->info('Authoring slot per school — the fee-schedules screen selects a term, a class level and an account; the discount-policies screen amends and retires a policy; the receipt screen (U11) renders ONE payment and refuses for a migrated one; the guardians screen links a new guardian to students by admission number; the Scholarships tab classifies an UNCONFIGURED scholarship:');
         $this->table(
-            ['School', 'Academic sessions', 'Terms', 'Class levels', 'Bank accounts', 'Discount policies', 'Payments (portal)', 'Payments (migrated)', 'Payments w/ remainder', 'Open invoices', 'Students', 'Guardians'],
+            ['School', 'Academic sessions', 'Terms', 'Class levels', 'Bank accounts', 'Discount policies', 'Payments (portal)', 'Payments (migrated)', 'Payments w/ remainder', 'Open invoices', 'Students', 'Guardians', 'Scholarships', 'Scholarships (unconfigured)'],
             [
-                ['A (school#'.$cast->schoolAId.')', $count('academic_sessions', $cast->schoolAId), $count('terms', $cast->schoolAId), $count('class_levels', $cast->schoolAId), $accounts($cast->schoolAId), $policies($cast->schoolAId), $payments($cast->schoolAId, 'portal'), $payments($cast->schoolAId, 'migrated'), $remainders($cast->schoolAId), $openInvoices($cast->schoolAId), $count('students', $cast->schoolAId), $count('guardians', $cast->schoolAId)],
-                ['B (school#'.$cast->schoolBId.')', $count('academic_sessions', $cast->schoolBId), $count('terms', $cast->schoolBId), $count('class_levels', $cast->schoolBId), $accounts($cast->schoolBId), $policies($cast->schoolBId), $payments($cast->schoolBId, 'portal'), $payments($cast->schoolBId, 'migrated'), $remainders($cast->schoolBId), $openInvoices($cast->schoolBId), $count('students', $cast->schoolBId), $count('guardians', $cast->schoolBId)],
+                ['A (school#'.$cast->schoolAId.')', $count('academic_sessions', $cast->schoolAId), $count('terms', $cast->schoolAId), $count('class_levels', $cast->schoolAId), $accounts($cast->schoolAId), $policies($cast->schoolAId), $payments($cast->schoolAId, 'portal'), $payments($cast->schoolAId, 'migrated'), $remainders($cast->schoolAId), $openInvoices($cast->schoolAId), $count('students', $cast->schoolAId), $count('guardians', $cast->schoolAId), $scholarships($cast->schoolAId), $unconfiguredScholarships($cast->schoolAId)],
+                ['B (school#'.$cast->schoolBId.')', $count('academic_sessions', $cast->schoolBId), $count('terms', $cast->schoolBId), $count('class_levels', $cast->schoolBId), $accounts($cast->schoolBId), $policies($cast->schoolBId), $payments($cast->schoolBId, 'portal'), $payments($cast->schoolBId, 'migrated'), $remainders($cast->schoolBId), $openInvoices($cast->schoolBId), $count('students', $cast->schoolBId), $count('guardians', $cast->schoolBId), $scholarships($cast->schoolBId), $unconfiguredScholarships($cast->schoolBId)],
             ],
         );
 

@@ -96,10 +96,21 @@ nobody anticipated (`finance_demo`, `school_uat`) is refused rather than wiped. 
 `migrate:fresh`-es, which is why the guards are structural. Both must be satisfied
 honestly; neither is a thing to route around.
 
-Every state in the fixture is produced by **executing the real Actions**, never by
-writing rows, so nothing you see is a state the system cannot reach —
+Every Finance state in the fixture is produced by **executing the real Actions**,
+never by writing rows, so nothing you see is a state the system cannot reach —
 `finance:reconcile-accounts` runs clean on the result
 (`docs/finance/drive-environment.md:17-19`).
+
+**ONE DOCUMENTED EXCEPTION, and it exists because the rule's own justification
+inverts there.** `DriveCastSeeder::seedScholarships()` writes `scholarships.kind`
+as NULL directly, because NULL is a state that EXISTS IN PRODUCTION — the
+2026-08-26 migration backfilled every row to it — and that **no current code path
+can create**, since `ScholarshipController::store()` requires `kind`. Routing it
+through the endpoint would produce two CLASSIFIED rows and destroy the only state
+that screen acts on, while making the fixture look more principled than it was.
+The seeder says so in those terms at the write. Treat a new exception the same way:
+it is admissible only when the state is real in production and unreachable by every
+writer, and it must be argued at the line that makes it.
 
 **Drive the fixture, not the production copy.** Past drives disagreed on this.
 Three ran against the local production copy — the sidebar
@@ -137,13 +148,18 @@ by construction.
 The seed command prints **TWO count tables**, not one, and a reader who takes the
 first one for the whole thing will look for a column that is in the other.
 
-**Table 1 — the bulk-run slot**, thirteen columns: academic sessions, terms, class
-levels, bank accounts, discount policies, payments split by `origin`, then
+**Table 1 — the bulk-run slot**, FIFTEEN columns: school, academic sessions, terms,
+class levels, bank accounts, discount policies, payments split by `origin`, then
 **payments w/ remainder, open invoices**, then **active fee schedules, cohort at
-slot, unplaceable**.
+slot, unplaceable**, then **decided credit notes, decided voids**.
 
-**Table 2 — the guardians slot**, twelve columns: the same first ten, then
-**students, guardians**.
+**Table 2 — the guardians slot**, FOURTEEN columns: the same first ten, then
+**students, guardians**, then **scholarships, scholarships (unconfigured)**.
+
+Both counts were re-derived against the command's actual output on 2026-08-27 and
+both were WRONG here before that — thirteen and twelve, written when U13/U14's two
+columns and U6's three had not all landed. That is this section's own rule failing
+in this very paragraph, which is why the instruction is to read the OUTPUT.
 
 **`Payments w/ remainder` and `Open invoices` were added for U10's allocation
 drive**, and they are the current instance of the rule two paragraphs down. That
@@ -180,11 +196,22 @@ null coordinates and seeded no schedule, so a run would have billed nobody on a
 fixture that looked full. A guardians drive then needed students and guardians, and
 added a second table rather than widening the first. U10's allocation drive then
 needed payments with a remainder and open invoices, and found the same shape a third
-time: three payments, none of them allocatable. **When your screen depends on
-something the tables do not count, add the column before you open a browser** — and
-update the enumeration in this paragraph with it. That last step has now been missed
-twice and caught twice, which is the argument for reading the command's ACTUAL output
-against this paragraph rather than trusting it.
+time: three payments, none of them allocatable. U13/U14 added the two decided-document
+columns. And the `scholarships.kind` drive found the FOURTH instance and the starkest:
+`DriveCastSeeder` and `SeedDriveFixture` between them contained the string
+"scholarship" **zero times**, so the Scholarships tab would have opened onto an empty
+list. **When your screen depends on something the tables do not count, add the column
+before you open a browser** — and update the enumeration in this paragraph with it.
+That last step has now been missed THREE times and caught three times, which is the
+argument for reading the command's ACTUAL output against this paragraph rather than
+trusting it.
+
+**`Scholarships` is SPLIT into a total and an unconfigured count, for the reason
+`Payments (portal)/(migrated)` is split.** The tab's only actionable state is
+`kind IS NULL`; a single total would read as coverage on a fixture whose rows were all
+already classified — which is exactly what the fixture looks like after ONE drive has
+run, since re-seeding is the only thing that puts them back. The second column is the
+one to read before opening a browser.
 
 **Nothing in this repository can execute that table.** `SeedDriveFixture` refuses
 outside `APP_ENV=drive` (`:49-54`) and `phpunit.xml:29` pins the suite to

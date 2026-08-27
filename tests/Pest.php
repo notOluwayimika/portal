@@ -263,7 +263,26 @@ function rc_term(AcademicSession $session, int $order): Term
     ]);
 }
 
-function rc_level(School $school, string $name, int $order, array $slots, array $attrs = []): array
+/**
+ * A class level, its term-slot participation rows, and one arm.
+ *
+ * ── $ccmSlots IS APPENDED, AND THAT IS THE WHOLE POINT ───────────────────────────────────────────
+ * It is the SIXTH parameter, after `$attrs`, so all 33 existing call sites stay byte-unchanged —
+ * inserting it beside `$slots`, where it belongs logically, would silently shift the positional
+ * `$attrs` argument that several rollover tests pass. Default `[]` means every slot is written
+ * `is_ccm = false`, which is exactly the behaviour every caller had before it existed.
+ *
+ * A PER-SLOT LIST RATHER THAN A BARE BOOLEAN, deliberately: CCM participation is held at
+ * (class level, term slot) granularity, so the shape this project actually needs is "runs slots
+ * [1, 3], and slot 3 is the CCM variant" — a boolean cannot express it and would force a caller
+ * wanting one CCM slot to write the participation rows by hand, which is the duplication this
+ * helper exists to remove. It also matches `mft_world`'s existing `$ccmSlots` parameter in
+ * MoveFromTermJobTest, so there is one spelling of this idea in the suite rather than two.
+ *
+ * @param  list<int>  $slots  term orders this level runs
+ * @param  list<int>  $ccmSlots  which of those slots are the CCM variant; default none
+ */
+function rc_level(School $school, string $name, int $order, array $slots, array $attrs = [], array $ccmSlots = []): array
 {
     $level = ClassLevel::forceCreate(array_merge([
         'school_id' => $school->id, 'name' => $name, 'order' => $order,
@@ -274,7 +293,7 @@ function rc_level(School $school, string $name, int $order, array $slots, array 
             'school_id' => $school->id,
             'class_level_id' => $level->id,
             'term_order' => $slot,
-            'is_ccm' => false,
+            'is_ccm' => in_array($slot, $ccmSlots, true),
         ]);
     }
 

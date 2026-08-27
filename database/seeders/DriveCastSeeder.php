@@ -10,6 +10,7 @@ use App\Models\ClassLevelArm;
 use App\Models\Curriculum;
 use App\Models\Permission;
 use App\Models\Role;
+use App\Models\Scholarship;
 use App\Models\School;
 use App\Models\Student;
 use App\Models\StudentCurriculum;
@@ -92,6 +93,9 @@ class DriveCastSeeder extends Seeder
         $this->seedAcademicSlot($schoolA);
         $this->seedAcademicSlot($schoolB);
 
+        $this->seedScholarships($schoolA);
+        $this->seedScholarships($schoolB);
+
         $this->seedCast($schoolA, $schoolB);
 
         // One episode per state (F7: one active invoice per episode). Emma gets a student but no
@@ -145,6 +149,57 @@ class DriveCastSeeder extends Seeder
         $this->enrollments['patVoid'] = $this->enrollFor($schoolA, $pat);
 
         $this->student($schoolA, 'Emma', 'Empty'); // no enrollment — the "no invoices" edge
+    }
+
+    /**
+     * TWO SCHOLARSHIPS PER SCHOOL, BOTH WITH `kind` NULL — the Scholarships tab's whole subject.
+     *
+     * That tab classifies a scholarship as `discount` (the school reduces the bill; the family still
+     * gets a smaller one) or `sponsored` (an outside body pays; the family is not billed at all), and
+     * an UNCONFIGURED row is the only state it can act on. Before this the fixture contained the
+     * string "scholarship" exactly zero times, so the tab would have opened onto an empty list and
+     * proved nothing — the same class of failure as the empty term select U1 commit 1 fixed, and
+     * invisible for the same reason (`SeedDriveFixture` refuses outside `APP_ENV=drive`; the suite is
+     * pinned to `APP_ENV=testing`, so no test can read this seeder at all).
+     *
+     * ── THIS IS THE ONE PLACE THE FIXTURE WRITES A ROW INSTEAD OF EXECUTING AN ACTION ────────────────
+     *
+     * It is the SAME EXEMPTION `Payments (migrated)` already carries: a state that EXISTS IN
+     * PRODUCTION and that NO CURRENT CODE PATH CAN CREATE. `2026_08_26_100000` backfilled every
+     * existing `scholarships` row to NULL deliberately, because nothing in the data said which scheme
+     * any of them was — the local production copy holds two scholarships and both are NULL. And since
+     * `ScholarshipController::store()` now makes `kind` REQUIRED, there is no endpoint, no console
+     * command and no Action anywhere that can mint an unconfigured row.
+     *
+     * SO DO NOT "FIX" THIS BY ROUTING IT THROUGH THE ENDPOINT. Doing so would produce two CLASSIFIED
+     * scholarships and destroy the only state this screen is about, while leaving the fixture looking
+     * more correct than it was. If a legitimate writer for NULL ever appears, this method should move
+     * to it; until then the direct write is the honest reproduction of production.
+     *
+     * ── WHY NO STUDENTS ARE PUT ON THEM ──────────────────────────────────────────────────────────────
+     *
+     * The tab renders a name, a kind control and row actions. It does not count holders, does not list
+     * students and does not read `students.scholarship_id` at any point
+     * (`resources/js/pages/admin/scholarships-tab.tsx`). Seeding holders would add rows nothing on the
+     * screen can see. The one place it would matter is `destroy()`, which this drive does not exercise
+     * — a scholarship with holders is an FK question, and it is named in the report as undriven rather
+     * than half-staged here.
+     *
+     * ── IDENTICAL NAMES ACROSS THE TWO SCHOOLS, ON PURPOSE ───────────────────────────────────────────
+     *
+     * `BSS` and `C2C` in both, exactly as `First Term` and `JSS 1` are identical by construction. A
+     * screen showing "BSS" therefore proves nothing about WHICH school's row it is, which forces the
+     * isolation check onto the ids and uuids where it belongs.
+     */
+    private function seedScholarships(School $school): void
+    {
+        foreach (['BSS', 'C2C'] as $name) {
+            Scholarship::create([
+                'school_id' => $school->id,
+                'name' => $name,
+                'kind' => null,
+            ]);
+        }
     }
 
     /**

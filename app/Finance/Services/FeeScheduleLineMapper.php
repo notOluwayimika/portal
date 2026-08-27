@@ -7,7 +7,9 @@ use App\Finance\DTOs\InvoiceLineSpec;
 use App\Finance\Enums\FeeScheduleStatus;
 use App\Finance\Enums\InvoiceKind;
 use App\Finance\Enums\InvoiceLineKind;
+use App\Finance\Jobs\ProcessBulkInvoiceRun;
 use App\Finance\Models\FeeSchedule;
+use App\Finance\Models\StudentDiscountAward;
 use App\Support\ActiveSchool;
 
 /**
@@ -35,11 +37,17 @@ use App\Support\ActiveSchool;
  * ({@see InvoiceKind::Supplementary}). Do not "fix" this into billing everything.
  *
  * CHARGE LINES ONLY. Every line is {@see InvoiceLineKind::Charge}; `discountPolicyId` and `percent` are
- * never set. U8's discount AWARD (which student gets which policy) does not exist, so there is no fact
- * from which a bulk reduction line could be justified — and keeping reductions out means the
- * finance_invoice_lines_reduction_guard trigger, which refuses a reduction whose policy is absent /
- * non-active / cross-School, is never reached from this path at all rather than being reached and
- * satisfied by accident.
+ * never set. THE ORIGINAL REASON HAS EXPIRED AND THE RULE HAS NOT: the discount AWARD (which student
+ * gets which policy) now exists — {@see StudentDiscountAward} — so there IS a
+ * fact from which a reduction line can be justified. It is just not a fact about a PRICE LIST. This
+ * method is handed a schedule and a School and no student, deliberately (see the paragraph below on
+ * why it takes a FeeSchedule), so it has nothing to resolve an award against and must not acquire a
+ * student in order to. The bulk run appends the reduction per student, to a COPY of what this
+ * returns; see {@see ProcessBulkInvoiceRun::reductionSpecFor()}.
+ *
+ * Keeping reductions out of THIS method still means the finance_invoice_lines_reduction_guard
+ * trigger is never reached from the mapper's own output — a schedule cannot produce a policy
+ * citation, so it cannot produce one that is absent, non-active or cross-School.
  *
  * `isDiscountable` is read from the ITEM, never left to the DTO's `true` default — GenerateInvoice
  * re-resolves it server-side anyway (S1 3.6), so a wrong value here would be silently corrected there

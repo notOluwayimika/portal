@@ -45,6 +45,28 @@ class DiscountPolicyChangeResource extends JsonResource
             'value_minor' => $this->value_minor,
             'value_currency' => $this->value_currency,
             'percent' => $this->percent,
+            // AXIS C, ON THE CHECKER'S SIDE — TWO KEYS, AND THEY ANSWER DIFFERENT QUESTIONS.
+            //
+            // `base` is the RAW PROPOSED TERM: what the maker actually typed, or null when they
+            // typed nothing. It is not what the catalog will hold, and on the ordinary amend — a
+            // rate raised, the base unmentioned — it is null precisely when the value matters most.
+            // Shipping only this key was the checker-visibility hole: the class docblock above
+            // asserts a term absent from here is a term decided unseen, and this key was absent in
+            // exactly the case the inheritance was built to cover.
+            'base' => $this->base?->value,
+            // `effective_base` is WHAT WILL BE STAMPED — the maker's word, or the inherited base, or
+            // the default, resolved by the ONE method that also writes the catalog
+            // ({@see DiscountPolicyChange::effectiveBase()}). The rule is NOT re-stated here on
+            // purpose: two copies agree until one is edited, and the copy on the screen is the one
+            // nobody notices drifting. Null only on a retire, which approves no policy at all.
+            //
+            // "50%" reads identically whether it means half the tuition or half the whole bill, and
+            // those are different amounts of money. This is the key that tells them apart.
+            //
+            // N+1: `pending()` eager-loads `target`, so the queue costs no extra query. The
+            // single-row responses (submit/approve/reject) lazy-load one row each, which is the
+            // right trade for a term that must not be shown wrong.
+            'effective_base' => $this->effectiveBase()?->value,
             'requires_approval' => $this->requires_approval,
             'reason' => $this->reason,
             // The queue reads every type's free text under one column.

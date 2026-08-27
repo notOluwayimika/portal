@@ -172,11 +172,54 @@ operational facts an agent needs most often.
   general parent of the self-referential cap: not "the test must be able to fail on
   its axis" but **"the fixture must make the axis the only thing that can pass it."**
 
+  **And check the DOUBLE, not only the instrument.** Laravel's fakes record intent
+  without enforcing the preconditions the real service enforces — `BusFake::batch()`
+  returns a `PendingBatchFake` that skips `ensureJobIsBatchable()` entirely, so a
+  fully-faked suite is green about the FAKE, not the system. Paid for twice:
+  `MoveToNextYearJob` and `MoveFromTermJob` shipped without `Batchable` and `--commit`
+  had never once worked; `MoveFromCcmJob` was caught with the same gap before it
+  shipped. `Queue`, `Mail`, `Notification` and `Http` are all more permissive than
+  what they stand in for. **If correctness rests on a precondition the real service
+  validates, one arm must run against the real service.** Same principle as the
+  instrument, one layer further in: anything standing in for production can diverge
+  from it in exactly the dimension under test.
+
+  **And check the instrument, not only the fixture.** A mutation-testing summariser
+  that prints only Pest's `failures` bucket under-reports every exception-based kill
+  as a SURVIVOR — and throwing is how most guards kill, so it disagrees with reality
+  for exactly the controls most likely to be guards. Bit once (2026-08-26): a
+  silent-drop guard's mutant was reported green; the mutation was working and the
+  guard was raising a `RuntimeException`, which Pest files as an **error**. Count
+  errors as kills. Same shape one layer out: **a measurement that mis-measures itself
+  manufactures a wrong conclusion with nobody in the room to catch it.** Two
+  corollaries paid for in the same hour: verify a mutation was APPLIED before
+  trusting its result (a substitution that silently does not match reads as a
+  survivor), and keep the mutation a one-line edit — a clever loop that escaped its
+  replacement corrupted the file and reported six reds that measured nothing.
+
   Its other half: **derive the expected value by an INDEPENDENT path, never by
   restating the rule under test.** An expectation computed the way the code computes
   it asserts that the implementation equals itself. The arm expectation is built from
   an explicitly-ordered query, not from the resolver's own ordering — which is why
   flipping `orderBy('id')` to `orderByDesc('id')` reds it.
+- **A monotone counter is an ACCUMULATOR, never a current-state signal — derive live state from
+  live rows.** `job_batches.failed_jobs` only ever goes up: `decrementPendingJobs` prunes the uuid
+  out of `failed_job_ids` on a retry-success but writes `'failed_jobs' => $batch->failed_jobs`
+  unchanged. So a rule reading it as "failures outstanding right now" inherits history that has
+  stopped being true, and `pending === failed` compared two accumulators as though they described
+  the batch at this instant. Bit once (2026-08-26) on the CCM fold panel, and note WHICH DIRECTION it
+  failed in: it withdrew "do not change the current session yet" while a retried worker was still
+  running — the FALSELY-SAFE direction. It did not remove the retry-window lie, it swapped which half
+  of the window told it, toward the worse half. The prior `finished_at === null` reading had been
+  CORRECT in exactly that window.
+  The fix keys on the `failed_jobs` ROW, which is live — `queue:retry` deletes it before re-dispatch
+  — rather than the counter, which is a tombstone. That a listed id with no row means "retry in
+  flight" is the tell that the new signal is ground truth and not a proxy: it catches a case a
+  count of the ids alone still gets wrong. Same family as the fixture whose degrees of freedom
+  collapsed and the wrapper exit code — an instrument that agrees with itself but not with reality,
+  this time one layer below the surface, in the data model. **Before comparing two numbers from a
+  row, ask of each: does anything ever DECREMENT this?**
+
 - **A control the server never receives is theatre, and theatre is worse than
   absence.** The rollover commit took two session ids and nothing else, so it could
   not distinguish a plan the operator had read from one a client had merely fetched,

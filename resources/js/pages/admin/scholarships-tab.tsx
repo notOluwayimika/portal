@@ -2,17 +2,59 @@ import axios from 'axios';
 import { Check, Pencil, Trash2, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'react-toastify';
-import type { Scholarship } from '@/types/models';
 import { Confirm, Empty, Modal } from '@/components/setup/setup-ui';
+import type { Scholarship, ScholarshipKind } from '@/types/models';
 
 interface ScholarshipForm {
     name: string;
+    /** '' is "the operator has not chosen yet" in this form only — the server refuses it on create. */
+    kind: ScholarshipKind | '';
+}
+
+/*
+ * WHAT THE SCHEME DOES, NOT WHAT THE ENUM IS CALLED.
+ *
+ * 'discount' and 'sponsored' are the wire values and they mean nothing to a bursar reading this
+ * screen. What they need to decide between is whether the family still gets a bill. So the labels
+ * below say that, and the enum value is never rendered on its own.
+ *
+ * A scholarship with no kind is NOT blank here. It is refused by the bulk invoice run and by a
+ * discount award, so it is a state the operator has to be able to see and act on — rendering it as
+ * an empty cell would hide the one thing on this screen that currently blocks billing.
+ */
+const KIND_LABEL: Record<ScholarshipKind, string> = {
+    discount: 'Discount — the school reduces the bill',
+    sponsored: 'Sponsored — someone outside pays',
+};
+
+const KIND_DETAIL: Record<ScholarshipKind, string> = {
+    discount:
+        'The family still gets a bill, for less. These students are invoiced by the termly run.',
+    sponsored:
+        'An outside organisation pays, off platform. The family is not billed at all, and these students are left out of the termly run.',
+};
+
+const UNCONFIGURED_LABEL = 'Not configured';
+const UNCONFIGURED_DETAIL =
+    'Nobody has said which scheme this is. Students on it cannot be billed and cannot be given a discount until you choose.';
+
+/** The message the server sent, if it sent one, so a 422 says which field rather than "an error". */
+function apiMessage(error: unknown, fallback: string): string {
+    if (axios.isAxiosError(error)) {
+        const data = error.response?.data as
+            | { message?: string; error?: string }
+            | undefined;
+
+        return data?.message ?? data?.error ?? fallback;
+    }
+
+    return fallback;
 }
 
 export function ScholarshipsTab() {
     const [scholarships, setScholarships] = useState<Scholarship[]>([]);
     const [modal, setModal] = useState<string | null>(null);
-    const [form, setForm] = useState<ScholarshipForm>({ name: '' });
+    const [form, setForm] = useState<ScholarshipForm>({ name: '', kind: '' });
     const [confirm, setConfirm] = useState<Scholarship | null>(null);
     const [inlineId, setInlineId] = useState<string | null>(null);
     const [inlineVal, setInlineVal] = useState<string>('');
@@ -50,6 +92,46 @@ export function ScholarshipsTab() {
         }
     };
 
+    /*
+     * The kind change sends the NAME too, because PUT /api/scholarships/{uuid} requires it. It is
+     * the row's current name, unchanged — this control classifies, it does not rename.
+     */
+    const changeKind = async (
+        scholarship: Scholarship,
+        kind: ScholarshipKind,
+    ): Promise<void> => {
+        if (scholarship.kind === kind) {
+            return;
+        }
+
+        setLoading(true);
+
+        try {
+            const response = await axios.put(
+                `/api/scholarships/${scholarship.uuid}`,
+                { name: scholarship.name, kind },
+            );
+
+            if (response.status === 200) {
+                toast.success(
+                    `"${scholarship.name}" is now ${KIND_LABEL[kind]}.`,
+                );
+            } else {
+                toast.error('Failed to update scholarship.');
+            }
+        } catch (error) {
+            console.log(error);
+            toast.error(
+                apiMessage(
+                    error,
+                    'An error occurred while saving the scholarship.',
+                ),
+            );
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const save = async (): Promise<void> => {
         if (!form.name.trim() && !inlineVal.trim()) {
             return;
@@ -82,7 +164,12 @@ export function ScholarshipsTab() {
             }
         } catch (error) {
             console.log(error);
-            toast.error('An error occurred while saving the scholarship.');
+            toast.error(
+                apiMessage(
+                    error,
+                    'An error occurred while saving the scholarship.',
+                ),
+            );
         } finally {
             setLoading(false);
         }
@@ -105,7 +192,7 @@ export function ScholarshipsTab() {
                     <button
                         className="btn btn-primary"
                         onClick={() => {
-                            setForm({ name: '' });
+                            setForm({ name: '', kind: '' });
                             setModal('new');
                         }}
                     >
@@ -119,13 +206,14 @@ export function ScholarshipsTab() {
                         <thead>
                             <tr>
                                 <th>Name</th>
+                                <th>Who pays</th>
                                 <th style={{ textAlign: 'right' }}>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
                             {scholarships.length === 0 && (
                                 <tr>
-                                    <td colSpan={2}>
+                                    <td colSpan={3}>
                                         <Empty
                                             icon="🎓"
                                             title="No scholarships"
@@ -185,6 +273,49 @@ export function ScholarshipsTab() {
                                         )}
                                     </td>
                                     <td>
+                                        <select
+                                            value={s.kind ?? ''}
+                                            disabled={loading}
+                                            style={{ minWidth: 240 }}
+                                            onChange={(ev) =>
+                                                changeKind(
+                                                    s,
+                                                    ev.target
+                                                        .value as ScholarshipKind,
+                                                )
+                                            }
+                                        >
+                                            {/*
+                                             * Selectable only while it is the row's current state,
+                                             * and never a destination: NULL means "nobody has said
+                                             * yet", and un-saying it is not something the screen
+                                             * should offer. The server refuses it too.
+                                             */}
+                                            <option value="" disabled>
+                                                {UNCONFIGURED_LABEL} — choose
+                                                one
+                                            </option>
+                                            <option value="discount">
+                                                {KIND_LABEL.discount}
+                                            </option>
+                                            <option value="sponsored">
+                                                {KIND_LABEL.sponsored}
+                                            </option>
+                                        </select>
+                                        <div
+                                            className="muted"
+                                            style={{
+                                                fontSize: 12,
+                                                marginTop: 4,
+                                                maxWidth: 360,
+                                            }}
+                                        >
+                                            {s.kind === null
+                                                ? UNCONFIGURED_DETAIL
+                                                : KIND_DETAIL[s.kind]}
+                                        </div>
+                                    </td>
+                                    <td>
                                         <div
                                             className="row-actions"
                                             style={{
@@ -226,7 +357,11 @@ export function ScholarshipsTab() {
                             >
                                 Cancel
                             </button>
-                            <button className="btn btn-primary" onClick={save}>
+                            <button
+                                className="btn btn-primary"
+                                disabled={!form.name.trim() || form.kind === ''}
+                                onClick={save}
+                            >
                                 Save
                             </button>
                         </>
@@ -237,9 +372,47 @@ export function ScholarshipsTab() {
                         <input
                             placeholder="e.g. C2C"
                             value={form.name}
-                            onChange={(e) => setForm({ name: e.target.value })}
+                            onChange={(e) =>
+                                setForm({ ...form, name: e.target.value })
+                            }
                             autoFocus
                         />
+                    </div>
+                    <div className="field">
+                        <label>Who pays</label>
+                        <select
+                            value={form.kind}
+                            onChange={(e) =>
+                                setForm({
+                                    ...form,
+                                    kind: e.target.value as ScholarshipKind,
+                                })
+                            }
+                        >
+                            <option value="" disabled>
+                                Choose one…
+                            </option>
+                            <option value="discount">
+                                {KIND_LABEL.discount}
+                            </option>
+                            <option value="sponsored">
+                                {KIND_LABEL.sponsored}
+                            </option>
+                        </select>
+                        {/*
+                         * The disabled Save button above is a convenience, NOT the control: the
+                         * server refuses a create with no kind with a 422, and that refusal is what
+                         * stops another unconfigured row being minted. A new scholarship can always
+                         * say which scheme it is, so there is no reason to offer the blank.
+                         */}
+                        <div
+                            className="muted"
+                            style={{ fontSize: 12, marginTop: 4 }}
+                        >
+                            {form.kind === ''
+                                ? 'Required. A scholarship with no answer here cannot be billed and cannot carry a discount.'
+                                : KIND_DETAIL[form.kind]}
+                        </div>
                     </div>
                 </Modal>
             )}

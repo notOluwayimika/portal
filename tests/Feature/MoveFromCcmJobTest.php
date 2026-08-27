@@ -294,3 +294,144 @@ it('proof 1 — migrating a source episode that is already promoted yields an AC
     expect($new)->not->toBeNull()
         ->and($new->status->value)->toBe('active');
 });
+
+// ---------------------------------------------------------------------------
+// THE SILENT DROP — a scored CCM component with no non-CCM counterpart
+// ---------------------------------------------------------------------------
+
+/**
+ * A CCM world where one scored component has no counterpart on the non-CCM side.
+ *
+ * `mapOverlappingMarkingComponents` matches by NORMALISED NAME and used to return `[]` for a miss,
+ * and `migrateScores` only ever queries the components that DID match — so an unmatched component's
+ * marks were never even read. The pupil still promoted, the episode still linked, the job still
+ * reported success. A silent drop and a clean fold are the same observation at every level above the
+ * matcher, which is why the check lives at the miss site.
+ *
+ * MEASURED BEFORE THIS GUARD WAS WRITTEN: across all 17 folded CCM curricula in production — 310
+ * subjects, 11,828 scored component-rows — ZERO were dropped. Not because the matcher is safe: those
+ * folds all ran the LEGACY subject-local path, where cloneCurriculumSubjects had copied the
+ * components so the names matched by construction. The matcher was handed pre-matched inputs and was
+ * never actually exercised. It becomes exercised the moment CCM arrival is configured rather than
+ * hand-made, because the CCM and non-CCM marking schemes are then two independently-editable objects.
+ */
+function mfc_ccm_world_with_unmatched_component(bool $giveTargetACounterpart): array
+{
+    $school = al_makeSchool();
+    $admin = al_makeUser($school->id);
+    $classLevelArm = mfc_classLevelArm($school);
+    $term = mfc_term($school);
+    $examType = mfc_examType($school);
+
+    // The TARGET (non-CCM) templates. "Project" is present only when the arm wants a match.
+    mfc_markingComponent($school, null, 'Continuous Assessment 1', 0.5, false);
+    if ($giveTargetACounterpart) {
+        mfc_markingComponent($school, null, 'Project', 0.5, false);
+    }
+
+    $ccmCurriculum = mfc_curriculum($school, $classLevelArm, $term, $examType, true);
+    $subject = Subject::create(['school_id' => $school->id, 'name' => 'Mathematics']);
+    $ccmSubject = CurriculumSubject::create([
+        'curriculum_id' => $ccmCurriculum->id, 'subject_id' => $subject->id, 'is_compulsory' => true,
+    ]);
+
+    $ca1 = mfc_markingComponent($school, $ccmSubject, 'Continuous Assessment 1', 0.5, true);
+    // CCM-ONLY. No non-CCM template of this name unless the arm asked for one.
+    $project = mfc_markingComponent($school, $ccmSubject, 'Project', 0.5, true);
+
+    $student = Student::create([
+        'school_id' => $school->id, 'first_name' => 'Scored', 'last_name' => Str::random(6),
+        'gender' => 'female', 'admission_number' => 'ADM-'.Str::random(8),
+    ]);
+    StudentCurriculum::create([
+        'student_id' => $student->id, 'curriculum_id' => $ccmCurriculum->id, 'status' => 'active',
+    ]);
+
+    foreach ([[$ca1, 40], [$project, 30]] as [$component, $mark]) {
+        Score::create([
+            'student_id' => $student->id, 'curriculum_subject_id' => $ccmSubject->id,
+            'marking_component_id' => $component->id, 'score' => $mark, 'created_by' => $admin->id,
+        ]);
+    }
+
+    return compact('school', 'admin', 'ccmCurriculum', 'student', 'ccmSubject', 'project');
+}
+
+it('refuses the fold when a scored component would be dropped, and names it', function () {
+    $w = mfc_ccm_world_with_unmatched_component(giveTargetACounterpart: false);
+
+    expect(fn () => (new MoveFromCcmJob($w['ccmCurriculum'], $w['admin']->id, (int) $w['school']->id))->handle())
+        ->toThrow(RuntimeException::class, 'Project');
+
+    // NOTHING PARTIALLY DONE. The job runs inside DB::transaction, so a throw must leave the source
+    // OPEN — a closed source with marks not carried is the unrecoverable half of this defect.
+    expect($w['ccmCurriculum']->fresh()->status)->toBe('active')
+        ->and($w['ccmCurriculum']->fresh()->is_ccm)->toBeTrue();
+
+    // And the pupil has not been promoted out of a fold that did not happen.
+    expect(StudentCurriculum::withoutGlobalScopes()
+        ->where('student_id', $w['student']->id)->where('status', 'promoted')->count())->toBe(0);
+});
+
+it('names the CLASS and the SUBJECT in the refusal, with the ids trailing', function () {
+    $w = mfc_ccm_world_with_unmatched_component(giveTargetACounterpart: false);
+
+    // ── THE ARM THAT DID NOT EXIST ─────────────────────────────────────────────────────────────
+    // The message changed from `curriculum#N` / `subject#N` to the operator's vocabulary and the
+    // WHOLE SUITE STAYED GREEN. CcmFoldSurfaceTest's exact-string arm hand-writes its own message
+    // into failed_jobs — it pins the panel's READ path, never the job's output — and the arms here
+    // matched on the component name, which survived the change. So the sentence an operator acts on
+    // had no test at its source, which is how it shipped naming ids in the first place.
+    $message = null;
+
+    try {
+        (new MoveFromCcmJob($w['ccmCurriculum'], $w['admin']->id, (int) $w['school']->id))->handle();
+    } catch (Throwable $e) {
+        $message = $e->getMessage();
+    }
+
+    expect($message)->not->toBeNull()
+        // LEADS with the class as the gate names it — mfc_classLevelArm builds JSS1 + Gold.
+        ->and($message)->toStartWith('Refusing to fold JSS1 Gold:')
+        // and names the SUBJECT, which is the half nothing on the screen could otherwise supply.
+        ->and($message)->toContain('on Mathematics ')
+        // The ids are kept for whoever reads failed_jobs, but they TRAIL — they do not lead.
+        ->and($message)->toEndWith('(curriculum#'.$w['ccmCurriculum']->id.', subject#'.$w['ccmSubject']->subject_id.')')
+        // And the diagnosable parts survive: the component and its score count are what make the
+        // refusal actionable, so a change that "humanised" the message by dropping them would red.
+        ->and($message)->toContain('"Project" (1 score(s))');
+});
+
+it('folds normally once the non-CCM side has a matching component', function () {
+    $w = mfc_ccm_world_with_unmatched_component(giveTargetACounterpart: true);
+
+    (new MoveFromCcmJob($w['ccmCurriculum'], $w['admin']->id, (int) $w['school']->id))->handle();
+
+    // THE POSITIVE ARM, and it is what stops the guard from being a blanket refusal: the same
+    // fixture, one component added to the target, folds cleanly. Without this a guard that always
+    // threw would pass the arm above.
+    expect($w['ccmCurriculum']->fresh()->status)->toBe('closed')
+        ->and(StudentCurriculum::withoutGlobalScopes()
+            ->where('student_id', $w['student']->id)->where('status', 'promoted')->count())->toBe(1);
+
+    // The previously-droppable mark actually arrived, rescaled 0.5 -> 0.5, i.e. unchanged.
+    $target = Curriculum::withoutGlobalScope(SchoolScope::class)
+        ->where('school_id', $w['school']->id)->where('is_ccm', false)->first();
+    $newSubject = CurriculumSubject::where('curriculum_id', $target->id)->first();
+    $carried = Score::where('curriculum_subject_id', $newSubject->id)->pluck('score')->map(fn ($s) => (float) $s);
+
+    expect($carried)->toHaveCount(2)->and($carried->sort()->values()->all())->toBe([30.0, 40.0]);
+});
+
+it('ignores an unmatched component that carries no marks', function () {
+    $w = mfc_ccm_world_with_unmatched_component(giveTargetACounterpart: false);
+
+    // The SAME unmatched component, with its scores removed. An unmatched component is only a
+    // problem when it carries data — two schemes that merely differ are ordinary, and a guard that
+    // refused on shape rather than on loss would block every legitimate fold.
+    Score::where('marking_component_id', $w['project']->id)->delete();
+
+    (new MoveFromCcmJob($w['ccmCurriculum'], $w['admin']->id, (int) $w['school']->id))->handle();
+
+    expect($w['ccmCurriculum']->fresh()->status)->toBe('closed');
+});

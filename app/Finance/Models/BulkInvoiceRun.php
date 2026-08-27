@@ -39,8 +39,8 @@ use Illuminate\Support\Carbon;
  * 1. THE RUN'S OWN ACCOUNTING — EXACT, and the defect signal. TWO LISTS ARE WALKED, SO THERE ARE
  *    TWO EQUALITIES:
  *
- *        billed_count + already_billed_count + failed_count == cohort_count
- *        unplaceable_count                                  == unplaceable_listed_count
+ *        billed_count + already_billed_count + failed_count + sponsored_count == cohort_count
+ *        unplaceable_count                                                    == unplaceable_listed_count
  *
  *    On each line the right-hand side is the size of a list the run WALKED and the left is counted
  *    from the rows it PERSISTED, so the two sides have independent sources and either equality can
@@ -94,6 +94,7 @@ use Illuminate\Support\Carbon;
  * @property int|null $billed_count NULL until the run finishes
  * @property int|null $already_billed_count
  * @property int|null $failed_count
+ * @property int|null $sponsored_count cohort members excluded from billing because their scholarship is a sponsored scheme — NOT a failure
  * @property int|null $unplaceable_listed_count how many enrollments listUnplaceableForSchool() returned
  * @property int|null $unplaceable_count
  * @property int|null $billable_count the School's billable population, counted independently at run time

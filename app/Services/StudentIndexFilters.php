@@ -34,6 +34,13 @@ use Illuminate\Http\Request;
 class StudentIndexFilters
 {
     /**
+     * The `scholarship` value meaning "pupils on no scheme at all", as opposed to the empty value,
+     * which means "do not filter by scheme" and returns sponsored and unsponsored pupils alike.
+     * Named here so the screen, the export and the tests cannot each spell it differently.
+     */
+    public const NO_SCHOLARSHIP = 'none';
+
+    /**
      * @param  Builder<Student>  $query
      * @return Builder<Student>
      */
@@ -63,6 +70,32 @@ class StudentIndexFilters
             ->when($request->filled('arm'), fn (Builder $q) => $q->whereHas(
                 'currentCurriculum.curriculum.classLevelArm.arm',
                 fn (Builder $a) => $a->where('uuid', $request->string('arm')),
-            ));
+            ))
+            // Schemes are matched by UUID like the two above. A scheme's name IS unique per school
+            // (scholarships_school_id_name_unique), so unlike the arm labels this one would not be
+            // ambiguous today — but a name is the thing an operator renames, and a filter keyed to
+            // it would silently stop matching the moment they did. This filters on the scheme a
+            // pupil is ON — `students.scholarship_id`, a direct belongsTo — so unlike class level
+            // and arm there is no "active enrolment" question to get wrong here.
+            ->when($request->filled('scholarship'), function (Builder $q) use ($request) {
+                $value = (string) $request->string('scholarship');
+
+                // THE SENTINEL IS SAFE BECAUSE THE OTHER BRANCH MATCHES A UUID, and 'none' is not
+                // one — so no scheme can ever be shadowed by it however it is named. This is why
+                // the filter is keyed to uuid rather than to id or name: a numeric id filter would
+                // have no free value to spend here, and a name filter could be collided with by an
+                // operator naming a scheme "none".
+                //
+                // ABSENT IS NOT A SCHEME, so this reads the column rather than the relation: a
+                // whereDoesntHave would ALSO return a pupil whose scholarship_id points at a row
+                // that has since gone, and those are the same pupils only by accident.
+                if ($value === self::NO_SCHOLARSHIP) {
+                    $q->whereNull('students.scholarship_id');
+
+                    return;
+                }
+
+                $q->whereHas('scholarship', fn (Builder $s) => $s->where('uuid', $value));
+            });
     }
 }

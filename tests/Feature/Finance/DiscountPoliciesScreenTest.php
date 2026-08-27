@@ -243,7 +243,12 @@ it('carries `status` and `requires_approval`, in the shapes the invoice modal re
     foreach ($full as $row) {
         expect($row)->toHaveKeys([
             'id', 'name', 'description', 'basis', 'value_minor', 'value_currency', 'percent',
-            'requires_approval', 'status',
+            // `base` gained a reader on the screen at the same time as this line: valueLabel() used
+            // to hardcode "of discountable charges" over every percent policy, `total` ones
+            // included. Drop the key from the Resource and the client says "of discountable
+            // charges" about half the whole bill — a wrong figure, silently, with the em-dash
+            // fallback nowhere in sight because `percent` still arrives.
+            'base', 'requires_approval', 'status',
         ]);
 
         expect($row['basis'])->toBeIn(['amount', 'percent']);

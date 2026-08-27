@@ -33,6 +33,13 @@ import { usePermissions } from '@/hooks/use-permissions';
 import { useApiSweetAlertConfirmation } from '@/hooks/use-sweetalert-confirmation';
 import type { Student } from '@/types/models';
 
+/**
+ * Mirrors StudentIndexFilters::NO_SCHOLARSHIP. The server decides what this value means; the screen
+ * only has to send the same string. It cannot collide with a scheme because the server matches
+ * schemes by uuid.
+ */
+const NO_SCHOLARSHIP = 'none';
+
 interface StatusOption {
     name: string;
     value: string;
@@ -56,10 +63,14 @@ export default function StudentList({ student_statuses }: StudentListProps) {
     const [search, setSearch] = useState('');
     const [classLevel, setClassLevel] = useState('');
     const [arm, setArm] = useState('');
+    const [scholarship, setScholarship] = useState('');
     const [classLevels, setClassLevels] = useState<
         { id: string; name: string }[]
     >([]);
     const [arms, setArms] = useState<{ id: string; label: string }[]>([]);
+    const [scholarships, setScholarships] = useState<
+        { uuid: string; name: string }[]
+    >([]);
     const [classLevelArms, setClassLevelArms] = useState<
         { class_level: string; arm: string; label: string }[]
     >([]);
@@ -141,6 +152,7 @@ export default function StudentList({ student_statuses }: StudentListProps) {
                     search,
                     class_level: classLevel || undefined,
                     arm: arm || undefined,
+                    scholarship: scholarship || undefined,
                     page,
                     per_page: limit,
                 },
@@ -172,7 +184,7 @@ export default function StudentList({ student_statuses }: StudentListProps) {
         fetchStudents();
 
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [search, classLevel, arm, page, limit]);
+    }, [search, classLevel, arm, scholarship, page, limit]);
 
     useEffect(() => {
         let isMounted = true;
@@ -184,6 +196,7 @@ export default function StudentList({ student_statuses }: StudentListProps) {
             setClassLevels(res.data.data.class_levels || []);
             setArms(res.data.data.arms || []);
             setClassLevelArms(res.data.data.class_level_arms || []);
+            setScholarships(res.data.data.scholarships || []);
         });
 
         return () => {
@@ -258,6 +271,7 @@ export default function StudentList({ student_statuses }: StudentListProps) {
                     search: search || undefined,
                     class_level: classLevel || undefined,
                     arm: arm || undefined,
+                    scholarship: scholarship || undefined,
                 },
             });
             downloadBlob(
@@ -469,6 +483,38 @@ export default function StudentList({ student_statuses }: StudentListProps) {
                                     />
                                 </div>
 
+                                <div className="w-full sm:w-44">
+                                    <Select
+                                        value={scholarship}
+                                        onChange={(val) => {
+                                            setScholarship(
+                                                val ? String(val) : '',
+                                            );
+                                            setPage(1);
+                                        }}
+                                        placeholder="All scholarships"
+                                        options={[
+                                            // Empty = do not filter, so
+                                            // sponsored and unsponsored pupils
+                                            // alike. NO_SCHOLARSHIP is the
+                                            // other question, not a wider
+                                            // version of this one.
+                                            {
+                                                label: 'All scholarships',
+                                                value: '',
+                                            },
+                                            {
+                                                label: 'No scholarship',
+                                                value: NO_SCHOLARSHIP,
+                                            },
+                                            ...scholarships.map((sch) => ({
+                                                label: sch.name,
+                                                value: sch.uuid,
+                                            })),
+                                        ]}
+                                    />
+                                </div>
+
                                 <div className="flex items-center gap-2 sm:ml-auto">
                                     <span className="hidden text-xs font-medium text-slate-500 sm:inline">
                                         Showing{' '}
@@ -480,7 +526,10 @@ export default function StudentList({ student_statuses }: StudentListProps) {
                                             {pagination.total}
                                         </span>
                                     </span>
-                                    {(search || classLevel || arm) && (
+                                    {(search ||
+                                        classLevel ||
+                                        arm ||
+                                        scholarship) && (
                                         <Button
                                             type="button"
                                             size="sm"
@@ -489,6 +538,7 @@ export default function StudentList({ student_statuses }: StudentListProps) {
                                                 setSearch('');
                                                 setClassLevel('');
                                                 setArm('');
+                                                setScholarship('');
                                                 setPage(1);
                                             }}
                                             className="rounded-lg text-slate-500 hover:bg-slate-50 hover:text-slate-700"
@@ -529,6 +579,9 @@ export default function StudentList({ student_statuses }: StudentListProps) {
                                             Class
                                         </th>
                                         <th className="px-3 py-2 text-left text-[10px] font-bold tracking-wide text-slate-400 uppercase">
+                                            Scholarship
+                                        </th>
+                                        <th className="px-3 py-2 text-left text-[10px] font-bold tracking-wide text-slate-400 uppercase">
                                             Status
                                         </th>
                                         <th className="px-3 py-2 text-right text-[10px] font-bold tracking-wide text-slate-400 uppercase">
@@ -540,7 +593,7 @@ export default function StudentList({ student_statuses }: StudentListProps) {
                                     {loading ? (
                                         <tr>
                                             <td
-                                                colSpan={isAdmin ? 6 : 5}
+                                                colSpan={isAdmin ? 7 : 6}
                                                 className="py-10 text-center"
                                             >
                                                 <Spinner className="mx-auto" />
@@ -549,7 +602,7 @@ export default function StudentList({ student_statuses }: StudentListProps) {
                                     ) : (students?.length ?? 0) === 0 ? (
                                         <tr>
                                             <td
-                                                colSpan={isAdmin ? 6 : 5}
+                                                colSpan={isAdmin ? 7 : 6}
                                                 className="py-10 text-center text-xs text-muted-foreground"
                                             >
                                                 No students found.
@@ -618,6 +671,10 @@ export default function StudentList({ student_statuses }: StudentListProps) {
                                                             ?.full_class ||
                                                             'N/A'}
                                                     </div>
+                                                </td>
+                                                <td className="px-3 py-2.5 text-slate-600 dark:text-slate-300">
+                                                    {student.scholarship
+                                                        ?.name || 'N/A'}
                                                 </td>
                                                 <td className="px-3 py-2.5">
                                                     {isAdmin ? (

@@ -2,7 +2,7 @@
 
 namespace App\Enums;
 
-use Tests\Feature\Rbac\ForcingMigrationsDoNotStripLaterGrantsTest;
+use Fully\Qualified;
 
 /**
  * The canonical, magic-string-free registry of application permissions.
@@ -34,8 +34,11 @@ use Tests\Feature\Rbac\ForcingMigrationsDoNotStripLaterGrantsTest;
  *   3. ITS GRANT, in Database\Seeders\RbacSeeder::grantsMap() — and CHECK WHICH ROLE. A role
  *      governed by a forcing convergence migration has its namespace slice frozen: the seeder
  *      writes the grant and the migration REVOKES it on the next deploy, silently, which fails at
- *      DEPLOY rather than at build. {@see ForcingMigrationsDoNotStripLaterGrantsTest}
- *      for the invariant and the `@converges` escape.
+ *      DEPLOY rather than at build. The invariant and the `@converges` escape are pinned by
+ *      tests/Feature/Rbac/ForcingMigrationsDoNotStripLaterGrantsTest.php — named as a PATH, not as a
+ *      `{@see Qualified}` reference: Pint's fully_qualified_strict_types would promote that
+ *      into a real `use Tests\…;` import, and `Tests\` is autoload-DEV, so the production enum
+ *      would carry a class that does not exist under --no-dev. See bin/ci-dev-namespace-lint.php.
  *
  *   Then REGENERATE THE ORACLES, in this order:
  *     php artisan rbac:sync

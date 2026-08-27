@@ -2,18 +2,39 @@
 
 namespace App\Finance\Enums;
 
+use App\Enums\ScholarshipKind;
 use App\Finance\Contracts\BillableEnrollmentProvider;
+use App\Finance\Models\BulkInvoiceRun;
 
 /**
  * What a bulk invoice run made of ONE enrollment (U6 commit 3).
  *
- * FOUR VALUES, AND THEY PARTITION THE ROWS THE RUN WRITES — every enrollment the run SAW lands in
+ * FIVE VALUES, AND THEY PARTITION THE ROWS THE RUN WRITES — every enrollment the run SAW lands in
  * exactly one of them, and exactly one row per enrollment is written (unique(school_id, run_id,
- * enrollment_id) holds that at the engine). Three of them come from the cohort
- * ({@see BillableEnrollmentProvider::listForCohort()}) and the fourth from
+ * enrollment_id) holds that at the engine). Four of them come from the cohort
+ * ({@see BillableEnrollmentProvider::listForCohort()}) and the fifth from
  * {@see BillableEnrollmentProvider::listUnplaceableForSchool()}; the two lists are disjoint by
  * construction, since a cohort member has both coordinates and an unplaceable one has neither or
  * only one.
+ *
+ * `Sponsored` IS A COHORT OUTCOME AND NOT AN ABSENCE, and that choice is the whole reason the cohort
+ * equality still means something. A sponsored student is IN the cohort — they sit at the run's
+ * coordinates and a preview counts them — so filtering them out of the list before the loop would
+ * have been the cheaper change and the wrong one, twice over:
+ *
+ *   1. `outside_coordinates_count` is `billable − cohort − unplaceable_listed`, so every excluded
+ *      student would have silently landed in a residual whose NAME says they are priced at other
+ *      coordinates, when they are priced at these ones. That figure is large and unalarming on every
+ *      healthy run, which is exactly why {@see BulkInvoiceRun} says movement
+ *      into it is the thing its shape exists to prevent.
+ *   2. There would be no record of WHO was skipped. The school has to invoice these students by hand
+ *      once a session; the list of them is the deliverable. Deriving it when a screen opens would
+ *      describe a roster that has since moved — the same objection that put the unplaceable list on
+ *      rows rather than in a query.
+ *
+ * So they are walked, recorded, and counted, and the cohort equality gains a term:
+ *
+ *     billed + already_billed + failed + sponsored == cohort_count
  *
  * WHAT IS DELIBERATELY NOT A VALUE HERE: the students the run did NOT see. A billable enrollment
  * sitting at coordinates this run did not name is real, is unbilled, and gets no row — because the
@@ -52,4 +73,16 @@ enum BulkInvoiceRunOutcome: string
      * that was billed.
      */
     case Unplaceable = 'unplaceable';
+
+    /**
+     * In the cohort, and DELIBERATELY NOT BILLED: the student holds a scholarship whose
+     * {@see ScholarshipKind} is `sponsored`, so an outside organisation pays on a
+     * different fee basis, once a session, by hand and off platform.
+     *
+     * NOT A FAILURE AND NOT AN ERROR. `invoice_id` and `reason` are both NULL: nothing was refused
+     * and nothing went wrong, so there is no reason to carry. It is the run reporting that it saw
+     * this student, understood why they are not its business, and left them alone — which is the
+     * only way an operator can tell "excluded on purpose" from "quietly missed".
+     */
+    case Sponsored = 'sponsored';
 }

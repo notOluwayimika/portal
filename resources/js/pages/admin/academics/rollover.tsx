@@ -1,13 +1,14 @@
 import { Head } from '@inertiajs/react';
 import axios from 'axios';
 import { AlertTriangle, ArrowRight, Loader2 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { toast } from 'react-toastify';
 import { Can } from '@/components/can';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import Modal from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/spinner';
+import { batchStatus } from '@/lib/rollover-batch-status';
 
 interface Named {
     id: string;
@@ -81,8 +82,16 @@ interface BatchRow {
     total_jobs: number;
     pending_jobs: number;
     failed_jobs: number;
+    /** Failures still unresolved, counted server-side — not the length of failure_reasons. */
+    outstanding_failures: number;
     done_jobs: number;
     is_draining: boolean;
+    /** 'finished' all succeeded · 'stopped' all resolved but some failed · 'cancelled' · null = still draining. */
+    settled_state: 'finished' | 'stopped' | 'cancelled' | null;
+    /** 'ccm-fold' or 'rollover'. Rendered, not merely carried — see the panel. */
+    kind: string;
+    /** The guard's sentences behind a failure. Empty on a clean batch. */
+    failure_reasons: string[];
     finished_at: string | null;
 }
 
@@ -133,6 +142,7 @@ export default function RolloverPage({ sessions, terms }: RolloverPageProps) {
     const [loading, setLoading] = useState(false);
     const [confirmOpen, setConfirmOpen] = useState(false);
     const [committing, setCommitting] = useState(false);
+    const [folding, setFolding] = useState(false);
     const [batches, setBatches] = useState<BatchRow[]>([]);
 
     /** The COMMIT's own plan — what actually dispatched. Never the previewed one. */
@@ -184,6 +194,35 @@ export default function RolloverPage({ sessions, terms }: RolloverPageProps) {
 
     const ready =
         kind === 'end-of-year' ? Boolean(source && target) : Boolean(term);
+
+    /**
+     * Fold the CCM classes blocking this term's rollover.
+     *
+     * Dispatches and RE-PREVIEWS — but deliberately does NOT claim the gate is clear. The folds are
+     * queued (202), retried up to three times before a refusal is reported, and a fold can abort
+     * permanently on config the operator has to fix. So this refreshes the batch panel and the
+     * plan, and lets the operator watch the drain; it never renders "unblocked" on their behalf.
+     */
+    const foldCcm = async () => {
+        setFolding(true);
+
+        try {
+            const res = await axios.post('/api/rollover/fold-ccm', {
+                term_id: term,
+            });
+
+            toast.success(res.data?.message ?? 'Folds queued.');
+            loadBatches();
+            // Re-preview so the gate reflects reality — which, mid-drain, is still BLOCKED.
+            await preview();
+        } catch (err: unknown) {
+            const data = (err as { response?: { data?: { message?: string } } })
+                ?.response?.data;
+            toast.error(data?.message ?? 'Could not queue the folds.');
+        } finally {
+            setFolding(false);
+        }
+    };
 
     const preview = async () => {
         setLoading(true);
@@ -388,6 +427,10 @@ export default function RolloverPage({ sessions, terms }: RolloverPageProps) {
                         <PlanPanel
                             plan={plan}
                             onRun={() => setConfirmOpen(true)}
+                            onFold={
+                                kind === 'end-of-term' ? foldCcm : undefined
+                            }
+                            folding={folding}
                         />
                     )}
 
@@ -483,7 +526,18 @@ export default function RolloverPage({ sessions, terms }: RolloverPageProps) {
 }
 
 /** The plan, its gates, and its warnings. */
-function PlanPanel({ plan, onRun }: { plan: RolloverPlan; onRun: () => void }) {
+function PlanPanel({
+    plan,
+    onRun,
+    onFold,
+    folding,
+}: {
+    plan: RolloverPlan;
+    onRun: () => void;
+    /** Only end-of-term can fold — the gate's blockers are that plan's. */
+    onFold?: () => void;
+    folding?: boolean;
+}) {
     return (
         <div className="space-y-4 rounded-md border p-4">
             <div className="flex items-center justify-between">
@@ -534,10 +588,28 @@ function PlanPanel({ plan, onRun }: { plan: RolloverPlan; onRun: () => void }) {
 
             {plan.ccm_blockers.length > 0 && (
                 <div className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                    <p className="font-semibold">
-                        {plan.ccm_blockers.length} CCM class(es) sit in a final
-                        slot and must be moved first.
-                    </p>
+                    <div className="flex items-start justify-between gap-3">
+                        <p className="font-semibold">
+                            {plan.ccm_blockers.length} CCM class(es) sit in a
+                            final slot and must be moved first.
+                        </p>
+                        {/* ── RESOLUTION WHERE THE BLOCK IS FELT ──────────────────────────────
+                            "Must be moved first" named the action and offered nothing that
+                            performs it — the endpoint existed and no screen called it. That is a
+                            dead end for precisely the operators who meet this: the ones who
+                            configured a CCM slot rather than hand-creating the curriculum, and who
+                            have therefore never touched the API or a console. */}
+                        {onFold && (
+                            <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={onFold}
+                                disabled={folding}
+                            >
+                                {folding ? 'Queueing…' : 'Fold these now'}
+                            </Button>
+                        )}
+                    </div>
                     <ul className="mt-1 list-inside list-disc">
                         {plan.ccm_blockers.map((c) => (
                             <li key={c.id}>{c.label}</li>
@@ -860,26 +932,121 @@ function BatchPanel({
                     </thead>
                     <tbody>
                         {batches.map((b) => (
-                            <tr key={b.id} className="border-t">
-                                <td className="py-1 font-mono">{b.name}</td>
-                                <td className="py-1">
-                                    {b.done_jobs}/{b.total_jobs}
-                                </td>
-                                <td className="py-1">{b.pending_jobs}</td>
-                                <td className="py-1">{b.failed_jobs}</td>
-                                <td className="py-1">
-                                    {b.is_draining ? (
-                                        <span className="text-amber-700 dark:text-amber-400">
-                                            Draining — do not change the current
-                                            session yet
+                            <Fragment key={b.id}>
+                                <tr className="border-t">
+                                    <td className="py-1 font-mono">
+                                        {/* THE KIND IS RENDERED, NOT JUST CARRIED. Its entire job
+                                            is stopping an operator reading a draining FOLD as a
+                                            draining ROLLOVER — the two are dispatched from this
+                                            screen seconds apart and mean opposite things. A
+                                            distinction that lives only in the payload is a
+                                            distinction the operator does not have. */}
+                                        <span
+                                            className={`mr-2 rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                                                b.kind === 'ccm-fold'
+                                                    ? 'bg-sky-100 text-sky-800 dark:bg-sky-950/60 dark:text-sky-300'
+                                                    : 'bg-muted text-muted-foreground'
+                                            }`}
+                                        >
+                                            {b.kind === 'ccm-fold'
+                                                ? 'CCM fold'
+                                                : 'Rollover'}
                                         </span>
-                                    ) : (
-                                        <span className="text-muted-foreground">
-                                            Finished
-                                        </span>
-                                    )}
-                                </td>
-                            </tr>
+                                        {b.name}
+                                    </td>
+                                    <td className="py-1">
+                                        {b.done_jobs}/{b.total_jobs}
+                                    </td>
+                                    <td className="py-1">{b.pending_jobs}</td>
+                                    <td className="py-1">{b.failed_jobs}</td>
+                                    <td className="py-1">
+                                        {/* THE DECISION IS batchStatus(), NOT A TERNARY HERE.
+                                            It used to branch on `failed_jobs > 0`, a counter Laravel
+                                            never decrements — so a batch whose failure had been
+                                            retried successfully rendered "Stopped … will not resume".
+                                            The server computes the truthful value; this maps it to
+                                            copy and colour and judges nothing.
+                                            See resources/js/lib/rollover-batch-status.ts. */}
+                                        {(() => {
+                                            const status = batchStatus(b);
+
+                                            if (status.kind === 'draining') {
+                                                return (
+                                                    <span className="text-amber-700 dark:text-amber-400">
+                                                        Draining — do not change
+                                                        the current session yet
+                                                    </span>
+                                                );
+                                            }
+
+                                            if (status.kind === 'cancelled') {
+                                                return (
+                                                    <span className="text-destructive">
+                                                        Cancelled
+                                                    </span>
+                                                );
+                                            }
+
+                                            if (status.kind === 'stopped') {
+                                                /* "Stopped", not "Finished": those jobs are still
+                                                   pending in the queue's own sense, awaiting a retry
+                                                   someone must issue. */
+                                                return (
+                                                    <span className="text-destructive">
+                                                        Stopped with{' '}
+                                                        {status.failures}{' '}
+                                                        failure(s) — it will not
+                                                        resume on its own
+                                                    </span>
+                                                );
+                                            }
+
+                                            return (
+                                                <span className="text-muted-foreground">
+                                                    Finished
+                                                </span>
+                                            );
+                                        })()}
+                                    </td>
+                                </tr>
+
+                                {/* ── THE RETRY WINDOW ────────────────────────────────────────
+                                    A fold that will abort is neither done nor failed for THREE
+                                    attempts: $tries = 3, and the reason only reaches failed_jobs
+                                    once they exhaust. So there is a real interval where a doomed
+                                    fold reads as ordinary draining, and an optimistic panel would
+                                    invite the operator to confirm a rollover against it. Said
+                                    plainly rather than left to look like progress. */}
+                                {b.kind === 'ccm-fold' && b.is_draining && (
+                                    <tr>
+                                        <td
+                                            colSpan={5}
+                                            className="pb-2 text-[11px] text-amber-700 dark:text-amber-400"
+                                        >
+                                            A fold is retried up to 3 times
+                                            before it reports a failure — wait
+                                            for this batch to finish before
+                                            re-previewing, and do not treat
+                                            “draining” as “succeeded”.
+                                        </td>
+                                    </tr>
+                                )}
+
+                                {b.failure_reasons.length > 0 && (
+                                    <tr>
+                                        <td colSpan={5} className="pb-2">
+                                            {/* The REASON, because the refusal is deterministic
+                                                config — retrying never clears it. "Failed" alone
+                                                would re-block the operator one layer in. */}
+                                            <ul className="list-inside list-disc rounded-md bg-destructive/10 px-3 py-2 text-[11px] text-destructive">
+                                                {b.failure_reasons.map((r) => (
+                                                    <li key={r}>{r}</li>
+                                                ))}
+                                            </ul>
+                                        </td>
+                                    </tr>
+                                )}
+                            </Fragment>
                         ))}
                     </tbody>
                 </table>

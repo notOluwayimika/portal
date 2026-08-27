@@ -465,19 +465,10 @@ class RolloverPlanner
     /** "Year 8 B" — the operator-facing name of a class in the plan. */
     private function describe(Curriculum $curriculum): string
     {
-        $arm = $curriculum->classLevelArm;
-
-        if ($arm === null) {
-            return 'curriculum#'.$curriculum->id;
-        }
-
-        $label = trim(implode(' ', array_filter([
-            $arm->classLevel?->name,
-            $arm->arm?->label,
-            $arm->stream?->name,
-        ])));
-
-        return $label !== '' ? $label : 'curriculum#'.$curriculum->id;
+        // The ASSEMBLY is shared (Curriculum::operatorLabel) because it had already drifted between
+        // here and RolloverController. The FALLBACK stays local and stays as it was: a plan that
+        // cannot name a class still has to identify it, so an id beats an em dash here.
+        return $curriculum->operatorLabel() ?? 'curriculum#'.$curriculum->id;
     }
 
     private function countNonWithdrawnPupils(Collection $curricula): int

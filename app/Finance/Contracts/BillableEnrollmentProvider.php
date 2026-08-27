@@ -2,6 +2,8 @@
 
 namespace App\Finance\Contracts;
 
+use App\Enums\ScholarshipKind;
+
 /**
  * The ACL port (driven/secondary port) Finance owns to read an enrollment without
  * touching Academics' models or tables. The implementation lives OUTSIDE Finance
@@ -180,6 +182,42 @@ interface BillableEnrollmentProvider
      * reason, as the two list methods above (see the adapter's `currentEnrollments()`).
      */
     public function countBillableForSchool(int $schoolId): int;
+
+    /**
+     * WHICH SCHOLARSHIP each of these students holds — `student_id => scholarship_id`, holders only,
+     * non-holders simply absent from the map. The consumer is the bulk invoice run, which must know
+     * a cohort member's scholarship SCHEME before it decides whether to bill them
+     * ({@see ScholarshipKind}).
+     *
+     * WHY IT IS A PORT METHOD AND NOT A QUERY IN FINANCE, which is the obvious question given that
+     * `Finance` already reads `App\Models\Student` elsewhere. Two reasons, and the first is a
+     * defect that was actually built before it was caught:
+     *
+     *   1. SOFT-DELETED STUDENTS ARE IN THE COHORT. {@see listForCohort()} reads `student_curricula`
+     *      and its EXISTS-through-`students` clause deliberately IGNORES `deleted_at`, so a trashed
+     *      student with an active episode is billable and is billed. `Student` uses `SoftDeletes`,
+     *      so the obvious `Student::whereIn(...)` in Finance silently returns NOTHING for exactly
+     *      those students — their scholarship reads as "none", and a trashed SPONSORED student is
+     *      billed the standard fee schedule by the very code written to stop that. The lookup has to
+     *      match the cohort's own soft-delete rule, and that rule lives here.
+     *   2. `withTrashed()` IS AN ESCAPE HATCH `bin/ci-boundary-lint.php` FORBIDS INSIDE `app/Finance`
+     *      (it is `withoutGlobalScope(SoftDeletingScope::class)` by another name). The adapter is
+     *      outside Finance and is the place that already owns which students an episode reaches.
+     *
+     * ISOLATION IS THE ARGUMENT, like the two list methods and the count above it: `$schoolId`
+     * decides, the ambient scope is stripped, and a student outside it is absent from the map rather
+     * than resolving. The returned `scholarship_id` is NOT validated against the School — that is
+     * deliberate, because `students.scholarship_id` references `scholarships (id)` and is NOT
+     * composite with `school_id`, so a cross-School assignment is schema-legal and the CALLER must
+     * be able to see it in order to refuse it. Filtering it away here would turn a fault the run
+     * reports into a student who silently reads as holding no scholarship.
+     *
+     * IT IS A READ. Nothing here writes `students.scholarship_id`.
+     *
+     * @param  list<int>  $studentIds
+     * @return array<int, int> student_id => scholarship_id, holders only
+     */
+    public function scholarshipIdsFor(array $studentIds, int $schoolId): array;
 
     /**
      * The active School's admission-number roster — every student id paired with the admission

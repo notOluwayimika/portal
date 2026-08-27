@@ -1,10 +1,12 @@
 # Scholarships and the September cutover — decisions taken
 
 **Date:** 25 August 2026
-**Status:** Decisions are settled unless marked OPEN. Anything marked OPEN is waiting on
-Brookstone and must not be guessed at.
-**Purpose:** So nobody re-derives this from the code, and nobody asks Brookstone the same
-question twice.
+**Revision:** 3 — Brookstone's clarifications. Rev 1 proposed a single scholarship-to-policy FK;
+rev 2 removed the C2C fee schedule; rev 3 restores it as the *target* and settles scope.
+Superseded decisions are marked so nobody re-proposes them.
+**Status:** Decisions are settled unless marked OPEN.
+**Purpose:** So nobody re-derives this from the code, and nobody asks Brookstone the same question
+twice.
 
 ---
 
@@ -12,297 +14,275 @@ question twice.
 
 Landed and merged to `staging` on 25 August; the first two are also on `main` and deployed:
 
-- **Guardian ward authorisation** (P0, live fix). A signed-in guardian could open any student's
-  results, enrollment and status in their school by editing a UUID. Eight routes, one middleware,
-  `GuardianService::isWardOf()`.
-- **Guardian bulk-record access** (P0, live fix). Whole-class results, whole-arm results, a full
-  subject score grid, and another guardian's ward list. Two more middlewares.
-- **Payment origin `gateway`** — third origin value, trigger arm, `RecordPayment` gains an origin
-  and an external reference, actor nullable.
-- **Parent portal read contract** — `GET /api/parent/finance/wards`, no identifier in the request.
-- **`MoneyInput`** — masked naira entry, adopted at two of seven call sites.
-- **Current-term fallback** — resolved the last term by `order` when none was active, which would
-  have defaulted the first bulk run of the session to Summer/Term 3.
+- **Guardian ward authorisation** (P0, live fix) — a guardian could open any student's records by
+  editing a UUID. Eight routes, one middleware, `GuardianService::isWardOf()`.
+- **Guardian bulk-record access** (P0, live fix) — whole-class results, a full subject score grid,
+  another guardian's ward list. Two more middlewares.
+- **Payment origin `gateway`**, **parent portal read contract**, **`MoneyInput`** (2 of 7 sites),
+  **current-term fallback**, **student record access logging**.
 
-**Not yet on production:** the current-term fix. It must be deployed before the first bulk
-invoice run of the new session.
+**Not yet on production:** the current-term fix and the access logging. The term fix must be there
+before the first bulk run; the log records nothing until deployed. Ship them together.
 
-**Operational, owed by a person, not code:** set Term 1 to `active` when the session starts on
-5 September.
+**Owed by a person:** set Term 1 to `active` when the session starts on 5 September.
 
 ---
 
-## 1. What a scholarship is today (verified, do not re-check)
+## 1. What a scholarship is today (verified — do not re-check)
 
-`scholarships` holds `id, uuid, school_id, name, timestamps`, with `UNIQUE (school_id, name)`.
-**No type, no status, no value, no money column, no link to Finance.**
-(`database/migrations/2026_06_15_000005_create_scholarships_table.php`.)
+`scholarships` holds `id, uuid, school_id, name, timestamps`, `UNIQUE (school_id, name)`. **No type,
+no status, no value, no link to Finance.** `students.scholarship_id` is a nullable FK with
+`nullOnDelete`. `grep -rin scholarship app/Finance` returns one hit and it is prose.
 
-`students.scholarship_id` — nullable FK, `nullOnDelete`
-(`2026_06_15_000006_add_profile_fields_to_students_table.php:13`).
-
-**Scholarships have zero effect on billing.** `grep -rin scholarship app/Finance` returns one hit
-and it is prose in a docblock (`AllocatePayment.php:84`). Nothing in `GenerateInvoice`,
-`FeeScheduleLookup`, `FeeScheduleLineMapper` or `ProcessBulkInvoiceRun` knows they exist.
-
-Live data (dev copy `portaa10_portal`): **2 scholarships, 182 students assigned.**
-No invoice line in any schema has ever carried a `discount_policy_id` — the reduction path is
-proven by tests, not by use.
+Live data: **2 scholarships, 182 students.** No invoice line in any schema has ever carried a
+`discount_policy_id` — the reduction path is proven by tests, not by use.
 
 ---
 
-## 2. The two kinds, and why they are different mechanisms
+## 2. The two schemes
 
-Brookstone has two arrangements. They are **not** two flavours of one idea.
+| | **BSS** | **C2C** |
+|---|---|---|
+| Awarded by | The school | NNPC / Renaissance JV |
+| Who pays | Parent, reduced amount | The sponsoring organisation |
+| Fee basis | Standard schedule, discounted | A different set of fee items |
+| Billed | Bulk run, per term | **Once per session, one collective figure** |
+| Payment | On platform | Off platform, reconciled by hand |
+| Volume | Varies | ~70 students |
 
-**BSS — a discount.** The school charges less. Revenue falls. The bill carries a reduction line.
-
-**C2C — a different price list.** Not a reduction on the standard bill; an entirely separate fee
-schedule. Revenue is whatever that schedule says.
-
-> **Correction on record, so it is not repeated:** "external scholarship" was first read as
-> *a third party pays the bill*. It is not. C2C is a different price list. Who pays is a separate
-> question — a sponsor settling a bill is an ordinary payment with the sponsor's name in
-> `payer_name`, and needs no new mechanism — but it is not how the scholarship is modelled.
-
----
-
-## 3. Decisions taken
-
-### 3.1 Reuse the discount policy engine. Do not build a second valuation.
-
-`finance_discount_policies` already encodes every value type needed:
-
-| Requirement | How it is already represented |
-|---|---|
-| Fixed amount off | `basis = 'amount'` with `value_minor` + `value_currency` |
-| Percentage off | `basis = 'percent'`, `percent BETWEEN 1 AND 100` |
-| Full waiver | `basis = 'percent'`, `percent = 100` |
-
-Enforced by a database CHECK (`2026_07_26_140000_create_finance_discount_policies.php:55-63`).
-The policy record also carries `requires_approval`, a `status` machine, `supersedes_policy_id`,
-a no-DELETE trigger and an immutable-terms update guard.
-
-**Decision:** a discount-kind scholarship *names* a policy — `scholarships.discount_policy_id`.
-Building `PERCENTAGE / FIXED_AMOUNT / FULL_WAIVER` natively on `scholarships` was considered and
-rejected: it would be a second engine with no CHECK, no approval flow, no amendment history, and
-it would write invoice lines with a NULL `discount_policy_id`, discarding provenance the database
-already defends.
-
-### 3.2 Use `is_discountable`. Do not add `is_scholarship_eligible`.
-
-`finance_fee_items.is_discountable` exists, defaults true, and is **already consumed** by
-`GenerateInvoice::resolvePercentages()` (`:414`, called from `:197`), which computes the
-percentage base as the signed sum of charge lines where `isDiscountable === true`. Its own comment
-names the case: 50% off tuition but not transport or feeding. The bursar UI already greys
-non-discountable items out.
-
-A second flag on the same rows, with nothing keeping the two consistent, is how a discount
-silently misses a line.
-
-### 3.3 `requires_approval` must be `false` on a scholarship-backed policy.
-
-The reduction guard trigger
-(`2026_07_26_140002_add_discount_policy_to_finance_lines.php:85-88`) refuses outright:
-
-```
-IF v_requires = 1 THEN
-    SIGNAL ... 'This discount policy requires per-application approval:
-                apply it as a credit note, not an invoice line.'
-```
-
-A policy flagged for approval **can never be an invoice line**. If a scholarship's policy carries
-it, the bulk run fails per student at the database — 182 times. The approval Brookstone wants is
-on the scholarship's *value*, which is the existing discount-policy change maker-checker
-(`finance.discount-policy.change.submit` / `.approve` / `.reject`, terms immutable once written).
-Per-*application* approval means a credit note per student and makes bulk scholarship billing
-impossible.
-
-**This must be validated when a scholarship is linked to a policy — not discovered at bill time.**
-
-### 3.4 `GenerateInvoice` needs no change.
-
-It already accepts a percent-bearing `InvoiceLineSpec`, resolves it against the discountable base,
-negates it (`:451`), and writes `discount_policy_id` on the line (`:296`). Both the manual and the
-bulk paths call the same Action (`ProcessBulkInvoiceRun.php:346`). This feature adds no code to the
-money path.
-
-Rounding is banker's (half-to-even), `Money::percentage()` → `roundedDiv` (`Money.php:252-268`).
-**Note:** the constitution says no rounding-bearing operation exists until the accounting policy is
-signed. The code already rounds. Either sign the policy to match, or record that it was picked by
-default.
-
-### 3.5 The insertion point is per-enrollment, not the line mapper.
-
-`FeeScheduleLineMapper::linesFor(FeeSchedule $schedule, int $schoolId)` takes **no student**, by a
-stated ruling in its own docblock (`:30-42`). `ProcessBulkInvoiceRun` maps lines **once** at `:246`,
-outside every loop, and reuses them at `:266`, `:333`, `:346`.
-
-`InvoiceLineSpec` is `final readonly` and every transform returns a new instance, so appending a
-per-student reduction spec to a copy of the base array inside the per-enrollment closure cannot
-disturb the shared base. Leave the mapper alone.
-
-### 3.6 The uniqueness sentinel — the trap that would ship silently
-
-For C2C, fee schedules gain a **nullable** `scholarship_id`. **Do not add it to the existing unique
-index.** MySQL exempts a row from a UNIQUE index if any indexed column is NULL — which would
-disable uniqueness for exactly the default schedule, the one case protected today. Two active
-default schedules for a class level, no error.
-
-Fold it into the generated key with a sentinel instead:
-
-```sql
-active_scholarship_key = IF(status = 'active', COALESCE(scholarship_id, 0), NULL)
-```
-
-Same for `pending_*` and for `finance_fee_schedule_changes.open_key`. **Write a test that inserts a
-second default schedule and expects error 1062, and mutation-check it by dropping the
-`COALESCE(...,0)`** — the sentinel's whole purpose is invisible otherwise.
-
-`FeeScheduleLookup::activeFor()` grows a scholarship argument where `null` must mean `IS NULL`, not
-"no filter", or a default lookup starts returning a scholarship schedule.
-
-### 3.7 The bulk run partitions. There is no second run.
-
-Pre-flight, before the first row: read the cohort, derive the distinct scholarships present,
-require an **active** schedule for every fee-schedule-kind scholarship at (term, class level,
-scholarship), require the default schedule if anyone is on none or on a discount scholarship, and
-**fail the whole run naming the missing coordinates** if any is absent. Not "bill the ones we can."
-
-Map lines once per required schedule, up front — this preserves the existing one-schedule-one-
-mapping invariant at partition granularity.
-
-Per student: no scholarship → default lines. Fee-schedule kind → that schedule's lines *instead of*
-the default. Discount kind → default lines **plus** one computed reduction line carrying its
-`discount_policy_id`.
-
-`finance_bulk_invoice_runs.fee_schedule_id` (pinned at `:293`) stops being true once a run uses N
-price lists. Move the schedule and the scholarship onto the run **rows**.
-
-A separate "scholarship run" after the main run must not be built: it creates a window where
-students hold invoices known to be wrong, requires voiding real ledger movements for a problem that
-need not exist, and "was the second pass done?" is a state nothing records.
-
-### 3.8 `kind` backfills to unconfigured, and an unconfigured scholarship stops the run
-
-Nothing in the existing data says whether a scholarship is a discount or a price list. `kind`
-backfills to NULL, not to a guess. A student on an unconfigured scholarship makes the run **fail
-loudly, naming it** — never fall through to the default schedule, which is indistinguishable from
-correct behaviour on screen until a C2C parent gets a full-price invoice.
-
-Migrate the table **in place**. `scholarships.id` must stay stable because `students.scholarship_id`
-points at it. Every existing assignment stays exactly as it is — no re-derivation from names, no
-re-import.
+> **Corrections on record.** "External scholarship" was read first as *a third party pays*, then as
+> *a different price list*. It is **both**. And rev 2 recorded that Brookstone would not maintain a
+> C2C fee schedule; they have since said they would, ideally — see §3.6.
 
 ---
 
-## 4. The cutover plan
+## 3. Design
 
-Confirmed with Brookstone, 25 August.
+### 3.1 SUPERSEDED — `scholarships.discount_policy_id`
 
-**Brookstone has already issued bills for the term starting 5 September, outside the system.**
+Rev 1 said a scholarship names one discount policy. **Wrong for BSS**, which is configured per
+student. A policy per student is roughly a hundred policies through a maker-checker. Do not propose
+it again.
 
-1. **Opening balances stop at the end of last term.** They carry what families owed before this
-   term and **nothing else**. They do *not* include the already-issued Term 1 bill.
-2. **This term is re-billed** by the bulk invoice run in the new system, with scholarships applied.
-3. **Payments already received** against the old bill are entered by hand so they settle the new
-   invoice.
+### 3.2 BSS — a per-student award pointing at a shared policy
+
+The reduction guard (`2026_07_26_140002_add_discount_policy_to_finance_lines.php:62-101`) requires
+every non-charge line to cite a policy that exists, is `active`, has `requires_approval = false`,
+and belongs to the same school. A per-student percentage cannot bypass policies.
+
+**The shape:** one policy per distinct **(percentage, base)** pair, authored once and reused; each
+BSS student's award points at one. Four percentages across two bases is eight policies, not a
+hundred. Provenance survives on every line, and the maker-checker stays proportionate.
+
+The award — which student, which policy — is per student. It is **not** `students.scholarship_id`,
+which says only which scheme.
+
+### 3.3 Scope — TWO AXES, and I collapsed them once. Do not repeat that.
+
+**Axis one — which items *can* be discounted.** Set once, per fee schedule, when it is authored.
+This is `finance_fee_items.is_discountable`. **It already exists**, defaults true, is already in the
+bursar UI, and is already consumed by `GenerateInvoice::resolvePercentages()` (`:414`). Every
+student billed from that schedule sees the same items marked. **Settled: no new flag, no new
+screen, no code.**
+
+**Axis two — whether a student's percentage applies to those items only, or to the whole bill.**
+Set **per student**, as part of their BSS award. Brookstone's words: 100% on discountable items
+leaves the child paying transport; 100% of total fees leaves them paying nothing.
+
+**CORRECTION, and it is the final position: `GenerateInvoice` DOES need a change.**
+`resolvePercentages()` computes the base as charge lines where `isDiscountable === true`. The
+whole-bill base needs a second mode, chosen by the award, and
+`finance_discount_policies` has no column to express which mode a policy uses.
+
+*(I reversed this once, on the mistaken reading that settling axis one settled axis two. It does
+not.)*
+
+### 3.4 Still true
+
+**Reuse the discount policy engine.** `finance_discount_policies` carries `basis` amount|percent
+with an exclusive CHECK (`:55-63`), `requires_approval`, a `status` machine,
+`supersedes_policy_id`, a no-DELETE trigger and an immutable-terms guard. Do not build a second
+valuation engine on `scholarships`.
+
+**`requires_approval` must be `false`** on any policy a scholarship uses — the guard's third arm
+refuses an approval-requiring policy as an invoice line outright, so the run would fail per student
+at the database. The approval Brookstone wants is on the *value*, which the discount-policy change
+maker-checker already provides. **Validate this when the award is created, not at bill time.**
+
+**Rounding** is banker's, `Money::percentage()` → `roundedDiv` (`Money.php:252-268`). The
+constitution says no rounding-bearing operation exists until the accounting policy is signed; the
+code already rounds. Sign it, or record that it was picked by default.
+
+**The insertion point is per-enrollment.** `FeeScheduleLineMapper::linesFor()` takes no student by a
+stated ruling (`:30-42`); `ProcessBulkInvoiceRun` maps once at `:246`, reuses at `:266`, `:333`,
+`:346`. `InvoiceLineSpec` is `final readonly`, so appending a per-student reduction spec to a copy
+of the base array inside the per-enrollment closure cannot disturb the shared base.
+
+### 3.5 The C2C fee schedule — target end state, NOT the first increment
+
+**The ideal, and the agreed end state:** C2C gets its own fee schedule per class, and the bulk run
+selects a student's schedule by their scholarship.
+
+**Not before 6 September**, for a reason that is not about our code: Brookstone must author **and
+approve** a fee schedule for every class holding a C2C student, each through the fee-schedule
+maker-checker. **Nobody has counted those classes.** Seventy students could be twelve schedules, in
+the same eleven days as everything else.
+
+**When it is built, the trap is the uniqueness index.** MySQL exempts a row from a UNIQUE index if
+any indexed column is NULL, so adding a nullable `fee_schedules.scholarship_id` straight into
+`finance_fee_schedules_active_unique` would silently disable uniqueness for the **default**
+schedule — the one case protected today. Fold it into the generated key with a sentinel:
+`IF(status='active', COALESCE(scholarship_id, 0), NULL)`. Same for `pending_*` and
+`finance_fee_schedule_changes.open_key`. Write a test that inserts a second default schedule and
+expects 1062, and mutation-check it by dropping the `COALESCE`. `FeeScheduleLookup::activeFor()`
+gains a scholarship argument where `null` means `IS NULL`, not "no filter".
+
+**The first increment is the same partition with a cheaper action.** Exclude the sponsored
+partition instead of billing it from its own schedule. The pre-flight, the per-student lookup and
+the run-row recording are identical, so nothing is thrown away when the alternate-schedule arm
+lands.
+
+### 3.6 C2C — yearly, collective, manual
+
+- **The bulk run excludes C2C students entirely.** Without it, seventy sponsored students are billed
+  standard school fees on a run that otherwise looks successful.
+- Billed **once per session**, not per term. The school totals the C2C students' fees, emails the
+  organisation a single figure (₦15m–₦17m), and the organisation pays off platform.
+- **Each C2C student still needs their own invoice**, or there is nothing for the sponsor's payment
+  to be allocated against and no student balance to show. The totalling view is what gets emailed;
+  the invoices are what the money settles.
+- Those invoices are **session-scoped**, unlike everything the bulk run produces. That is fine — a
+  manual invoice is not a scheduled one, so the one-active-scheduled-invoice-per-episode rule does
+  not bite — but it is a difference someone will trip over.
+- The payer is the **sponsor**. One guardian account per organisation, linked to many students;
+  parents remain guardians in parallel. Model it generically — other organisations may follow.
+
+### 3.7 `kind` backfills to unconfigured, and stops the run
+
+Nothing in the data says which scheme a scholarship is. `kind` backfills to NULL, never a guess. A
+student on an unconfigured scholarship makes the run **fail loudly, naming it** — never fall through
+to the default schedule, which is indistinguishable from correct behaviour on screen until a
+sponsored parent receives a full-price invoice.
+
+Migrate in place; `scholarships.id` must stay stable because `students.scholarship_id` points at it.
+Every existing assignment stays exactly as it is.
+
+---
+
+## 4. Bulk manual invoicing — a platform feature, and the C2C mechanism
+
+Today manual invoices are one student at a time ("damaged laptop, ₦10,000"). Wanted: the same flow
+over many students — line items with description, amount and destination account; students chosen by
+filtering on scholarship and class, then ticking individuals or taking the whole filtered set.
+
+It is what produces the C2C session bills, and Brookstone want it independently for ad-hoc charges.
+It earns its place twice, and unlike the C2C fee schedule it requires **no configuration work from
+Brookstone at all**.
+
+---
+
+## 5. Order of work
+
+1. **Foundation + exclusion.** `scholarships.kind`, backfilled unconfigured; the run refuses loudly
+   on an unconfigured scholarship; sponsored students excluded. Needed by both C2C paths, depends on
+   no outstanding answer, and stops the worst failure.
+2. **Per-student BSS discount**, shown as one aggregate line item. The award model, the shared
+   (percentage, base) policies, and the second base mode in `resolvePercentages()`.
+3. **Bulk manual invoicing.** Delivers C2C billing with no Brookstone configuration, and is wanted
+   on its own merits.
+4. **C2C fee schedules** — the target end state, after cutover, with the sentinel done carefully.
+
+**Deferred and unchanged:** the approval change-request table, moving scholarships into Finance, the
+split assignment permission, the un-deletable triggers. Interim control is operational — freeze
+scholarship assignment during cutover and audit the configurations by eye.
+
+---
+
+## 6. The cutover plan
+
+**Brookstone have already issued bills for the term starting 5 September, outside the system, and
+those bills ALREADY SHOW the BSS discount removed.** Those families were not billed full price.
+
+1. **Opening balances stop at the end of last term** — prior arrears and nothing else.
+2. **This term is re-billed** by the bulk run, BSS applied, C2C excluded.
+3. **Payments already received** are entered by hand so they settle the new invoices.
 
 **The order cannot vary.** A payment needs an invoice to attach to; recorded first, `RecordPayment`
 banks it as account credit and the invoice still shows as owing.
 
-`finance_opening_balance_batches` records `cutover_date` (:101) and a `term_id` FK (:102), so this
-boundary can be enforced by the system rather than by memory — **but read that migration's docblock
-first** to establish whether `term_id` names the term being cut over *into* or the last term
-*included*. Getting it backwards builds a guard that blocks the correct run and permits the wrong
-one.
+`finance_opening_balance_batches` records `cutover_date` (:101) and `term_id` (:102), so the boundary
+can be enforced — **but read that migration's docblock first** to establish whether `term_id` names
+the term cut over *into* or the last term *included*. Backwards, the guard blocks the correct run
+and permits the wrong one.
 
 ### What breaks it
 
-**The new invoice must equal the bill Brookstone already sent.** If the fee schedule differs, or a
-scholarship student's manual discount was a naira amount where the policy says a percentage, the
-payment already received no longer settles the invoice and that family shows a balance they do not
-owe. **Run the cohort and compare against the issued bills before committing the real run.** This
-affects everyone, not only the 182 — any fee schedule difference does it.
+**The engine's figure must equal the bill already sent.** Now that we know those bills carry the
+discount, the comparison is exact: run the cohort, compare against the issued bills, and only then
+commit. A difference in the fee schedule or in a student's configured percentage means the payment
+already received no longer settles the invoice, and that family shows a balance they do not owe.
 
-**The window between the run and the hand reconciliation.** Every parent who has already paid sees
-an unpaid invoice. If the portal is open during that window, on the day the school resumes, expect
-calls. Either finish reconciliation before parents can log in, or tell Brookstone the window exists
-and how long it lasts.
+**The window between the run and the hand reconciliation**, during which every parent who has
+already paid sees an unpaid invoice. Finish reconciliation before parents can log in, or tell
+Brookstone the window exists and how long it lasts.
 
 ---
 
-## 5. Scope — what must ship before 6 September, and what follows
+## 7. Questions — answered, and still open
 
-The full target model (scholarships moved into Finance, a four-state status machine, a
-`finance_scholarship_changes` maker-checker table, a separate assignment permission, no-DELETE and
-immutable-terms triggers, three ADRs) is **weeks of work**. The first bulk run is in days.
+**Answered by Brookstone:**
 
-**Required before the run**, because without them children are billed wrong amounts silently:
+- BSS is **always a percentage**, 0–100%, **per student**, never a flat amount. No cap required.
+- Which items are discountable is set **per fee schedule**, not per student.
+- Whether a student's percentage applies to discountable items only or to the whole bill is **per
+  student**. A 100% award on discountable items still leaves transport payable; a 100% award on
+  total fees leaves nothing payable.
+- C2C students are billed on a **different set of fee items**, **once per session**, as a single
+  collective figure to the sponsoring organisation, paid off platform.
+- The already-issued bills for BSS students **already show the discount**.
+- ~70 C2C students.
 
-- `scholarships.kind`, backfilled unconfigured
-- `scholarships.discount_policy_id` for the discount kind, with link-time validation that the
-  policy is `active` and `requires_approval = false`
-- `finance_fee_schedules.scholarship_id` **with the sentinel** in the generated keys
-- partitioned pre-flight that fails the whole run naming missing coordinates
-- per-row schedule and scholarship recording
-- the loud refusal on an unconfigured scholarship
+**Answered from the code, so nobody asks again:**
 
-**Follows the run:** the approval change-request table, the move into Finance, the split assignment
-permission, the un-deletable triggers. The interim control is operational — freeze scholarship
-assignment during cutover and audit the two configurations by eye. That is weaker than the target
-and is a trade made deliberately, not by running out of time.
+- The discountable flag lives on `finance_fee_items`, which belong to a fee schedule — so per item
+  within a schedule. Brookstone's preferred answer is already the situation.
+- The discount shows as **one aggregate line**. `resolvePercentages()` emits one reduction line per
+  percentage spec supplied.
 
----
+**OPEN:**
 
-## 6. OPEN — sent to Brookstone 25 August, do not re-ask
-
-Sent in plain language. Answers pending.
-
-1. **What is BSS worth?** Fixed amount, percentage, percentage-up-to-a-maximum, or full waiver —
-   with the number.
-   *Why it blocks:* three of the four are already supported. **"Percentage up to a maximum" is
-   not** — the CHECK is strictly amount XOR percent with no cap column. It would need a third
-   basis, a widened constraint, and a change to `resolvePercentages()`, and it lands on the
-   critical path.
-2. **Does BSS come off the whole bill or only some items?** Which items exactly.
-   *Why it blocks:* sets `is_discountable` per fee item.
-3. **Do C2C students pay a different set of fees, or the same fees at different amounts?** With
-   the actual figures.
-4. **Which classes have C2C students, and how many in each?**
-   *Why it blocks:* every (term, class level) with even one C2C student needs its own fee schedule
-   authored **and approved through the fee-schedule maker-checker**. If C2C spans ten class levels
-   that is ten schedules in eleven days. **This is the answer most likely to break the date, and
-   the setup work is probably larger than the code.**
-5. **Who pays a C2C student's fees** — family, or an outside body paying the school directly?
-   *Blocks nothing.* Affects collections, not billing.
-6. **Are BSS and C2C the only two scholarships, and how many students on each?**
-   *Blocks nothing.* Two rows and 182 students are already visible in the data.
-7. **Were the already-issued bills for BSS and C2C students already reduced / already on C2C
-   prices?**
-   *Why it blocks:* if they were issued at full price with the adjustment still to come, then the
-   engine applying the discount **changes** what those families owe rather than reproducing it, and
-   the reconciliation is a different exercise. This is the one that protects 182 families from
-   wrong balances.
+- **How many classes hold C2C students?** Decides whether the C2C fee schedule path is configurable
+  at all before 6 September. Blocks item 4, not items 1–3.
+- **When a sponsor payment is allocated across students, is it even (total ÷ students) or manual per
+  student?** Partial payments make manual the safer default. Blocks the allocation feature, not the
+  run.
 
 ---
 
-## 7. Sequencing risk
+## 8. Watch this
+
+A sponsor guardian account linked to seventy students is a guardian with seventy wards. It works
+with the ownership guard shipped on 25 August, will see seventy families' invoices in the parent
+portal, will return seventy wards in one read-contract response, and every access it makes lands in
+the audit log.
+
+---
+
+## 9. Sequencing risk
 
 Creating the discount policies goes through the maker-checker: one person submits, a **different**
 person approves. Policy terms are **immutable once written** — a wrong value means retire and
-supersede, not an edit. That is a human dependency sitting *before* the dry-run comparison, which
-sits *before* the real run, inside eleven days.
+supersede, not an edit. That sits *before* the dry-run comparison, which sits *before* the real run.
 
 ---
 
-## 8. Rules that applied throughout, and still do
+## 10. Rules that applied throughout, and still do
 
-- Money is `App\Support\Money` — integer minor units plus ISO-4217, `{name}_minor` +
-  `{name}_currency`. Never a float. The frontend does no monetary arithmetic; a lint enforces it.
+- Money is `App\Support\Money` — integer minor units plus ISO-4217. Never a float. The frontend does
+  no monetary arithmetic; a lint enforces it.
 - `school_id` is the only isolation boundary. `super_admin` bypasses authorization, never isolation.
-- A reduction is a line with a **negative** `amount_minor`. There is no sign column, deliberately.
+- A reduction is a line with a **negative** `amount_minor`. No sign column, deliberately.
 - Authorization is never commented out.
 - A rule without a lint, a gate or a database constraint is decoration.
-- Prove a guard by breaking it. A bite-proof that comes back green is a non-discriminating test,
-  not a passing guard — say so rather than recording it as a pass.
+- Prove a guard by breaking it. A bite-proof that comes back green is a non-discriminating test, not
+  a passing guard — say so rather than recording it as a pass.

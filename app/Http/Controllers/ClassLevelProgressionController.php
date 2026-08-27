@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreClassLevelParticipationRequest;
 use App\Http\Requests\SyncClassLevelExamTypesRequest;
+use App\Http\Requests\UpdateClassLevelParticipationRequest;
 use App\Http\Requests\UpdateClassLevelProgressionRequest;
 use App\Http\Resources\ClassLevelProgressionResource;
 use App\Models\ClassLevel;
@@ -70,15 +71,28 @@ class ClassLevelProgressionController extends Controller
     }
 
     /**
-     * Toggle a slot's CCM flag. Reachable by API, not surfaced in the v1 UI — see the note above.
+     * SET a slot's CCM flag. A setter, not a toggle — and the difference is not style.
+     *
+     * This inverted what it found (`is_ccm => ! $participation->is_ccm`) and took no input. A UI
+     * switch sends a DESIRED STATE; an inverter applies a RELATIVE one, so the two disagree the
+     * moment a request is repeated or the client's view is stale: a double-submit, a retry, or a
+     * second operator on the same panel lands the flag opposite to what the person saw, with no
+     * error, because inverting twice is a legal operation. It is the non-idempotent write behind an
+     * idempotent-looking control — the same family as an acknowledgment the server cannot verify.
+     *
+     * Converted BEFORE anything clicks it: nothing calls this today (no component, no test — only
+     * the generated wayfinder definition), so the change costs nothing now and would cost a
+     * reproduce-it-if-you-can bug report later. Latent, not live: with zero CCM slots in existence
+     * the inverter has never had a row to invert.
      */
     public function updateParticipation(
+        UpdateClassLevelParticipationRequest $request,
         ClassLevel $classLevel,
         ClassLevelTermParticipation $participation
     ): JsonResponse {
         abort_unless((int) $participation->class_level_id === (int) $classLevel->id, 404);
 
-        $participation->update(['is_ccm' => ! $participation->is_ccm]);
+        $participation->update(['is_ccm' => $request->boolean('is_ccm')]);
 
         return response()->json([
             'message' => 'Term slot updated.',

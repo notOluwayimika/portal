@@ -4,7 +4,9 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\RolloverEndOfTermRequest;
 use App\Http\Requests\RolloverEndOfYearRequest;
+use App\Jobs\MoveFromCcmJob;
 use App\Models\Curriculum;
+use App\Services\Rollover\CcmFoldBatchName;
 use App\Services\Rollover\PlacementGroup;
 use App\Services\Rollover\RolloverBatchName;
 use App\Services\Rollover\RolloverDispatcher;
@@ -14,6 +16,7 @@ use App\Support\ActiveSchool;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -106,6 +109,60 @@ class RolloverController extends Controller
     }
 
     /**
+     * FOLD the CCM curricula that are blocking this term's rollover.
+     *
+     * ── IT LIVES AT THE GATE BECAUSE THAT IS WHERE THE BLOCK IS FELT ────────────────────────────
+     * The ccm-active gate names N classes and says they "must be moved first" — and until now the
+     * only thing that moves them was an endpoint no screen called. That is a dead end for exactly
+     * the operators who will meet it: the ones who configured a CCM slot rather than hand-creating
+     * the curriculum, and who therefore have never touched the API or a console. Resolution belongs
+     * where the refusal is read.
+     *
+     * ── THE BLOCKERS ARE RE-DERIVED, NEVER ACCEPTED FROM THE CLIENT ─────────────────────────────
+     * Same discipline as the rollover commit: the plan is recomputed here, and the batch is built
+     * from ITS ccmBlockers. A client-supplied list of curricula would be a second definition of
+     * "what is blocking", and a stale one would fold a curriculum the gate is no longer naming.
+     *
+     * ── allowFailures, DELIBERATELY ─────────────────────────────────────────────────────────────
+     * A fold can refuse — the silent-drop guard aborts when a scored CCM component has no non-CCM
+     * counterpart — and that refusal is deterministic config, not a transient error. At a school
+     * with marking schemes some folds will abort while others succeed, and the successful ones
+     * SHOULD land: partial progress is real progress, and any remaining active CCM curriculum still
+     * holds the gate up, which is correct. Halting the batch on the first refusal would throw away
+     * folds that were fine.
+     */
+    public function foldCcm(RolloverEndOfTermRequest $request): JsonResponse
+    {
+        $term = $request->term();
+        $plan = $this->planner->planEndOfTerm($term);
+
+        if ($plan->ccmBlockers->isEmpty()) {
+            return response()->json([
+                'message' => 'Nothing to fold — no active CCM classes are blocking this rollover.',
+                'plan' => $this->present($plan),
+            ], 422);
+        }
+
+        $batch = Bus::batch(
+            $plan->ccmBlockers->map(fn (Curriculum $c) => new MoveFromCcmJob(
+                $c, (int) $request->user()->id, (int) $c->school_id,
+            ))->all(),
+        )->name(CcmFoldBatchName::forTerm((int) $term->school_id, (int) $term->id))
+            ->allowFailures()
+            ->dispatch();
+
+        return response()->json([
+            // QUEUED, never "folded". The batch has to drain before the gate can clear, and an
+            // operator who reads "done" will confirm a rollover against folds still in flight.
+            'message' => "Queued {$plan->ccmBlockers->count()} fold(s). The rollover stays blocked "
+                .'until they finish — re-preview once the batch has drained.',
+            'batch_id' => $batch->id,
+            'batch_name' => CcmFoldBatchName::forTerm((int) $term->school_id, (int) $term->id),
+            'queued_jobs' => $plan->ccmBlockers->count(),
+        ], 202);
+    }
+
+    /**
      * Rollover batches for the active school, newest first.
      *
      * Reads `job_batches` through RolloverBatchName's own matcher rather than a hand-written LIKE —
@@ -118,25 +175,236 @@ class RolloverController extends Controller
         $schoolId = (int) ActiveSchool::getOrFail()->id;
 
         $rows = DB::table('job_batches')
-            ->where('name', 'like', RolloverBatchName::likeForSchool($schoolId))
+            ->where(function ($q) use ($schoolId) {
+                $q->where('name', 'like', RolloverBatchName::likeForSchool($schoolId))
+                    // FOLD batches appear in the same panel, because they are dispatched from the
+                    // same screen to clear the gate that stops the rollover — an operator who
+                    // clicks Fold and sees nothing drain has no way to know whether to wait.
+                    ->orWhere('name', 'like', CcmFoldBatchName::likeForSchool($schoolId));
+            })
             ->orderByDesc('created_at')
             ->limit(20)
             ->get();
 
         return response()->json([
-            'data' => $rows->map(fn ($row) => [
-                'id' => $row->id,
-                'name' => $row->name,
-                'total_jobs' => (int) $row->total_jobs,
-                'pending_jobs' => (int) $row->pending_jobs,
-                'failed_jobs' => (int) $row->failed_jobs,
-                // DERIVED, and the words matter: a batch with pending jobs is DRAINING, never "done".
-                'done_jobs' => (int) $row->total_jobs - (int) $row->pending_jobs,
-                'is_draining' => $row->finished_at === null && $row->cancelled_at === null,
-                'finished_at' => $row->finished_at,
-                'cancelled_at' => $row->cancelled_at,
-            ])->values(),
+            'data' => $rows->map(function ($row) {
+                // ONE read, ONE derivation. This used to call settledState(outstandingFailures())
+                // TWICE — two separate `failed_jobs` queries with no transaction between them — so a
+                // `queue:retry` landing in the gap could return `is_draining: false` alongside
+                // `settled_state: null`, a pair the panel had no branch for and resolved to
+                // "Finished". The safety-critical direction, re-entering through the SEAM rather
+                // than the rule it was fixed in. Derived once, both fields read off the same value.
+                $outstanding = $this->outstandingFailures($row);
+                $settled = $this->settledState($row, $outstanding);
+
+                return [
+                    'id' => $row->id,
+                    'name' => $row->name,
+                    'kind' => CcmFoldBatchName::isFold($row->name) ? 'ccm-fold' : 'rollover',
+                    'total_jobs' => (int) $row->total_jobs,
+                    'pending_jobs' => (int) $row->pending_jobs,
+                    'failed_jobs' => (int) $row->failed_jobs,
+                    // DERIVED, and the words matter: a batch with pending jobs is DRAINING, never "done".
+                    // `done_jobs` counts SUCCESSES only — see settledState() for why pending is the
+                    // wrong subtrahend to read as progress once a job has failed.
+                    'done_jobs' => (int) $row->total_jobs - (int) $row->pending_jobs,
+                    'is_draining' => $settled === null,
+                    // 'finished' — every job succeeded. 'stopped' — every job has RESOLVED but some
+                    // failed, so no worker will touch this batch again without `queue:retry`.
+                    // 'cancelled' — killed. Null while genuinely still draining.
+                    'settled_state' => $settled,
+                    // FINDING 1: the panel's "Stopped with N failure(s)" must count FAILURES, not
+                    // distinct reason sentences. failureReasons() de-duplicates (->unique()) and strips
+                    // the class before doing so, so N jobs failing with one shared message — a deadlock,
+                    // a timeout, anything school-wide — collapse to ONE reason while failed_jobs reads
+                    // N. Rendering that as "1 failure(s)" understates a dead batch on the surface whose
+                    // whole purpose is not understating a dead batch.
+                    'outstanding_failures' => $outstanding,
+                    'finished_at' => $row->finished_at,
+                    'cancelled_at' => $row->cancelled_at,
+                    // ── WHY IT FAILED, NOT JUST THAT IT DID ────────────────────────────────────────
+                    // A fold aborts on a DETERMINISTIC, config-shaped refusal: a CCM component carrying
+                    // marks with no non-CCM counterpart never succeeds on retry. "Job failed" would
+                    // unblock the operator from "there is no fold button" only to re-block them with
+                    // "it failed and I cannot tell you why" — the same dead end one layer in. The
+                    // guard's message names the curriculum and the component, which is an action the
+                    // operator can take, so it has to survive the queue and reach the panel.
+                    //
+                    // Note $tries = 3: a deterministic refusal is attempted three times before it lands
+                    // in failed_jobs, so what the panel must render is the REASON, not three errors.
+                    'failure_reasons' => $this->failureReasons($row),
+                ];
+            })->values(),
         ]);
+    }
+
+    /**
+     * Has this batch stopped moving, and how — read off the COUNTS, never off `finished_at` alone.
+     *
+     * ── THE SIGNAL THE FAILING CASE NEVER EMITS ──────────────────────────────────────────────────
+     * `finished_at` is set in exactly ONE place: `Illuminate\Bus\Batch::recordSuccessfulJob`, and
+     * only when `pendingJobs` reaches zero. `DatabaseBatchRepository::incrementFailedJobs` writes
+     * `'pending_jobs' => $batch->pending_jobs` — an EXPLICIT no-op, deliberate rather than an
+     * omission — so a permanently-failed job never decrements pending, `finished_at` stays null,
+     * and a batch holding ANY failure is never "finished" as far as the framework is concerned.
+     *
+     * Read literally, `finished_at === null` therefore means "draining" FOREVER for such a batch:
+     * the panel invites the operator to keep waiting on something no worker will touch again. A
+     * drive against the real queue observed exactly that — three attempts exhausted,
+     * `pending_jobs=1 failed_jobs=1 finished_at=null`, rendered as "Draining — do not change the
+     * current session yet", permanently.
+     *
+     * ── WHY THIS IS NOT A CCM DEFECT ─────────────────────────────────────────────────────────────
+     * Fold batches and ROLLOVER batches share this panel and this method. Nothing above is specific
+     * to folds; a failed `MoveFromTermJob` batch reads identically. CCM is merely the first surface
+     * where a batch failure is a DESIGNED, reachable outcome rather than an accident, which is why
+     * it is the first to expose it. Fixing it here hardens the rollover surface retroactively.
+     *
+     * ── THE DERIVATION, AND WHY IT IS NOT THE `failed_jobs` COUNTER ──────────────────────────────
+     * Pending starts at total and is decremented ONLY by successes, so `pending = total - successes`.
+     * A job is outstanding when it has failed and has not since been resolved. Then:
+     *
+     *     in-flight = total - successes - outstanding = pending - outstanding
+     *     terminal   <=>   in-flight === 0   <=>   pending === outstanding
+     *
+     * `$outstanding` MUST NOT come from `job_batches.failed_jobs`. That column is MONOTONE:
+     * `decrementPendingJobs` prunes the uuid out of `failed_job_ids` on a retry-success but writes
+     * `'failed_jobs' => $batch->failed_jobs` — unchanged. It counts failures EVER RECORDED, not
+     * failures currently outstanding, and keying on it made this method wrong on both sides of a
+     * retry: it called a genuinely finished batch "stopped" (the counter still reads 1 after the
+     * retry succeeded), and it withdrew the draining warning while a worker was mid-flight. The
+     * pre-change `finished_at === null` reading was CORRECT in that second window, so the first
+     * version of this fix swapped which half of the retry window lied. Caught in cold review.
+     *
+     * See {@see outstandingFailures()} for how outstanding is counted, including the in-flight case.
+     *
+     * The clean path is SUBSUMED rather than special-cased: zero failures drives pending to zero and
+     * `0 === 0` settles at the same instant `finished_at` is written. One rule, both paths.
+     *
+     * NOT "FINISHED" WHEN IT HOLDS FAILURES, and the word is chosen: those jobs are still pending in
+     * the framework's own sense — awaiting a `queue:retry` a human may issue. 'stopped' says the
+     * batch will not move on its own without saying it is complete, which it is not.
+     *
+     * ORDER IS LOAD-BEARING: `DatabaseBatchRepository::cancel()` writes BOTH `cancelled_at` and
+     * `finished_at`, so the cancelled check must come first or every cancelled batch reads finished.
+     *
+     * @param  int  $outstanding  failures still unresolved — {@see outstandingFailures()}
+     * @return 'finished'|'stopped'|'cancelled'|null null while genuinely still draining
+     */
+    private function settledState(object $row, int $outstanding): ?string
+    {
+        if ($row->cancelled_at !== null) {
+            return 'cancelled';
+        }
+
+        if ($row->finished_at !== null) {
+            return 'finished';
+        }
+
+        $pending = (int) $row->pending_jobs;
+
+        // NO `total_jobs > 0` GUARD. It was here and it was DEAD: `$outstanding > 0` means at least
+        // one listed failed id, which means at least one job, so the guard could never decide
+        // anything — and the arm that claimed to pin it stayed green with it deleted. A test comment
+        // naming a property it does not test is how the next defect hides, so the guard is gone
+        // rather than left with a claim attached to it.
+        //
+        // `<=` rather than `===` as a floor: outstanding cannot EXCEED pending today
+        // (`failed_jobs.uuid` is unique, so whereIn cannot overcount), and if drift ever made it,
+        // "settled" is the safe reading — the alternative is the perpetual-draining bug.
+        if ($outstanding > 0 && $pending <= $outstanding) {
+            return 'stopped';
+        }
+
+        return null;
+    }
+
+    /**
+     * Failures that are still outstanding — NOT `job_batches.failed_jobs`, and not merely the length
+     * of `failed_job_ids` either.
+     *
+     * Two prunings happen at different times and only one of them is in the batch row:
+     *
+     *   - a retry that SUCCEEDS removes the uuid from `failed_job_ids` (`decrementPendingJobs`), so
+     *     the id list is live where the counter is not;
+     *   - but `queue:retry` deletes the `failed_jobs` ROW first (`RetryCommand::handle` pushes the
+     *     job, then `$this->laravel['queue.failer']->forget($id)`) and the uuid STAYS in
+     *     `failed_job_ids` until that retry resolves.
+     *
+     * So between `queue:retry` and the job finishing, the id is listed while its row is gone — and a
+     * count of the ids alone would still call that batch stopped while a worker is executing it,
+     * withdrawing "do not change the current session yet" at exactly the wrong moment. Counting only
+     * ids that STILL HAVE a `failed_jobs` row makes an in-flight retry read as draining, which is
+     * what it is.
+     *
+     * ── WHAT THIS CANNOT SEE, AND IT IS NOT HYPOTHETICAL ─────────────────────────────────────────
+     * `queue:forget <uuid>`, `queue:prune-failed` and `queue:flush` delete the row WITHOUT a retry,
+     * leaving the id listed forever. This then reads 0 outstanding, the batch never settles, and the
+     * panel says "Draining — do not change the current session yet" permanently with no reason
+     * beside it — defect B reinstated, in a new place, plus the loss of the reason text.
+     *
+     * `queue:forget` is the LIKELY one: a fold refusal is deterministic config that retrying never
+     * clears, so forgetting it is the natural operator response. Nothing schedules a prune here
+     * (`routes/console.php` schedules only `authz:prune`), so it takes a deliberate manual command —
+     * which is why this is recorded rather than guarded, and ticketed for a real answer. The
+     * direction is falsely-CAUTIOUS (a warning that overstays), the opposite of the direction that
+     * makes a reading ship-blocking.
+     */
+    private function outstandingFailures(object $row): int
+    {
+        $ids = json_decode($row->failed_job_ids ?? '[]', true) ?: [];
+
+        if ($ids === []) {
+            return 0;
+        }
+
+        return DB::table('failed_jobs')->whereIn('uuid', $ids)->count();
+    }
+
+    /**
+     * The guard messages behind a batch's failures, de-duplicated.
+     *
+     * `job_batches.failed_job_ids` holds the uuids; `failed_jobs.exception` holds the throwable as a
+     * string whose FIRST LINE is the class and message. Only that line is surfaced — a stack trace
+     * on an operator screen is noise that hides the sentence they need.
+     *
+     * @return list<string>
+     */
+    private function failureReasons(object $row): array
+    {
+        if ((int) $row->failed_jobs === 0) {
+            return [];
+        }
+
+        $ids = json_decode($row->failed_job_ids ?? '[]', true) ?: [];
+
+        if ($ids === []) {
+            return [];
+        }
+
+        return DB::table('failed_jobs')
+            ->whereIn('uuid', $ids)
+            ->pluck('exception')
+            ->map(function (?string $exception) {
+                // ── THE DESIGNED REFUSAL ARRIVES CLEAN; THIS IS THE FALLBACK ────────────────────
+                // A fold's own refusal is an App\Exceptions\CcmFoldRefused, whose __toString() is
+                // the message — so what Laravel persisted is already the sentence and nothing below
+                // alters it. That is deliberate: repairing a stringified throwable HERE means a
+                // path-stripping regex over a message that may itself contain " in ", which is a
+                // heuristic that passes against a fixture and fails against reality.
+                //
+                // What remains is defence for an UNEXPECTED throwable — a deadlock, a timeout —
+                // which still stringifies the PHP way. For those the operator gets the first line
+                // rather than forty lines of trace, and yes, it still carries a path: that is a
+                // debugging aid on a path nobody designed, not the refusal this surface is for.
+                $first = trim(strtok((string) $exception, "\n"));
+
+                return (string) preg_replace('/^[\w\\\\]+Exception:\s*/', '', $first);
+            })
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
     }
 
     /**
@@ -310,16 +578,9 @@ class RolloverController extends Controller
 
     private function describe(Curriculum $curriculum): string
     {
-        $arm = $curriculum->classLevelArm;
-
-        if ($arm === null) {
-            return '—';
-        }
-
-        return implode(' ', array_filter([
-            $arm->classLevel?->name,
-            $arm->arm?->label,
-            $arm->stream?->name,
-        ]));
+        // Shared assembly, local fallback — unchanged from what this method returned before, so no
+        // cell on the rollover screen moves. See Curriculum::operatorLabel for why the two callers
+        // keep different fallbacks rather than one being imposed on both.
+        return $curriculum->operatorLabel() ?? '—';
     }
 }

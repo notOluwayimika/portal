@@ -213,6 +213,45 @@ final class BillableEnrollmentAdapter implements BillableEnrollmentProvider
     }
 
     /**
+     * `student_id => scholarship_id`, holders only. See the port for why this is here and not a
+     * query in Finance.
+     *
+     * `withTrashed()` IS THE WHOLE POINT OF THE METHOD, not a detail. {@see currentEnrollments()}'s
+     * EXISTS-through-`students` clause ignores `deleted_at` — a deliberate ruling, recorded on
+     * {@see billableEpisodes()} — so a SOFT-DELETED student with an active episode IS in the cohort
+     * and IS billed. A lookup here that let `SoftDeletes` apply would return nothing for exactly
+     * those students, and the run would read them as holding no scholarship. For a sponsored
+     * student that means a full-price invoice, silently, on a run that reports success.
+     *
+     * BOTH SCOPES ARE STRIPPED AND THE SCHOOL IS RE-APPLIED AS THE ARGUMENT, matching the two list
+     * reads: a second, ambient opinion about the School would empty the map whenever it disagreed,
+     * and an empty map is not an error anywhere — it reads as "nobody in this cohort holds a
+     * scholarship", which is the silent-total-result mode again.
+     *
+     * `whereIn` ON AN EMPTY LIST is short-circuited by the caller, but guarded here too: MySQL reads
+     * `IN ()` as a syntax error and Laravel compiles it to a false predicate, so the guard is about
+     * not issuing a pointless query rather than about correctness.
+     *
+     * @param  list<int>  $studentIds
+     * @return array<int, int>
+     */
+    public function scholarshipIdsFor(array $studentIds, int $schoolId): array
+    {
+        if ($studentIds === []) {
+            return [];
+        }
+
+        return Student::withTrashed()
+            ->withoutGlobalScope(SchoolScope::class)
+            ->where('students.school_id', $schoolId)
+            ->whereIn('students.id', $studentIds)
+            ->whereNotNull('students.scholarship_id')
+            ->pluck('students.scholarship_id', 'students.id')
+            ->mapWithKeys(fn ($scholarshipId, $studentId) => [(int) $studentId => (int) $scholarshipId])
+            ->all();
+    }
+
+    /**
      * THE ONE DEFINITION OF "BILLABLE" — the single expression of it in this class, used by
      * {@see currentForStudent()} AND by both cohort reads. It is two clauses and nothing else:
      *

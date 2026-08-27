@@ -26,6 +26,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Modal from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/spinner';
+import { baseLabel } from '@/lib/finance/approval-feeds';
 import { formatNaira } from '@/lib/format';
 
 /**
@@ -41,12 +42,12 @@ import { formatNaira } from '@/lib/format';
  * THERE IS NO APPROVE AND NO REJECT HERE — that is /finance/approvals, and a second home for the ED's
  * decision is a second place for it to disagree with itself. Nothing on this page writes a policy:
  * all three proposals POST /api/v1/finance/discount-policy-changes and wait, and
- * ApproveDiscountPolicyChange is the only writer of `finance_discount_policies`. That last fact holds
- * — a repo-wide search finds no other caller of `DiscountPolicy::create` or of an update to that table
- * outside the Action and the migrations — but NOTHING ENFORCES IT: tests/Arch/ holds four files and
- * none of them mentions this model. The docblock of ApproveDiscountPolicyChange:21 claims an arch test
- * too; it is the same unenforced claim, repeated. By the project's own rule a convention with no
- * mechanism is a wish, so read this as one.
+ * ApproveDiscountPolicyChange is the only writer of `finance_discount_policies`. That is now a RULE
+ * and no longer a wish: tests/Feature/Finance/DiscountPolicyTest.php:305 pins the set of files
+ * containing `DiscountPolicy::create(` to exactly `['ApproveDiscountPolicyChange.php']`, so a second
+ * writer reds the suite. (This paragraph used to say nothing enforced it and to look for the arm in
+ * tests/Arch/ — the arm lives with the proofs it belongs to instead, which is why a search of that
+ * directory found nothing.)
  *
  * The FOUR ACTS are acts, not controls, and the count is of acts. The page renders more than four
  * interactive elements outside the modal — a search box, a status dropdown and its options, a Clear
@@ -128,6 +129,10 @@ type FormState = {
     amountMinor: number | null;
     // As typed. An integer 1..100, and NOT money: it never goes near the naira helpers.
     percent: string;
+    // AXIS C — what that percentage is taken OF. Only read when basis = 'percent': the server
+    // refuses any VALUE for it on the other side (SubmitDiscountPolicyChangeRequest:58), so the
+    // field is held here on both bases and posted on one. See changeTerms for the exact rule.
+    base: DiscountBase;
     requiresApproval: boolean;
     reason: string;
 };
@@ -138,6 +143,10 @@ const EMPTY: FormState = {
     basis: 'percent',
     amountMinor: null,
     percent: '',
+    // The value a create lands on server-side when the change states none — DiscountBase's own
+    // column default, and effectiveBase()'s last step. The control opens on it because that is what
+    // a create WILL be stamped with, not because it is the first of two.
+    base: 'discountable',
     requiresApproval: false,
     reason: '',
 };
@@ -213,17 +222,21 @@ function parseErrorBag(err: unknown): ErrorBag | null {
     };
 }
 
-/** How a policy reduces a bill, in the operator's words. Amount through formatNaira; percent is not money. */
-function valueLabel(policy: DiscountPolicy): string {
+/**
+ * How a policy reduces a bill, in the operator's words. Amount through formatNaira; percent is not
+ * money. Exported for discount-policies.test.ts, which holds it against the approvals queue's own
+ * renderer: the two must produce the same phrase for the same base or the ED approves one sentence
+ * and the list states another.
+ */
+export function valueLabel(policy: DiscountPolicy): string {
     if (policy.basis === 'percent') {
-        // The base is read, not assumed. This string is the phrase the ED approved on the approvals
-        // queue (lib/finance/approval-feeds.ts baseLabel), read back on the policy it became.
-        const of =
-            policy.base === 'total'
-                ? 'of the whole bill'
-                : 'of discountable charges';
-
-        return policy.percent === null ? '—' : `${policy.percent}% ${of}`;
+        // The base is read, not assumed, AND the phrase is imported, not retyped: baseLabel is the
+        // one copy of these two strings, so the term the maker chose in this screen's own control is
+        // the term the ED approved on the queue and the term read back here. `base` is NOT NULL on a
+        // catalog row, which is why this call takes the non-null overload and needs no fallback.
+        return policy.percent === null
+            ? '—'
+            : `${policy.percent}% ${baseLabel(policy.base)}`;
     }
 
     return policy.value_minor === null || policy.value_currency === null
@@ -232,6 +245,70 @@ function valueLabel(policy: DiscountPolicy): string {
               amount_minor: policy.value_minor,
               currency: policy.value_currency,
           });
+}
+
+/**
+ * The base an amendment's control OPENS ON — what will be stamped, never the raw stored value.
+ *
+ * `base` is NOT NULL on every catalog row, including the `amount` ones where it is inert, and
+ * DiscountPolicyChange::effectiveBase() deliberately refuses to carry a base across a basis change
+ * (app/Finance/Models/DiscountPolicyChange.php:118 — the target's base is inherited only while the
+ * change KEEPS the target's basis). So seeding an amount policy's stored base would show the maker a
+ * term the server would not have used; and since this form now POSTS what the control shows, the
+ * maker would be stating one thing and the catalog stamped with another. The amount arm therefore
+ * lands on the same default a create lands on, which is exactly what effectiveBase() returns for the
+ * cross-basis hop. On a percent policy the two paths agree by construction, which is the whole
+ * reason the percent arm reads the row at all.
+ */
+export function amendBase(policy: DiscountPolicy): DiscountBase {
+    return policy.basis === 'percent' ? policy.base : 'discountable';
+}
+
+/**
+ * The proposal's terms, exactly as posted.
+ *
+ * PURE AND EXPORTED SO THE WIRE SHAPE IS TESTABLE WITHOUT A DOM — the same split money-input.tsx
+ * makes for the same reason, and discount-policies.test.ts states what it does and does not prove.
+ * What is NOT covered by testing this function is the single line in send() that spreads its result
+ * into the request; that wiring is named as unguarded rather than papered over with an endpoint test
+ * wearing a form test's name.
+ *
+ * ONE SIDE OF THE BASIS IS POSTED, NEVER BOTH. `value_minor`/`value_currency` are
+ * `prohibited_if:basis,percent` and `percent` is `prohibited_if:basis,amount`, so sending the unused
+ * half — even as null — is a 422 rather than a tidy no-op.
+ *
+ * `base` RIDES WITH THE PERCENTAGE FOR THE SAME REASON BUT NOT UNDER THE SAME RULE, and the
+ * difference is measured rather than read off the rule string. SubmitDiscountPolicyChangeRequest:58
+ * is `prohibited_if:basis,amount` like its siblings, but it ALSO carries `nullable`, and
+ * `prohibited_if` is satisfied by an empty field — so a stated base on an amount basis is a 422
+ * while a NULL one is quietly accepted (both arms in BssPerStudentDiscountTest, 'rule 58'). The key
+ * is still absent from the amount branch rather than nulled: an amount policy has no percentage to
+ * take of anything, so a key that can only be null there says nothing worth sending, and relying on
+ * that laxness would make this shape depend on a `nullable` nobody put there for this purpose.
+ *
+ * A retire proposes no terms at all.
+ */
+export function changeTerms(
+    kind: Proposal['kind'],
+    form: FormState,
+): Record<string, unknown> {
+    if (kind === 'retire') {
+        return {};
+    }
+
+    return {
+        name: form.name.trim(),
+        description:
+            form.description.trim() === '' ? null : form.description.trim(),
+        basis: form.basis,
+        requires_approval: form.requiresApproval,
+        ...(form.basis === 'amount'
+            ? {
+                  value_minor: form.amountMinor,
+                  value_currency: DEFAULT_CURRENCY,
+              }
+            : { percent: Number(form.percent.trim()), base: form.base }),
+    };
 }
 
 export default function DiscountPolicies() {
@@ -308,6 +385,7 @@ export default function DiscountPolicies() {
             basis: policy.basis,
             amountMinor: policy.value_minor,
             percent: policy.percent === null ? '' : String(policy.percent),
+            base: amendBase(policy),
             requiresApproval: policy.requires_approval,
             reason: '',
         });
@@ -327,6 +405,11 @@ export default function DiscountPolicies() {
      * FormRequest refuses a cross combo with a 422 before either is reached. This exists so an operator
      * cannot SUBMIT both or neither in the first place: the server refusing it anyway is the guarantee,
      * this is the form not wasting their time.
+     *
+     * NO ARM FOR THE BASE, deliberately. It is a two-option radio group seeded from EMPTY or from
+     * amendBase(), so `form.base` is one of the two accepted values at every instant a submit can
+     * happen — there is no empty state, no free text and no third option to reach. A check here
+     * could not fail, and a check that cannot fail reads as coverage while proving nothing.
      */
     const localErrors = (): Record<string, string> => {
         if (proposal?.kind === 'retire') {
@@ -379,27 +462,9 @@ export default function DiscountPolicies() {
         setSubmitting(true);
         setErrors(NO_ERRORS);
 
-        // ONE SIDE OF THE BASIS IS POSTED, NEVER BOTH. `value_minor`/`value_currency` are
-        // `prohibited_if:basis,percent` and `percent` is `prohibited_if:basis,amount`, so sending the
-        // unused half — even empty — is a 422 rather than a tidy no-op.
-        const terms =
-            proposal.kind === 'retire'
-                ? {}
-                : {
-                      name: form.name.trim(),
-                      description:
-                          form.description.trim() === ''
-                              ? null
-                              : form.description.trim(),
-                      basis: form.basis,
-                      requires_approval: form.requiresApproval,
-                      ...(form.basis === 'amount'
-                          ? {
-                                value_minor: form.amountMinor,
-                                value_currency: DEFAULT_CURRENCY,
-                            }
-                          : { percent: Number(form.percent.trim()) }),
-                  };
+        // Which half of the basis is posted, and why only one, is changeTerms' — the rule and its
+        // reason live with the shape rather than in the component that sends it.
+        const terms = changeTerms(proposal.kind, form);
 
         try {
             await axios.post('/api/v1/finance/discount-policy-changes', {
@@ -1138,9 +1203,8 @@ export default function DiscountPolicies() {
                                             }
                                         />
                                         <p className="mt-0.5 text-xs text-slate-500">
-                                            A whole number from 1 to 100,
-                                            applied to the discountable charges
-                                            on the bill.
+                                            A whole number from 1 to 100. What
+                                            it is taken of is the next question.
                                         </p>
                                         {errors.fields.percent && (
                                             <p className="mt-0.5 text-xs text-destructive">
@@ -1150,6 +1214,83 @@ export default function DiscountPolicies() {
                                     </div>
                                 )}
                             </div>
+
+                            {/*
+                             * AXIS C, AND ONLY ON THE PERCENT SIDE. Until this control existed the
+                             * maker could not state the base from any screen, so half the catalog —
+                             * every `total` policy — was reachable only over the API, while
+                             * ApproveDiscountPolicyChange is the catalog's one writer (pinned by
+                             * tests/Feature/Finance/DiscountPolicyTest.php:305). A scheme needing
+                             * both bases could not be authored through the governance chain at all.
+                             *
+                             * ABSENT ON AN AMOUNT BASIS, NOT DISABLED. SubmitDiscountPolicyChangeRequest:58
+                             * is `prohibited_if:basis,amount`: every value this control can hold is
+                             * a 422 there, and a control whose every answer the server refuses is a
+                             * control that lies about what it decides. It is absent on a retire too,
+                             * by sitting inside the terms block, which proposes nothing.
+                             *
+                             * THE TWO PHRASES ARE NOT WRITTEN HERE. They come from
+                             * lib/finance/approval-feeds.ts baseLabel — the same function the ED's
+                             * approvals queue renders and the same one valueLabel reads back on the
+                             * policy list. The maker chooses a phrase, the ED approves that phrase,
+                             * and the policy row states it: one string, three screens.
+                             */}
+                            {form.basis === 'percent' && (
+                                <fieldset className="space-y-2">
+                                    <legend className="text-sm font-medium text-slate-700 dark:text-slate-200">
+                                        The percentage is taken of what?
+                                    </legend>
+
+                                    {(
+                                        [
+                                            [
+                                                'discountable',
+                                                'Only the charges a discount is allowed to reduce. A bill can carry lines this leaves alone entirely.',
+                                            ],
+                                            [
+                                                'total',
+                                                'Every charge on the bill, including the ones the other option would leave alone. The same percentage, and more money.',
+                                            ],
+                                        ] as const
+                                    ).map(([value, blurb]) => (
+                                        <label
+                                            key={value}
+                                            className={`flex cursor-pointer gap-3 rounded-lg border p-3 transition-colors ${
+                                                form.base === value
+                                                    ? 'border-indigo-500 bg-indigo-50/50 dark:border-indigo-400 dark:bg-indigo-950/30'
+                                                    : 'border-slate-200 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-900/40'
+                                            }`}
+                                        >
+                                            <input
+                                                type="radio"
+                                                className="mt-1"
+                                                name="dp-base"
+                                                checked={form.base === value}
+                                                onChange={() =>
+                                                    setForm({
+                                                        ...form,
+                                                        base: value,
+                                                    })
+                                                }
+                                            />
+                                            <span>
+                                                <span className="block text-sm font-semibold text-slate-700 dark:text-slate-200">
+                                                    {baseLabel(value)}
+                                                </span>
+                                                <span className="block text-xs text-slate-500">
+                                                    {blurb}
+                                                </span>
+                                            </span>
+                                        </label>
+                                    ))}
+
+                                    {errors.fields.base && (
+                                        <p className="text-xs text-destructive">
+                                            {errors.fields.base}
+                                        </p>
+                                    )}
+                                </fieldset>
+                            )}
 
                             {/*
                              * requires_approval, SPELLED OUT BESIDE THE CONTROL AND NOT IN A TOOLTIP.

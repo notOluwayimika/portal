@@ -803,6 +803,73 @@ it('the change table refuses a base outside the domain, and freezes it once subm
  * maker CANNOT state a base and on the return hop they need not — two changes, no base typed on
  * either, no base shown on either screen, and a live percentage at the end of it.
  */
+/*
+ * RULE 58 ITSELF, ASSERTED RATHER THAN ASSUMED — AND IT IS NOT THE RULE THE FILE SAID IT WAS.
+ *
+ * Two arms below and the docblock on the next test all REASON from `prohibited_if:basis,amount`:
+ * "the maker cannot state a base on an amount basis, so nothing stale is carried". Nothing exercised
+ * it. It is also the rule the maker's screen is now built on — discount-policies.tsx puts `base`
+ * inside the percent branch of the payload and shows no control on the amount side.
+ *
+ * WHAT IT ACTUALLY REFUSES IS A VALUE, NOT THE KEY, and the difference is the `nullable` that rule 58
+ * carries and its `value_minor`/`value_currency` siblings do not. `prohibited_if` is satisfied by an
+ * absent OR EMPTY field (it delegates to the `required` predicate and negates it), and `nullable`
+ * then skips `in:discountable,total`, so a null base on an amount basis is a 201, not a 422 — where
+ * a null `value_minor` on a percent basis IS a 422, from `integer` rather than from the prohibition.
+ * Measured, all four shapes, not reasoned from the rule string.
+ *
+ * The form does not lean on that laxness: it omits the key. A control offering a value the server
+ * refuses would be a control that lies, and a key that can only be null says nothing worth sending.
+ * But the next person to read "even as null, is a 422" beside the value half must not carry the
+ * sentence across to this field, which is what this arm is here to stop.
+ *
+ * THE ACCEPTING SIDE IS ASSERTED IN THE SAME ARM. Without it a 422 for any reason at all — a
+ * malformed target, a missing currency — reads as this rule firing.
+ */
+it('rule 58: a base VALUE on an amount basis is a 422 naming the field, while a null one is accepted', function () {
+    $ctx = bdSchool();
+    [$maker] = bdGovernance($ctx);
+
+    $post = function (array $over) use ($ctx, $maker) {
+        return test()->actingAs($maker)->withSession(['school_id' => $ctx['school']->id])
+            ->postJson('/api/v1/finance/discount-policy-changes', [
+                'kind' => 'create', 'name' => 'Flat '.Str::random(6), 'basis' => 'amount',
+                'value_minor' => 500000, 'value_currency' => 'NGN', 'reason' => 'a fixed reduction',
+            ] + $over);
+    };
+
+    // The refusal the screen is built on: a stated base has nowhere to go on an amount policy.
+    $post(['base' => 'total'])->assertStatus(422)->assertJsonValidationErrors(['base']);
+    $post(['base' => 'discountable'])->assertStatus(422)->assertJsonValidationErrors(['base']);
+
+    // NOT VACUOUS: the same body with the key gone is created, so the 422s above are the base and
+    // nothing else in the payload.
+    $post([])->assertCreated();
+
+    // And the measured laxness, pinned so it cannot drift silently in either direction: null is NOT
+    // refused here. If a future tightening (dropping `nullable`, or `prohibited_if` on a present
+    // key) makes this a 422, this line reds and the sentence above has to be rewritten with it.
+    $post(['base' => null])->assertCreated();
+});
+
+/*
+ * The other half of the basis, whose sentence this change moves into changeTerms() and which is
+ * therefore now load-bearing in a second file. It says what rule 58 does NOT: `value_minor` and
+ * `value_currency` carry no `nullable`, so a null one on a percent basis fails `integer` / `size:3`
+ * regardless of the prohibition, and the form's "one side, never both" discipline is a hard
+ * requirement there rather than the tidiness it is for the base.
+ */
+it('the value half of the basis IS refused even as null on a percent basis', function () {
+    $ctx = bdSchool();
+    [$maker] = bdGovernance($ctx);
+
+    test()->actingAs($maker)->withSession(['school_id' => $ctx['school']->id])
+        ->postJson('/api/v1/finance/discount-policy-changes', [
+            'kind' => 'create', 'name' => 'Pct '.Str::random(6), 'basis' => 'percent', 'percent' => 50,
+            'value_minor' => null, 'value_currency' => null, 'reason' => 'r',
+        ])->assertStatus(422)->assertJsonValidationErrors(['value_minor', 'value_currency']);
+});
+
 it('a percent→AMOUNT amend does NOT carry the base across, and the round trip back to percent lands on the default', function () {
     $ctx = bdSchool();
     [$maker, $checker] = bdGovernance($ctx);

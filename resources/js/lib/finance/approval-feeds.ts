@@ -167,10 +167,23 @@ export type ApprovalConfirmation = {
  * resolves it through the same method that stamps the catalog, so this string names the term that
  * will actually be written.
  *
- * The wording is the catalog screen's (discount-policies.tsx valueLabel), deliberately: the ED
- * approves a phrase and then reads the same phrase back on the policy list.
+ * THE ONE COPY OF THE TWO PHRASES, which is why it is exported. The maker states a base on the
+ * catalog screen, the ED approves it here, and it is read back on the policy list — all three
+ * through this function (discount-policies.tsx imports it for both its control and valueLabel), so
+ * the phrase cannot be re-worded in one place and quietly differ in the others. It was two copies
+ * held in agreement by a comment until the maker's own control needed a third; two was defensible
+ * and three was not.
+ *
+ * TWO SIGNATURES, AND THE NARROW ONE IS NOT DECORATION. The catalog's `base` is NOT NULL on every
+ * policy row, so its callers get a `string` and need no dead branch for a null that cannot arrive;
+ * the approvals side passes `effective_base`, which IS null on a retire — an act that approves no
+ * policy and so states no base — and gets the nullable return that fact deserves.
  */
-function baseLabel(
+export function baseLabel(base: 'discountable' | 'total'): string;
+export function baseLabel(
+    base: DiscountPolicyChangeApproval['effective_base'],
+): string | null;
+export function baseLabel(
     base: DiscountPolicyChangeApproval['effective_base'],
 ): string | null {
     if (base === 'total') {

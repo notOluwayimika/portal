@@ -1,16 +1,26 @@
 # Implementation report — `feat/gateway-transaction-table`
 
+> **Revised after review, 2026-08-27.** The first version of this branch omitted the four
+> boundary §5 / §8.2 / §14 settlement requirements — the gateway fee, the settlement reference,
+> the settlement date and the raw webhook payloads — and did not mention the omission. I was
+> working from the advisory only and did not have the boundary document; that explains it and does
+> not excuse it, since §8.2's whole reason for putting that data in scope is that it **cannot be
+> recovered afterwards**. They are in this migration now, with the table still at zero rows. The
+> sections below are updated throughout; the correction to the update guard that this forced is in
+> **Deviations 4**, and it is the most important thing on this page.
+
 **This is full-review tier** — it adds a migration, a money-adjacent table, DB triggers and
 `school_id` isolation constraints. Recommend a cold session against this file before merge.
 
 ## Headline
 
-Done, with three design deviations named below. Step 2 of the payments advisory §6 — the gateway
+Done, with four design deviations named below (the fourth is a correction of my own first version). Step 2 of the payments advisory §6 — the gateway
 transaction table, its status enum and its migration — is implemented, shape-verified from
 `information_schema`, and bite-proven with five watched reds.
 
-Base: `origin/staging` @ `6f54a18a`. Branch: `feat/gateway-transaction-table`. Shape: four new
-files (one enum, one model, one migration, one test file) plus this report. One commit.
+Base: `origin/staging` @ `6f54a18a`. Branch: `feat/gateway-transaction-table`. Shape: five new
+files (one enum, two models, one migration, one test file) plus this report. Two commits — the
+second is the settlement data and the guard correction it forced.
 
 ## Deviations from the brief
 
@@ -42,11 +52,85 @@ on either one alone leaves the other free to duplicate. There is also a third,
 payment per attempt* a database fact rather than handler discipline, and it is what step 4's
 "idempotent by unique-index collision, never check-then-insert" is meant to collide with.
 
-**3 · The table carries no `student_id`,** though every sibling `finance_` table does. It is
+**3 · "Raw webhook payloads" became a CHILD TABLE, not a `payload` column.** §5 says payloads,
+plural, and the plural is load-bearing: one transaction receives several messages — `charge.success`,
+then a verify response when the payer returns, then a settlement event days later. A single JSON
+column holds the last one and **silently destroys the others on each write**, which is the exact loss
+§8.2 exists to prevent, arriving through the mechanism meant to prevent it. So
+`finance_gateway_transaction_events` is append-only by the Constitution §15C idiom (`_no_update` /
+`_no_delete`), with a `_source_guard` on `webhook` | `verify`, a JSON `payload` (asserted to be
+`json` and not `text` — a TEXT column takes a truncated body silently), and a composite
+`(gateway_transaction_id, school_id)` FK. It records rejected deliveries too; nothing in it asserts
+the payload was trusted, because a delivery that failed signature verification is exactly the one an
+investigation wants.
+
+This is the one place I widened the ask from "four columns" to a table, so it is the one to push back
+on if you disagree.
+
+**4 · THE CORRECTION, and it is the most important thing in this report: my first update guard would
+have made the §5 settlement columns physically unwritable.** It made `success` terminal
+*absolutely* — any UPDATE of a settled row refused. But **settlement happens after success; that is
+what settlement is.** The provider collects on Friday and pays out on Tuesday, and the fee, the
+settlement reference and the settlement date are all reported in that later event. The suite would
+have stayed green, because nothing existed yet to write them; it would have been discovered at the
+first real payout, on a live table.
+
+Terminality is now narrowed to what it was actually for — stopping a replayed webhook re-settling —
+and the mechanism is **write-once** rather than freeze-the-row: `success` is terminal *for status*;
+every fact reported by the provider (`provider_reference`, `paid_at`, `payment_id`,
+`failure_reason`, the fee pair, `settlement_reference`, `settled_at`) may go NULL → value exactly
+once and never value → value; identity and the amount are immutable from insert. That NULL → value
+asymmetry is what makes a NULL in these columns mean *"not reported yet"* and never *"possibly
+overwritten by a later delivery"* — a reconciliation that cannot trust that distinction cannot use
+the column at all.
+
+**The general rule, stated so it can be checked:** *a guard that freezes a row must be checked
+against every fact that arrives later than the state it freezes on.* I got this wrong once here.
+
+**5 · The table carries no `student_id`,** though every sibling `finance_` table does. It is
 derivable from `invoice_id` by one join and no consumer of this table has a read that cannot afford
 that join, so a denormalised copy would be a second place for one fact to live. `school_id` is
 present and is not the same case — it is the isolation boundary, uniform by convention, and the two
 composite FKs are what stop it diverging from the parents it was copied from.
+
+**6 · `initialised` is documented as a deliberate absence, not left silent.** §5 names five states
+and the enum has four. A row is INSERTED at initiation — that write *is* the initialise — so a
+distinct `initialised` case would be a state no transaction occupies for the duration of a single
+statement, and `pending` would then mean "initialised and still waiting", the same thing said twice.
+That is the same reasoning that kept `approved` out of `OpeningBalanceBatchStatus`. The enum docblock
+now says so, and says what would change the decision: if initiation ever becomes two steps — a row
+written before the provider has accepted the checkout — the fifth case is owed, and that is a
+migration plus a trigger change.
+
+## The discrepancy-report interaction, decided now
+
+You are right that `failed` and `abandoned` being non-terminal would make every abandoned checkout
+ever "stuck beyond age" in §6 step 7's query. The decision, taken here and written into the enum
+docblock so step 7 inherits it rather than re-deriving it:
+
+**Non-terminal is not the same as unresolved, and the stuck query is over `pending` only.** Three of
+the four states are non-terminal in the *database* sense — the guard will still let their row change.
+Only `Pending` is unresolved in the *business* sense, the one state where this system is still
+waiting to be told something. `Failed` and `Abandoned` are ANSWERED: the provider told us the
+outcome, and they stay writable solely because that answer can be superseded, not because anyone is
+waiting on them.
+
+This is a decision record, not a control — nothing enforces it until step 7's query is written.
+Flagging it as such rather than dressing it as enforcement.
+
+## For Developer 1 — two deviations from written contract, visible rather than discovered
+
+- **§6's idempotency is literally "duplicate webhook attempts an insert, hits the constraint".
+  Mine is a compare-and-swap on `payment_id`.** The row already exists from initiation, so a
+  duplicate delivery is an UPDATE, not an INSERT — there is no insert for a constraint to catch.
+  The equivalent is `UPDATE … SET payment_id = ? WHERE id = ? AND payment_id IS NULL` inside the
+  same transaction as `RecordPayment`, with the affected row count as the answer, backed by
+  `UNIQUE (payment_id)`. Still a database primitive, still never a check-then-insert, but it is not
+  what the contract says and should be agreed rather than assumed.
+- **`invoice_id` is REQUIRED, which quietly answers section 11 decision 5** (one invoice per
+  checkout, not several). It is the shape the designed flow has, and this table is not append-only
+  so widening the grain later is an ordinary migration — but the decision was Developer 1's to make
+  and I have made it by building.
 
 ## Contradictions of the premise
 
@@ -69,10 +153,14 @@ bites at step 4.
 
 | File | Lines | What it does |
 |---|---|---|
-| `database/migrations/2026_08_27_100000_create_finance_gateway_transactions.php` | 454 | Creates `finance_gateway_transactions`, its two composite FKs, four indexes, the currency-shape `CHECK` and three triggers — then reads every one of them back out of `information_schema` and throws rather than record itself if the shape is wrong. |
+| `database/migrations/2026_08_27_100000_create_finance_gateway_transactions.php` | — | Creates `finance_gateway_transactions` **and `finance_gateway_transaction_events`**, three composite FKs, five indexes, two currency-shape `CHECK`s and **six** triggers — then reads every one of them back out of `information_schema` (columns, index column SETS, constraint names, the `payload` data type) and throws rather than record itself if the shape is wrong. |
 | `app/Finance/Enums/GatewayTransactionStatus.php` | 72 | `pending` · `success` · `failed` · `abandoned`. A reader of the trigger's domain, not a second copy of it. |
-| `app/Finance/Models/GatewayTransaction.php` | 86 | `AddUuid` + `BelongsToSchool`, `MoneyCast` on `amount`, enum cast on `status`, `invoice()` / `payment()`. |
-| `tests/Feature/Finance/GatewayTransactionSchemaTest.php` | 387 | 13 tests, 53 assertions. Every write is raw `DB::table`, never the model — the guards under test are the database's. |
+| `app/Finance/Models/GatewayTransaction.php` | — | `AddUuid` + `BelongsToSchool`, `MoneyCast` on `amount` **and `fee`**, enum cast on `status`, `invoice()` / `payment()` / `events()`. |
+| `app/Finance/Models/GatewayTransactionEvent.php` | — | The raw delivery. Append-only at the database; `payload` cast to array. |
+| `tests/Feature/Finance/GatewayTransactionSchemaTest.php` | — | 19 tests, 91 assertions. Every write is raw `DB::table`, never the model — the guards under test are the database's. |
+
+Re-derive the line counts from the tree rather than from this table; they moved with the second
+commit and a carried number is how a stale fact becomes a confident assertion.
 
 **Three design points a reviewer should attack first:**
 
@@ -101,7 +189,7 @@ Raw output, in the order run. Test DB is `portal_testing` throughout; the produc
 
 ```
 $ DB_DATABASE=portal_testing ./vendor/bin/pest tests/Feature/Finance/GatewayTransactionSchemaTest.php
-{"tool":"pest","result":"passed","tests":13,"passed":13,"assertions":53,"duration_ms":15501}
+{"tool":"pest","result":"passed","tests":19,"passed":19,"assertions":91,"duration_ms":13164}
 ```
 
 **The new file plus every sibling that reasons about this schema** — schema conventions (which
@@ -115,14 +203,14 @@ $ DB_DATABASE=portal_testing ./vendor/bin/pest \
     tests/Feature/Finance/CurrencyShapeConstraintTest.php \
     tests/Feature/Finance/PaymentOriginGatewayTest.php \
     tests/Feature/Finance/CheckConstraintsAsTriggersTest.php
-{"tool":"pest","result":"passed","tests":42,"passed":42,"assertions":238,"duration_ms":19661}
+{"tool":"pest","result":"passed","tests":48,"passed":48,"assertions":278,"duration_ms":16286}
 ```
 
 **Arch group** (the boundary rules that decide where these files may live):
 
 ```
 $ DB_DATABASE=portal_testing ./vendor/bin/pest --group=arch
-{"tool":"pest","result":"passed","tests":115,"passed":115,"assertions":599,"duration_ms":43256,"risky":1}
+{"tool":"pest","result":"passed","tests":115,"passed":115,"assertions":599,"duration_ms":41988,"risky":1}
 ```
 
 **Larastan:**
@@ -135,8 +223,8 @@ $ composer analyse
 **The four lints and Pint** (Pint invoked on an explicit file array, never a directory):
 
 ```
-$ ./vendor/bin/pint "${files[@]}"
-{"tool":"pint","result":"fixed","files":[{"path":"app/Finance/Enums/GatewayTransactionStatus.php","fixers":["fully_qualified_strict_types","blank_line_after_namespace"]}]}
+$ ./vendor/bin/pint --test "${files[@]}"
+{"tool":"pint","result":"passed"}
 
 $ php bin/ci-boundary-lint.php
 boundary-lint: OK — no new boundary violations (8 known temporary exceptions).
@@ -155,7 +243,7 @@ unrelated file was swept in by formatting.
 
 ```
 $ DB_DATABASE=portal_testing ./vendor/bin/pest --log-junit junit.xml
-{"tool":"pest","result":"failed","tests":2384,"passed":2367,"failed":6,"errors":1,"skipped":10,"risky":4,"duration_ms":1074809}
+{"result":"failed","tests":2390,"passed":2373,"failed":6,"errors":1,"skipped":10,"risky":4}
 PEST_EXIT=2
 
 $ php bin/ci-test-ratchet.php junit.xml
@@ -191,16 +279,16 @@ Only then `--step=1`, and the assertion is on **my** objects being gone, not on 
 
 ```
 $ php artisan migrate:rollback --step=1 --force
- 2026_08_27_100000_create_finance_gateway_transactions .. 217.00ms DONE
+ 2026_08_27_100000_create_finance_gateway_transactions .. 142.85ms DONE
 
-table=gone triggers=0 constraints=0
-payments origin trigger still present: 1
+parent=gone events=gone triggers=0 payments_origin_intact=1
 
 $ php artisan migrate --force
- 2026_08_27_100000_create_finance_gateway_transactions .. 199.38ms DONE
+ 2026_08_27_100000_create_finance_gateway_transactions .. 410.09ms DONE
 ```
 
-Two things that line proves beyond "it rolled back": the `finance_payments` origin pairing survives
+Both tables go, in the right order — the child holds the FK, so dropping the parent first is 1217
+and a half-done rollback. Two further things that line proves beyond "it rolled back": the `finance_payments` origin pairing survives
 my rollback untouched (my `down()` does not reach into another migration's rule), and the re-up
 succeeds against a database that has already had these triggers — the `DROP TRIGGER IF EXISTS`
 before each `CREATE` is what stops the rollback/re-up leg of `bin/quality-clean-db` hitting 1359.
@@ -261,6 +349,44 @@ Every test in the file errored on that message. Note what this proves that the o
 A school-A attempt successfully claimed a school-B payment. The composite FK is the only thing
 refusing that, and the arm sees it.
 
+**6 · The null-safe `<=>` replaced by a plain `<>` on one write-once column** (`settlement_reference`).
+The interesting one, because it fails in only one direction:
+
+```
+457:               OR (OLD.settlement_reference IS NOT NULL AND NEW.settlement_reference <> OLD.settlement_reference)
+--- MUTATION 6 APPLIED ---
+{"result":"failed","tests":19,"passed":18,"errors":1,"error_details":[{"test":"…a_fact_reported_by_the_provider_is_WRITE_ONCE_—_NULL_to_a_value__never_a_value_to_another","message":"expected a QueryException carrying 1644, none thrown"}]}
+```
+
+Rewriting one value to another still bit; **erasure to NULL slipped straight through**, because
+`NULL <> NULL` is NULL rather than FALSE. Without the erasure arm in that test this mutation would
+have survived and the rule would have been wallpaper in exactly the case it exists for.
+
+**7 · The events table's `_no_update` trigger not created:**
+
+```
+failed 17 / 19
+ - it_a_stored_delivery_can_never_be_edited_or_deleted_—_it_is_evidence… | expected a QueryException carrying 1644, none thrown
+ - it_the_table_carries_the_columns__indexes__foreign_keys_and_CHECK… | Failed asserting that an array contains 'finance_gateway_transaction_e…
+```
+
+Two kills, which is the right number: the behavioural arm and the by-name arm are separate claims.
+
+**8 · `payload` declared `text` instead of `json`** — killed by the shape read-back before any test
+ran, all 19 errored on:
+
+```
+finance_gateway_transaction_events.payload is [text], expected [json].
+```
+
+**9 · The fee/amount currency match removed** (`IF NEW.fee_currency … <> NEW.amount_currency` →
+`IF FALSE`):
+
+```
+failed 18 / 19
+ - it_the_fee_is_both_halves_or_neither__never_negative__and_always_in_th
+```
+
 **Restored after each**, and the file verified byte-identical to the pre-mutation copy before the
 final green run (`diff -q` → clean). The greens in the Proof section above were produced by the
 restored file, not by a file I had stopped mutating and hoped was right.
@@ -302,8 +428,21 @@ Under the privacy rule — structure and counts only.
 - **`bin/quality` was not run end to end.** It is the pre-push gate and will run on push. The
   frontend legs of it (wayfinder, tsc ratchet, ESLint/Prettier) cannot be affected by this change —
   it touches no TypeScript — but that is an argument, not a measurement.
-- **No factory** for `GatewayTransaction`. Nothing needs one yet; the test file builds rows raw on
-  purpose. Step 4 may want one.
+- **No factory** for `GatewayTransaction` or `GatewayTransactionEvent`. Nothing needs one yet; the
+  test file builds rows raw on purpose. Step 4 may want one.
+- **The unmatched-delivery gap is open and named, not closed.** A webhook whose reference matches no
+  transaction has nowhere to go in `finance_gateway_transaction_events` — every row hangs off a
+  parent and a school. That log belongs with the webhook handler (step 4), and it is the case where a
+  forged or misrouted delivery would leave no trace at all. Recorded in the migration and model
+  docblocks; **severity: ticket**, and it should not be forgotten at step 4.
+- **`settled_at` and `paid_at` are both `timestamp`, in the application's clock frame.** Nothing here
+  reads MySQL's clock (the sql-clock lint is green), but neither column is yet written by anything,
+  so the frame is a claim about the writer that does not exist. Step 4 must bind a PHP-captured
+  instant, not `NOW()`.
+- **Nothing verifies the fee against the payment.** `fee_minor` is constrained to be non-negative and
+  same-currency; nothing checks it is less than `amount_minor`. That is deliberate — I do not know
+  that a provider never reports a fee exceeding a small payment — but it is an unenforced assumption
+  a reviewer should decide on rather than inherit.
 - **Nothing consumes any of this yet.** That is deliberate and is the shape of step 2. The model
   has no writer, the enum has no reader in production code, and no route reaches the table. A
   reviewer should expect that and should NOT read it as incompleteness — but should also confirm I

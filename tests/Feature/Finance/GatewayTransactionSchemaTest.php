@@ -33,11 +33,14 @@ use App\Support\Money;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
 const GTX_TABLE = 'finance_gateway_transactions';
+
+const GTX_EVENTS = 'finance_gateway_transaction_events';
 
 /**
  * One school with a real invoice and a real payment, built through the domain Actions rather than by
@@ -100,6 +103,10 @@ function gtxRow(array $ctx, array $overrides = []): array
         'failure_reason' => null,
         'initiated_by_user_id' => null,
         'payment_id' => null,
+        'fee_minor' => null,
+        'fee_currency' => null,
+        'settlement_reference' => null,
+        'settled_at' => null,
         'created_at' => now(),
         'updated_at' => now(),
     ], $overrides);
@@ -144,7 +151,15 @@ it('the table carries the columns, indexes, foreign keys and CHECK the migration
     expect($columnsOf('finance_gateway_transactions_provider_reference_unique'))->toBe(['provider', 'reference'])
         ->and($columnsOf('finance_gateway_transactions_provider_ref_unique'))->toBe(['provider', 'provider_reference'])
         ->and($columnsOf('finance_gateway_transactions_payment_unique'))->toBe(['payment_id'])
-        ->and($columnsOf('finance_gateway_transactions_school_status_index'))->toBe(['school_id', 'status']);
+        ->and($columnsOf('finance_gateway_transactions_school_status_index'))->toBe(['school_id', 'status'])
+        ->and($columnsOf('finance_gateway_transactions_id_school_unique'))->toBe(['id', 'school_id']);
+
+    // Boundary §5 / §8.2 — the settlement facts. Asserted by NAME here, not only inside the
+    // migration, so an ALTER on a later branch that drops one reds in the suite rather than at a
+    // reconciliation that finds the column empty for every historical row.
+    foreach (['fee_minor', 'fee_currency', 'settlement_reference', 'settled_at'] as $settlement) {
+        expect(Schema::hasColumn(GTX_TABLE, $settlement))->toBeTrue("[{$settlement}] is missing");
+    }
 
     foreach ([
         'finance_gateway_transactions_provider_reference_unique',
@@ -164,6 +179,7 @@ it('the table carries the columns, indexes, foreign keys and CHECK the migration
         'finance_gateway_transactions_invoice_school_foreign',
         'finance_gateway_transactions_payment_school_foreign',
         'finance_gateway_transactions_amount_currency_shape',
+        'finance_gateway_transactions_fee_currency_shape',
     );
 
     $triggers = collect(DB::select(
@@ -177,6 +193,26 @@ it('the table carries the columns, indexes, foreign keys and CHECK the migration
         'finance_gateway_transactions_update_guard',
         'finance_gateway_transactions_no_delete',
     );
+
+    $eventTriggers = collect(DB::select(
+        'SELECT TRIGGER_NAME AS name FROM information_schema.TRIGGERS
+          WHERE TRIGGER_SCHEMA = DATABASE() AND EVENT_OBJECT_TABLE = ?',
+        [GTX_EVENTS],
+    ))->pluck('name')->all();
+
+    expect($eventTriggers)->toContain(
+        'finance_gateway_transaction_events_no_update',
+        'finance_gateway_transaction_events_no_delete',
+        'finance_gateway_transaction_events_source_guard',
+    );
+
+    // The payload is JSON, not TEXT. A TEXT column takes a truncated body silently; JSON refuses it
+    // at the write, which is the difference between evidence and a string that looks like evidence.
+    expect(DB::scalar(
+        'SELECT DATA_TYPE FROM information_schema.COLUMNS
+          WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?',
+        [GTX_EVENTS, 'payload'],
+    ))->toBe('json');
 });
 
 // ── The status domain ─────────────────────────────────────────────────────────────────────────────
@@ -340,7 +376,7 @@ it('identity and money are immutable once the attempt exists', function () {
     expect(DB::table(GTX_TABLE)->where('id', $id)->value('provider_reference'))->toBe('PSK-9');
 });
 
-it('a settled attempt is final — the replayed webhook has nothing it can move', function () {
+it('a settled attempt is final FOR STATUS — the replayed webhook cannot re-settle it', function () {
     $ctx = gtxSchool();
     $id = gtxInsert($ctx);
 
@@ -348,11 +384,95 @@ it('a settled attempt is final — the replayed webhook has nothing it can move'
         'status' => 'success', 'payment_id' => $ctx['payment'], 'paid_at' => now(),
     ]);
 
-    // EVEN A HARMLESS-LOOKING UPDATE. Terminality is the property, not "the money columns are
-    // frozen": a second delivery that could set failure_reason could also have set status.
-    gtxExpectCode(1644, fn () => DB::table(GTX_TABLE)->where('id', $id)->update(['failure_reason' => 'x']));
+    // The status cannot move off success, in any direction. This is the arm that makes a duplicate
+    // delivery harmless: it finds a status it cannot change.
     gtxExpectCode(1644, fn () => DB::table(GTX_TABLE)->where('id', $id)->update(['status' => 'failed']));
+    gtxExpectCode(1644, fn () => DB::table(GTX_TABLE)->where('id', $id)->update(['status' => 'abandoned']));
+
+    // And the facts already reported cannot be rewritten — including back to NULL, which is the
+    // shape a badly-written "reset and retry" would take.
     gtxExpectCode(1644, fn () => DB::table(GTX_TABLE)->where('id', $id)->update(['payment_id' => null]));
+    gtxExpectCode(1644, fn () => DB::table(GTX_TABLE)->where('id', $id)->update(['paid_at' => now()->addDay()]));
+});
+
+it('SETTLEMENT IS WRITABLE AFTER SUCCESS — the arm the first version of this guard would have failed', function () {
+    // WHY THIS TEST EXISTS. The guard originally froze the whole row at `success`. Every other arm in
+    // this file passed, because settlement had no writer yet — and boundary §5's three settlement
+    // columns would have been physically unwritable on a live table, discovered at the first payout.
+    // Settlement happens AFTER success; that is what settlement is.
+    $ctx = gtxSchool();
+    $id = gtxInsert($ctx);
+
+    DB::table(GTX_TABLE)->where('id', $id)->update([
+        'status' => 'success', 'payment_id' => $ctx['payment'], 'paid_at' => now(),
+    ]);
+
+    DB::table(GTX_TABLE)->where('id', $id)->update([
+        'fee_minor' => 7500,
+        'fee_currency' => 'NGN',
+        'settlement_reference' => 'PAYOUT-2026-08-31',
+        'settled_at' => now()->addDays(3),
+    ]);
+
+    $row = DB::table(GTX_TABLE)->where('id', $id)->first();
+
+    expect((int) $row->fee_minor)->toBe(7500)
+        ->and($row->fee_currency)->toBe('NGN')
+        ->and($row->settlement_reference)->toBe('PAYOUT-2026-08-31')
+        ->and($row->settled_at)->not->toBeNull();
+});
+
+it('a fact reported by the provider is WRITE-ONCE — NULL to a value, never a value to another', function () {
+    $ctx = gtxSchool();
+    $id = gtxInsert($ctx);
+
+    // Each of these is filled in once, legitimately.
+    DB::table(GTX_TABLE)->where('id', $id)->update([
+        'provider_reference' => 'PSK-1', 'failure_reason' => 'Declined', 'status' => 'failed',
+    ]);
+    DB::table(GTX_TABLE)->where('id', $id)->update([
+        'fee_minor' => 100, 'fee_currency' => 'NGN',
+        'settlement_reference' => 'PAYOUT-1', 'settled_at' => now(),
+    ]);
+
+    // And none of them may be rewritten afterwards. THIS IS WHAT MAKES A NULL MEAN SOMETHING: a
+    // reconciliation reading `settlement_reference` must be able to know it is what the provider
+    // said, not what the most recent delivery happened to say last.
+    foreach ([
+        ['provider_reference' => 'PSK-2'],
+        ['failure_reason' => 'Something else'],
+        ['fee_minor' => 200],
+        ['fee_currency' => 'USD'],
+        ['settlement_reference' => 'PAYOUT-2'],
+        ['settled_at' => now()->addYear()],
+        // Including erasure — a rewrite to NULL is still a rewrite, and `NULL <> NULL` being NULL
+        // rather than FALSE is exactly why these comparisons are `<=>` and not `<>`. With a plain
+        // `<>` this arm would pass silently while the rule did nothing.
+        ['settlement_reference' => null],
+        ['fee_minor' => null, 'fee_currency' => null],
+    ] as $rewrite) {
+        gtxExpectCode(1644, fn () => DB::table(GTX_TABLE)->where('id', $id)->update($rewrite));
+    }
+});
+
+it('the fee is both halves or neither, never negative, and always in the amount\'s currency', function () {
+    $ctx = gtxSchool();
+
+    // ADR 0038 — the pair IS the value. Half a money value is not a money value.
+    gtxExpectCode(1644, fn () => gtxInsert($ctx, ['fee_minor' => 100]));
+    gtxExpectCode(1644, fn () => gtxInsert($ctx, ['fee_currency' => 'NGN']));
+
+    // A fee in a different currency cannot be subtracted from the amount it was taken out of —
+    // Money::minus throws on a mismatch, so this must be refused at the write and not at the screen.
+    gtxExpectCode(1644, fn () => gtxInsert($ctx, ['fee_minor' => 100, 'fee_currency' => 'USD']));
+
+    gtxExpectCode(1644, fn () => gtxInsert($ctx, ['fee_minor' => -1, 'fee_currency' => 'NGN']));
+
+    // NEGATIVE ARMS. Note zero is legitimate here and is NOT legitimate for amount_minor: nobody
+    // checks out for nothing, but plenty of transactions settle at no charge.
+    expect(gtxInsert($ctx, ['fee_minor' => 0, 'fee_currency' => 'NGN']))->toBeGreaterThan(0)
+        ->and(gtxInsert($ctx, ['fee_minor' => 2500, 'fee_currency' => 'NGN']))->toBeGreaterThan(0)
+        ->and(gtxInsert($ctx))->toBeGreaterThan(0);
 });
 
 it('status may not return to pending, but a failed attempt may still succeed later', function () {
@@ -384,4 +504,61 @@ it('an attempt is never deleted, settled or not', function () {
     // deleting the evidence of the thing being reconciled.
     gtxExpectCode(1644, fn () => DB::table(GTX_TABLE)->where('id', $pending)->delete());
     gtxExpectCode(1644, fn () => DB::table(GTX_TABLE)->where('id', $abandoned)->delete());
+});
+
+// ── The raw deliveries (boundary §5 / §8.2) ───────────────────────────────────────────────────────
+
+/** @param array{school:int, invoice:int, payment:int} $ctx */
+function gtxEvent(array $ctx, int $transactionId, array $overrides = []): int
+{
+    return (int) DB::table(GTX_EVENTS)->insertGetId(array_merge([
+        'uuid' => (string) Str::orderedUuid(),
+        'school_id' => $ctx['school'],
+        'gateway_transaction_id' => $transactionId,
+        'source' => 'webhook',
+        'event' => 'charge.success',
+        'payload' => json_encode(['data' => ['status' => 'success']]),
+        'created_at' => now(),
+        'updated_at' => now(),
+    ], $overrides));
+}
+
+it('EVERY delivery is kept — the reason this is a child table and not a payload column', function () {
+    $ctx = gtxSchool();
+    $id = gtxInsert($ctx);
+
+    // Three messages about one transaction: the webhook, the verify response when the payer returns,
+    // and the settlement event days later. A single `payload` column holds the last of these and
+    // destroys the other two — the exact loss §8.2 exists to prevent, arriving through the mechanism
+    // meant to prevent it. This arm is what makes the column shape a tested decision.
+    gtxEvent($ctx, $id, ['source' => 'webhook', 'event' => 'charge.success']);
+    gtxEvent($ctx, $id, ['source' => 'verify', 'event' => null]);
+    gtxEvent($ctx, $id, ['source' => 'webhook', 'event' => 'transfer.success']);
+
+    expect(DB::table(GTX_EVENTS)->where('gateway_transaction_id', $id)->count())->toBe(3)
+        ->and(DB::table(GTX_EVENTS)->whereNull('event')->count())->toBe(1);
+});
+
+it('a stored delivery can never be edited or deleted — it is evidence, not a working note', function () {
+    $ctx = gtxSchool();
+    $id = gtxInsert($ctx);
+    $event = gtxEvent($ctx, $id);
+
+    gtxExpectCode(1644, fn () => DB::table(GTX_EVENTS)->where('id', $event)
+        ->update(['payload' => json_encode(['data' => ['status' => 'failed']])]));
+    gtxExpectCode(1644, fn () => DB::table(GTX_EVENTS)->where('id', $event)->update(['event' => 'rewritten']));
+    gtxExpectCode(1644, fn () => DB::table(GTX_EVENTS)->where('id', $event)->delete());
+});
+
+it('a delivery names a known source and cannot be filed against another school\'s transaction', function () {
+    $a = gtxSchool();
+    $b = gtxSchool();
+    $inA = gtxInsert($a);
+
+    gtxExpectCode(1644, fn () => gtxEvent($a, $inA, ['source' => 'guess']));
+    gtxExpectCode(1644, fn () => gtxEvent($a, $inA, ['source' => 'Webhook'])); // the collation arm
+
+    // School B's row pointing at school A's transaction. Both ids are valid alone; the PAIR has no
+    // referent, which is what the composite FK is for.
+    gtxExpectCode(1452, fn () => gtxEvent($b, $inA));
 });

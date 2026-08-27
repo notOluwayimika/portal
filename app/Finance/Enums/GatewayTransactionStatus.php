@@ -21,6 +21,34 @@ use App\Finance\Models\Payment;
  * never a second copy of it — the same relationship {@see Payment}'s `ORIGIN_*`
  * constants have with the origin pairing trigger. A fifth value needs a migration, not an edit here.
  *
+ * ── WHY FOUR AND NOT THE FIVE THE BOUNDARY NAMES ────────────────────────────────────────────────
+ *
+ * Boundary §5 names five states; `initialised` is the one absent here, and its absence is a decision
+ * rather than an omission. A row is INSERTED at initiation — that write IS the initialise — so a
+ * distinct `initialised` case would be a state no transaction ever occupies for the duration of a
+ * single statement, and `pending` would mean "initialised and still waiting", which is the same
+ * thing said twice. The same reasoning kept `approved` out of {@see OpeningBalanceBatchStatus} where
+ * approval posts in the same transaction.
+ *
+ * WHAT WOULD CHANGE THE DECISION, so it is checkable rather than merely asserted: if initiation ever
+ * becomes two steps — a row written BEFORE the provider has accepted the checkout, and the
+ * provider's acceptance arriving separately — then `initialised` and `pending` describe genuinely
+ * different states and the fifth case is owed. That is a migration plus a trigger change, and the
+ * database is what refuses it until then.
+ *
+ * ── NON-TERMINAL IS NOT THE SAME AS UNRESOLVED, and the discrepancy report depends on it ────────
+ *
+ * Three of these four are non-terminal in the DATABASE sense: the update guard will still let their
+ * row change. Only `Pending` is unresolved in the BUSINESS sense — the one state where this system
+ * is still waiting to be told something.
+ *
+ * The distinction is written down here because §6 step 7's report asks for transactions "stuck in a
+ * non-terminal state beyond a stated age", and read as the database sense that query returns every
+ * abandoned checkout that ever happened, for ever. A report nobody can read is a report nobody
+ * reads. **The stuck query is over `Pending` only.** `Failed` and `Abandoned` are ANSWERED — the
+ * provider told us the outcome — and they stay writable solely because that answer can be
+ * superseded, not because anyone is waiting on them.
+ *
  * WHY A `string` BACKING AND NOT THE PROVIDER'S OWN VOCABULARY. Paystack calls a settled transaction
  * `success` and this enum agrees with it, deliberately: a reconciliation reads a provider dashboard
  * in one window and this system in the other, and a translation layer between the two words is a
@@ -37,13 +65,19 @@ enum GatewayTransactionStatus: string
     case Pending = 'pending';
 
     /**
-     * The provider says the money is collected. TERMINAL AT THE DATABASE, not by convention: the
-     * update guard denies every further UPDATE of a row in this state.
+     * The provider says the money is collected. TERMINAL AT THE DATABASE FOR STATUS, not by
+     * convention: the update guard refuses to let a row in this state become anything else.
      *
      * It is terminal because reaching it is what writes the `finance_payments` row, and that row can
      * never be unwritten. A second webhook delivery for the same reference — which providers make no
-     * promise against — must therefore find a row it cannot move, rather than a row it can flip back
-     * to `Pending` and settle a second time.
+     * promise against — must therefore find a status it cannot move, rather than one it can flip
+     * back to `Pending` and settle a second time.
+     *
+     * TERMINAL FOR STATUS, NOT FOR THE ROW, and the difference is load-bearing: SETTLEMENT HAPPENS
+     * AFTER SUCCESS. The fee, the settlement reference and the settlement date are all reported days
+     * later, into the same row, and a guard that froze it here would make boundary §5's required
+     * columns unwritable. What protects the row instead is that every provider-reported fact is
+     * write-once — NULL to a value, never a value to another value.
      */
     case Success = 'success';
 

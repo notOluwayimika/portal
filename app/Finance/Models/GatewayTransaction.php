@@ -7,8 +7,10 @@ use App\Concerns\AddUuid;
 use App\Concerns\BelongsToSchool;
 use App\Finance\Enums\GatewayTransactionStatus;
 use App\Support\Money;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
 /**
@@ -40,10 +42,14 @@ use Illuminate\Support\Carbon;
  * @property string|null $failure_reason
  * @property int|null $initiated_by_user_id
  * @property int|null $payment_id
+ * @property Money|null $fee
+ * @property string|null $settlement_reference
+ * @property Carbon|null $settled_at
  * @property Carbon $created_at
  * @property Carbon $updated_at
  * @property-read Invoice|null $invoice
  * @property-read Payment|null $payment
+ * @property-read Collection<int, GatewayTransactionEvent> $events
  */
 class GatewayTransaction extends Model
 {
@@ -55,11 +61,18 @@ class GatewayTransaction extends Model
 
     protected $casts = [
         'amount' => MoneyCast::class.':amount_minor,amount_currency',
+        // WHAT THE PROVIDER KEPT, reported at settlement and never at success. Null means "not
+        // reported yet" and can mean nothing else — the update guard makes every provider-reported
+        // fact write-once, so a value here was never overwritten by a later delivery.
+        'fee' => MoneyCast::class.':fee_minor,fee_currency',
         'status' => GatewayTransactionStatus::class,
         // A MOMENT, not a business day — unlike finance_payments.received_at, which is a date. This
         // is the instant the PROVIDER says the money was collected, and it is where the payment's
         // received_at date is to be taken from rather than from the clock at webhook time.
         'paid_at' => 'datetime',
+        // When the PROVIDER settled — a different true instant from `paid_at`, days apart in the
+        // ordinary case. The discrepancy report needs both to say which leg is late.
+        'settled_at' => 'datetime',
     ];
 
     /**
@@ -70,6 +83,21 @@ class GatewayTransaction extends Model
     public function invoice(): BelongsTo
     {
         return $this->belongsTo(Invoice::class);
+    }
+
+    /**
+     * Every raw delivery about this attempt, oldest first — webhooks and verify responses alike,
+     * stored verbatim and never edited (boundary §5).
+     *
+     * A CHILD TABLE RATHER THAN A `payload` COLUMN because there are several, and a column holds one:
+     * `charge.success`, then a verify response, then a settlement event days later. The column would
+     * destroy each earlier body as the next arrived — the exact loss §8.2 exists to prevent.
+     *
+     * @return HasMany<GatewayTransactionEvent, $this>
+     */
+    public function events(): HasMany
+    {
+        return $this->hasMany(GatewayTransactionEvent::class);
     }
 
     /**

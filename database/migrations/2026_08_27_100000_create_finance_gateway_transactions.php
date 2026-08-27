@@ -89,21 +89,39 @@ use Illuminate\Support\Facades\Schema;
  * is the copy that is actually live on production. That duplication is deliberate and is the one
  * place in this file where a rule is written twice; the trigger is the authority.
  *
- * THE THREE TRIGGERS:
+ * SIX TRIGGERS, THREE ON EACH TABLE:
  *
- *   `_insert_guard`  — the status domain (four values, case-sensitive), a positive amount, and the
- *                      currency shape. A checkout for nothing, or for `-1`, is not a state the
- *                      provider can produce and not one this system should be able to store.
+ *   `_insert_guard`  — the status domain (four values, case-sensitive), a positive amount, the
+ *                      currency shape, and the fee pairing. A checkout for nothing, or for `-1`, is
+ *                      not a state the provider can produce and not one this system should store.
  *
- *   `_update_guard`  — identity and money are immutable; `success` is TERMINAL; status may never
- *                      return to `pending`; and the status domain again, because an UPDATE can put a
- *                      value in a column just as an INSERT can and a guard that only watches one
- *                      door is not a guard. Terminality is what makes a replayed webhook harmless:
- *                      the row it wants to move is one the database refuses to move.
+ *   `_update_guard`  — identity and the amount immutable from insert; `success` terminal FOR STATUS;
+ *                      no return to `pending`; every fact reported by the provider WRITE-ONCE; and
+ *                      the status domain and fee pairing again, because an UPDATE puts a value in a
+ *                      column just as an INSERT does. Read that method's docblock before changing
+ *                      it — the first version of this guard froze the whole row at `success`, which
+ *                      would have made the settlement columns below physically unwritable while the
+ *                      suite stayed green.
  *
  *   `_no_delete`     — an attempt is retained for audit, settled or not. The failed and abandoned
  *                      rows are the entire input to the discrepancy report; deleting them is
  *                      deleting the evidence of the thing being reconciled.
+ *
+ *   The events table carries `_no_update`, `_no_delete` and `_source_guard` — append-only, because a
+ *   raw payload that can be edited is not evidence.
+ *
+ * ── THE SETTLEMENT DATA IS HERE BECAUSE IT CANNOT BE CAPTURED LATER (boundary §5, §8.2, §14) ──────
+ *
+ * `fee_minor` / `fee_currency`, `settlement_reference` and `settled_at` record what the provider
+ * kept, which payout the money arrived in, and when. Each is reported ONCE, in an event that has
+ * passed by the time anyone asks. The child table `finance_gateway_transaction_events` holds the raw
+ * bodies of every delivery, plural — a single `payload` column would destroy each earlier delivery
+ * as the next arrived, which is the precise loss §8.2 exists to prevent, arriving through the
+ * mechanism meant to prevent it.
+ *
+ * ALL OF IT IS DATA ONLY. Nothing here reads the fee, reconciles a payout or reports a discrepancy;
+ * those are §6 steps 6 and 7. The columns land now because a column added later is NULL for every
+ * transaction that happened before it existed, permanently.
  *
  * `MESSAGE_TEXT` IS CAPPED AT 128 CHARACTERS and every sentence below is counted, not eyeballed.
  * Past it, 8.0.43 does not truncate: `SIGNAL` itself fails with 1648/HY000, so the row is still
@@ -127,6 +145,16 @@ return new class extends Migration
     private const NO_DELETE = 'finance_gateway_transactions_no_delete';
 
     private const CURRENCY_CHECK = 'finance_gateway_transactions_amount_currency_shape';
+
+    private const FEE_CURRENCY_CHECK = 'finance_gateway_transactions_fee_currency_shape';
+
+    private const EVENTS_TABLE = 'finance_gateway_transaction_events';
+
+    private const EVENTS_NO_UPDATE = 'finance_gateway_transaction_events_no_update';
+
+    private const EVENTS_NO_DELETE = 'finance_gateway_transaction_events_no_delete';
+
+    private const EVENTS_SOURCE_GUARD = 'finance_gateway_transaction_events_source_guard';
 
     public function up(): void
     {
@@ -179,6 +207,36 @@ return new class extends Migration
             // settled attempt can never name another school's payment.
             $table->unsignedBigInteger('payment_id')->nullable();
 
+            // ── SETTLEMENT (boundary §5, §8.2, §14) ─────────────────────────────────────────────
+            //
+            // WHAT THE PROVIDER KEPT. A gateway does not hand over what the payer paid — it hands
+            // over the payment minus its fee, days later, in a batch. Every one of these three is
+            // reported ONCE, by the provider, at a moment that has passed by the time anyone asks;
+            // §8.2's whole reason for putting them in scope now is that they CANNOT BE RECOVERED
+            // AFTERWARDS. A column added later is a column that is NULL for every transaction that
+            // happened before it existed, permanently, and no amount of later work fixes that.
+            //
+            // NULLABLE, AND THAT IS NOT OPTIONALITY. They are unknown at initiation and unknown at
+            // success; settlement is a separate later event. The write-once rule in the update guard
+            // is what makes NULL mean "not reported yet" rather than "possibly overwritten".
+            //
+            // The fee is money and takes the ADR 0038 pair. Its currency is pinned to the amount's
+            // by the guards — a fee in a different currency from the payment it was taken out of is
+            // not a fee this system can reason about.
+            $table->bigInteger('fee_minor')->nullable();
+            $table->char('fee_currency', 3)->nullable();
+
+            // The provider's identifier for the PAYOUT this transaction was settled in — the string
+            // a bursar matches against the bank statement line, which carries the batch and not the
+            // individual payment. Without it, a settled transaction cannot be tied to the credit
+            // that actually arrived, and reconciliation is guesswork over dates and amounts.
+            $table->string('settlement_reference')->nullable();
+
+            // When the provider says it settled. NOT when we noticed, and not `paid_at` — a payment
+            // collected on Friday and settled the following Tuesday has two different true dates,
+            // and the discrepancy report needs both to say which leg is late.
+            $table->timestamp('settled_at')->nullable();
+
             $table->timestamps();
 
             $table->foreign(['invoice_id', 'school_id'], 'finance_gateway_transactions_invoice_school_foreign')
@@ -206,6 +264,21 @@ return new class extends Migration
              CHECK (amount_currency IS NULL OR amount_currency COLLATE utf8mb4_bin REGEXP '^[A-Z]{3}\$')"
         );
 
+        DB::statement(
+            'ALTER TABLE '.self::TABLE.' ADD CONSTRAINT '.self::FEE_CURRENCY_CHECK."
+             CHECK (fee_currency IS NULL OR fee_currency COLLATE utf8mb4_bin REGEXP '^[A-Z]{3}\$')"
+        );
+
+        // The parent key the events table's composite FK references (the F3 idiom —
+        // `finance_invoices_id_school_unique` and `finance_payments_id_school_unique` exist for
+        // exactly this, 2026_07_19_110001:33-34). Without it the child's (transaction, school) FK
+        // cannot be created at all.
+        DB::statement(
+            'ALTER TABLE '.self::TABLE.' ADD UNIQUE finance_gateway_transactions_id_school_unique (id, school_id)'
+        );
+
+        $this->createEventsTable();
+
         $this->installTrigger(self::INSERT_GUARD, 'INSERT', $this->insertGuardBody());
         $this->installTrigger(self::UPDATE_GUARD, 'UPDATE', $this->updateGuardBody());
         $this->installTrigger(self::NO_DELETE, 'DELETE', $this->noDeleteBody());
@@ -228,10 +301,16 @@ return new class extends Migration
      */
     public function down(): void
     {
+        DB::unprepared('DROP TRIGGER IF EXISTS '.self::EVENTS_SOURCE_GUARD);
+        DB::unprepared('DROP TRIGGER IF EXISTS '.self::EVENTS_NO_DELETE);
+        DB::unprepared('DROP TRIGGER IF EXISTS '.self::EVENTS_NO_UPDATE);
         DB::unprepared('DROP TRIGGER IF EXISTS '.self::NO_DELETE);
         DB::unprepared('DROP TRIGGER IF EXISTS '.self::UPDATE_GUARD);
         DB::unprepared('DROP TRIGGER IF EXISTS '.self::INSERT_GUARD);
 
+        // The CHILD FIRST — it holds the foreign key into the parent, so dropping the parent while
+        // it stands is 1217 and the rollback aborts half-done.
+        Schema::dropIfExists(self::EVENTS_TABLE);
         Schema::dropIfExists(self::TABLE);
     }
 
@@ -263,10 +342,10 @@ return new class extends Migration
             SQL;
     }
 
-    /** Status domain + a positive amount + the currency shape. 82, 95 and 89 characters, counted. */
+    /** The status domain and the fee pairing, plus a positive amount and the currency shape. */
     private function insertGuardBody(): string
     {
-        return $this->statusDomainBody()."\n".<<<'SQL'
+        return $this->statusDomainBody()."\n".$this->feePairingBody()."\n".<<<'SQL'
             IF NEW.amount_minor <= 0 THEN
                 SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT =
                     'finance_gateway_transactions.amount_minor must be greater than zero: nothing is not a checkout.';
@@ -279,25 +358,81 @@ return new class extends Migration
     }
 
     /**
-     * Identity and money immutable, `success` terminal, no return to `pending`, and the status domain
-     * again — an UPDATE puts a value in a column exactly as an INSERT does.
+     * THE FEE PAIRING, shared by both guards because a rule enforced at one door only is not a rule.
      *
-     * THE TERMINAL CHECK IS FIRST, and the order is load-bearing rather than stylistic: a replayed
-     * webhook that tries to move a settled row should be refused for being settled, which is the
-     * true reason, rather than for whichever column it happened to touch on the way.
+     * BOTH HALVES OR NEITHER, and the currency must be the AMOUNT'S. A fee of 1500 with no currency
+     * is not a money value (ADR 0038 — the pair IS the value), and a fee denominated differently
+     * from the payment it was deducted from cannot be subtracted from it: `Money::minus` throws on a
+     * currency mismatch, so the mismatch would surface as a 500 on the reconciliation screen rather
+     * than as the refusal it should have been at the write.
+     *
+     * A ZERO FEE IS LEGITIMATE and a negative one is not — some providers waive the fee on some
+     * channels, and a waived fee is 0, reported. Note the difference from `amount_minor`, where zero
+     * is refused: nobody checks out for nothing, but plenty of transactions settle at no charge.
+     */
+    private function feePairingBody(): string
+    {
+        return <<<'SQL'
+            IF (NEW.fee_minor IS NULL) <> (NEW.fee_currency IS NULL) THEN
+                SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT =
+                    'finance_gateway_transactions: fee_minor and fee_currency are one value; set both or neither.';
+            END IF;
+            IF NEW.fee_minor IS NOT NULL AND NEW.fee_minor < 0 THEN
+                SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT =
+                    'finance_gateway_transactions.fee_minor may not be negative; a waived fee is zero.';
+            END IF;
+            IF NEW.fee_currency IS NOT NULL
+               AND NEW.fee_currency COLLATE utf8mb4_bin <> NEW.amount_currency COLLATE utf8mb4_bin THEN
+                SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT =
+                    'finance_gateway_transactions.fee_currency must match amount_currency.';
+            END IF;
+            SQL;
+    }
+
+    /**
+     * WHAT MAY MOVE ON THIS ROW AND WHAT MAY NOT.
+     *
+     * ── A CORRECTION TO THE FIRST VERSION OF THIS GUARD, WRITTEN DOWN BECAUSE IT WAS NEARLY SHIPPED ──
+     *
+     * The first version made `success` terminal ABSOLUTELY: any UPDATE of a settled row was refused.
+     * That was wrong, and wrong in the direction that quietly loses data rather than the direction
+     * that fails loudly. SETTLEMENT HAPPENS AFTER SUCCESS — that is what settlement IS. The provider
+     * collects on Friday and pays out on Tuesday, and `fee_minor`, `settlement_reference` and
+     * `settled_at` are all reported in that later event. A guard that froze the row at `success`
+     * would have made the three columns boundary §5 requires PHYSICALLY UNWRITABLE, on a table whose
+     * whole justification (§8.2) is capturing data that cannot be recovered afterwards. The suite
+     * would have stayed green: nothing existed yet to write them.
+     *
+     * SO TERMINALITY IS NARROWED TO WHAT IT WAS ACTUALLY FOR — stopping a replayed webhook from
+     * re-settling — and the mechanism is WRITE-ONCE rather than freeze-the-row:
+     *
+     *   · `success` is terminal FOR STATUS. A settled attempt may not become failed, abandoned or
+     *     pending. This is the arm that makes a duplicate delivery harmless.
+     *   · Every fact learned FROM THE PROVIDER is write-once: once non-NULL, `provider_reference`,
+     *     `paid_at`, `payment_id`, `failure_reason`, the fee pair, `settlement_reference` and
+     *     `settled_at` may never be rewritten. NULL → value is the only transition each of them has.
+     *   · Identity and the amount are immutable outright, from insert.
+     *
+     * NULL → VALUE IS THE WHOLE DIFFERENCE, and it is what makes a NULL in these columns MEAN
+     * something: "not reported yet", never "possibly overwritten by a later delivery". A
+     * reconciliation that cannot trust that distinction cannot use the column at all.
      *
      * `<=>` FOR THE NULLABLE COLUMNS and `<>` for the NOT NULL ones. `NULL <> NULL` is NULL, not
-     * FALSE, so a plain `<>` on a nullable column can never fire — the immutability of
-     * `provider_reference` would have been wallpaper. `NOT (a <=> b)` is the null-safe spelling.
+     * FALSE, so a plain `<>` on a nullable column can never fire — the write-once rules would have
+     * been wallpaper in exactly the cases they exist for. `NOT (a <=> b)` is the null-safe spelling.
      * Nothing here DECLAREs a variable, so the #95 variable-collation trap does not arise: every
      * comparison is NEW.x against OLD.x, the same column, the same collation.
+     *
+     * THE STATUS ARM IS FIRST, and the order is load-bearing rather than stylistic: a replayed
+     * webhook that tries to move a settled row should be refused for being settled, which is the
+     * true reason, rather than for whichever column it happened to touch on the way.
      */
     private function updateGuardBody(): string
     {
-        return $this->statusDomainBody()."\n".<<<'SQL'
-            IF OLD.status COLLATE utf8mb4_bin = 'success' THEN
+        return $this->statusDomainBody()."\n".$this->feePairingBody()."\n".<<<'SQL'
+            IF OLD.status COLLATE utf8mb4_bin = 'success' AND NEW.status COLLATE utf8mb4_bin <> 'success' THEN
                 SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT =
-                    'finance_gateway_transactions: a settled attempt is final; it may not be updated again.';
+                    'finance_gateway_transactions: a settled attempt is final; its status may not change.';
             END IF;
             IF NEW.status COLLATE utf8mb4_bin = 'pending' AND OLD.status COLLATE utf8mb4_bin <> 'pending' THEN
                 SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT =
@@ -313,7 +448,93 @@ return new class extends Migration
                 SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT =
                     'finance_gateway_transactions: school, invoice, provider, reference and amount are immutable.';
             END IF;
+            IF (OLD.provider_reference   IS NOT NULL AND NOT (NEW.provider_reference   <=> OLD.provider_reference))
+               OR (OLD.paid_at              IS NOT NULL AND NOT (NEW.paid_at              <=> OLD.paid_at))
+               OR (OLD.payment_id           IS NOT NULL AND NOT (NEW.payment_id           <=> OLD.payment_id))
+               OR (OLD.failure_reason       IS NOT NULL AND NOT (NEW.failure_reason       <=> OLD.failure_reason))
+               OR (OLD.fee_minor            IS NOT NULL AND NOT (NEW.fee_minor            <=> OLD.fee_minor))
+               OR (OLD.fee_currency         IS NOT NULL AND NOT (NEW.fee_currency         <=> OLD.fee_currency))
+               OR (OLD.settlement_reference IS NOT NULL AND NOT (NEW.settlement_reference <=> OLD.settlement_reference))
+               OR (OLD.settled_at           IS NOT NULL AND NOT (NEW.settled_at           <=> OLD.settled_at)) THEN
+                SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT =
+                    'finance_gateway_transactions: a fact reported by the provider is written once and never rewritten.';
+            END IF;
             SQL;
+    }
+
+    /**
+     * THE RAW DELIVERIES — boundary §5's "raw webhook payloads", PLURAL, and the plural is why this
+     * is a child table rather than a `payload` column on the row.
+     *
+     * ONE COLUMN CANNOT HOLD THEM. A transaction receives several messages: `charge.success`, then
+     * a verify response when the payer returns, then a settlement event days later. A single JSON
+     * column holds the last one and silently destroys the others on each write — which is the exact
+     * failure §8.2 names, arriving through the mechanism meant to prevent it. It also collides with
+     * the parent's write-once rules: the settlement delivery arrives long after `success`.
+     *
+     * APPEND-ONLY, by the Constitution §15C idiom (`_no_update` / `_no_delete` triggers). A raw
+     * payload that can be edited is not evidence, and evidence is the only thing this table is for:
+     * a dispute six months from now is answered by what the provider actually sent, not by what this
+     * system concluded from it.
+     *
+     * IT RECORDS REJECTED DELIVERIES TOO — that is what `source` is for and why nothing here asserts
+     * the payload was trusted. A delivery whose signature failed verification is exactly the one an
+     * investigation wants to read.
+     *
+     * THE GAP THIS DOES NOT CLOSE, named rather than left to be discovered: a webhook whose
+     * reference matches NO transaction has nowhere to go, because every row here hangs off a parent
+     * and a school. An unmatched-delivery log is a separate concern and belongs with the webhook
+     * handler (§6 step 4), not here.
+     */
+    private function createEventsTable(): void
+    {
+        Schema::create(self::EVENTS_TABLE, function (Blueprint $table) {
+            $table->id();
+            $table->char('uuid', 36)->unique();
+
+            // Denormalised from the parent, uniform across every finance_ table (arch rule 5), and
+            // paired with the parent id in the composite FK below so it cannot diverge from it.
+            $table->foreignId('school_id')->constrained('schools')->restrictOnDelete();
+            $table->unsignedBigInteger('gateway_transaction_id');
+
+            // Where this arrived from — a provider-initiated webhook, or a verify call we made.
+            // Domain-guarded like the parent's status, and for the same reason.
+            $table->string('source');
+
+            // The provider's own event name (`charge.success`, `transfer.success`). Nullable: a
+            // verify RESPONSE is not an event and has no name, and inventing one would put a string
+            // this system made up into a column whose whole point is that the provider wrote it.
+            $table->string('event')->nullable();
+
+            // THE BODY, VERBATIM. Never parsed here, never trusted here — stored.
+            $table->json('payload');
+
+            $table->timestamps();
+
+            $table->foreign(['gateway_transaction_id', 'school_id'], 'finance_gateway_transaction_events_txn_school_foreign')
+                ->references(['id', 'school_id'])->on(self::TABLE)->restrictOnDelete();
+
+            // The investigation read: every delivery for one transaction, oldest first.
+            $table->index(['gateway_transaction_id', 'id'], 'finance_gateway_transaction_events_txn_index');
+        });
+
+        $this->installTrigger(self::EVENTS_NO_UPDATE, 'UPDATE', <<<'SQL'
+            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT =
+                'finance_gateway_transaction_events is a raw record of what arrived: UPDATE is denied.';
+            SQL, self::EVENTS_TABLE);
+
+        $this->installTrigger(self::EVENTS_NO_DELETE, 'DELETE', <<<'SQL'
+            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT =
+                'finance_gateway_transaction_events is retained for audit: DELETE is denied.';
+            SQL, self::EVENTS_TABLE);
+
+        $this->installTrigger(self::EVENTS_SOURCE_GUARD, 'INSERT', <<<'SQL'
+            IF NOT COALESCE(NEW.source COLLATE utf8mb4_bin = 'webhook'
+                         OR NEW.source COLLATE utf8mb4_bin = 'verify', 0) THEN
+                SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT =
+                    'finance_gateway_transaction_events.source must be webhook or verify.';
+            END IF;
+            SQL, self::EVENTS_TABLE);
     }
 
     /** 69 characters, counted. */
@@ -330,15 +551,17 @@ return new class extends Migration
      * `information_schema`. Idempotent so the rollback/re-up leg of `bin/quality-clean-db` re-asserts
      * rather than 1359s on a trigger of the same name.
      */
-    private function installTrigger(string $name, string $event, string $body): void
+    private function installTrigger(string $name, string $event, string $body, ?string $table = null): void
     {
+        $table ??= self::TABLE;
+
         DB::unprepared('DROP TRIGGER IF EXISTS '.$name);
         DB::unprepared(
-            "CREATE TRIGGER {$name} BEFORE {$event} ON ".self::TABLE.'
+            "CREATE TRIGGER {$name} BEFORE {$event} ON {$table}
              FOR EACH ROW
              BEGIN
-                '.$body.'
-             END'
+                {$body}
+             END"
         );
 
         $read = DB::selectOne(
@@ -355,10 +578,10 @@ return new class extends Migration
             );
         }
 
-        if ($read->timing !== 'BEFORE' || $read->event !== $event || $read->tbl !== self::TABLE) {
+        if ($read->timing !== 'BEFORE' || $read->event !== $event || $read->tbl !== $table) {
             throw new RuntimeException(
                 "Trigger [{$name}] exists with the wrong shape: got {$read->timing} {$read->event} on {$read->tbl}, "
-                .'expected BEFORE '.$event.' on '.self::TABLE.'. A trigger with the right name and the wrong '
+                ."expected BEFORE {$event} on {$table}. A trigger with the right name and the wrong "
                 .'timing or event fires on writes nobody guarded and misses the ones they did.'
             );
         }
@@ -384,7 +607,12 @@ return new class extends Migration
         $missing = array_diff([
             'id', 'uuid', 'school_id', 'invoice_id', 'provider', 'reference', 'provider_reference',
             'amount_minor', 'amount_currency', 'status', 'paid_at', 'failure_reason',
-            'initiated_by_user_id', 'payment_id', 'created_at', 'updated_at',
+            'initiated_by_user_id', 'payment_id',
+            // Boundary §5 / §8.2 — the settlement facts, which cannot be recovered if they are not
+            // captured at the moment they are reported. Asserted here so a future ALTER that drops
+            // one fails at the migration rather than at a reconciliation nobody can complete.
+            'fee_minor', 'fee_currency', 'settlement_reference', 'settled_at',
+            'created_at', 'updated_at',
         ], $columns);
 
         if ($missing !== []) {
@@ -397,6 +625,7 @@ return new class extends Migration
         $this->assertIndex('finance_gateway_transactions_provider_ref_unique', ['provider', 'provider_reference'], true);
         $this->assertIndex('finance_gateway_transactions_payment_unique', ['payment_id'], true);
         $this->assertIndex('finance_gateway_transactions_school_status_index', ['school_id', 'status'], false);
+        $this->assertIndex('finance_gateway_transactions_id_school_unique', ['id', 'school_id'], true);
 
         $constraints = collect(DB::select(
             'SELECT CONSTRAINT_NAME AS name FROM information_schema.TABLE_CONSTRAINTS
@@ -408,6 +637,7 @@ return new class extends Migration
             'finance_gateway_transactions_invoice_school_foreign',
             'finance_gateway_transactions_payment_school_foreign',
             self::CURRENCY_CHECK,
+            self::FEE_CURRENCY_CHECK,
         ], $constraints);
 
         if ($missingConstraints !== []) {
@@ -415,6 +645,53 @@ return new class extends Migration
                 self::TABLE.' is missing constraints after ALTER TABLE returned success: '
                 .implode(', ', $missingConstraints).'. A composite (child, school_id) foreign key is what '
                 .'stops a row naming another school\'s invoice or payment.'
+            );
+        }
+
+        $eventColumns = collect(DB::select(
+            'SELECT COLUMN_NAME AS name FROM information_schema.COLUMNS
+              WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?',
+            [self::EVENTS_TABLE],
+        ))->pluck('name')->all();
+
+        $missingEventColumns = array_diff(
+            ['id', 'uuid', 'school_id', 'gateway_transaction_id', 'source', 'event', 'payload', 'created_at', 'updated_at'],
+            $eventColumns,
+        );
+
+        if ($missingEventColumns !== []) {
+            throw new RuntimeException(
+                self::EVENTS_TABLE.' is missing columns after CREATE TABLE returned success: '
+                .implode(', ', $missingEventColumns).'. This table is the only record of what the provider '
+                .'actually sent, and boundary §8.2 exists because that cannot be recovered afterwards.'
+            );
+        }
+
+        // The payload must be JSON, not a string. A TEXT column accepts a truncated or malformed body
+        // silently; JSON refuses it at the write, which is the difference between evidence and a
+        // string that looks like evidence.
+        $payloadType = DB::scalar(
+            'SELECT DATA_TYPE FROM information_schema.COLUMNS
+              WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?',
+            [self::EVENTS_TABLE, 'payload'],
+        );
+
+        if ($payloadType !== 'json') {
+            throw new RuntimeException(
+                self::EVENTS_TABLE.'.payload is ['.(string) $payloadType.'], expected [json].'
+            );
+        }
+
+        $eventConstraints = collect(DB::select(
+            'SELECT CONSTRAINT_NAME AS name FROM information_schema.TABLE_CONSTRAINTS
+              WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = ?',
+            [self::EVENTS_TABLE],
+        ))->pluck('name')->all();
+
+        if (! in_array('finance_gateway_transaction_events_txn_school_foreign', $eventConstraints, true)) {
+            throw new RuntimeException(
+                self::EVENTS_TABLE.' is missing its composite (gateway_transaction_id, school_id) foreign key. '
+                .'Without it a delivery can be filed against another school\'s transaction.'
             );
         }
     }

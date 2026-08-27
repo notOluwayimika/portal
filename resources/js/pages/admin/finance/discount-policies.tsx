@@ -90,6 +90,7 @@ import { formatNaira } from '@/lib/format';
 type PolicyStatus = 'active' | 'superseded' | 'retired';
 
 type Basis = 'amount' | 'percent';
+type DiscountBase = 'discountable' | 'total';
 
 // DiscountPolicyResource's shape. `value_minor`/`value_currency` are the amount basis's two halves and
 // arrive UNWRAPPED (that resource does not cast through Money) — they are paired back into the wire
@@ -103,6 +104,12 @@ type DiscountPolicy = {
     value_minor: number | null;
     value_currency: string | null;
     percent: number | null;
+    // AXIS C — WHAT a percentage is taken of. NOT NULL on the catalog row (unlike the change row's,
+    // which is the maker's proposed term and may be absent), inert on an `amount` basis. It arrived
+    // on DiscountPolicyResource with no reader here, and valueLabel() below printed "of discountable
+    // charges" over every policy including the `total` ones — a screen stating the wrong one of two
+    // different amounts of money, which is worse than a screen stating neither.
+    base: DiscountBase;
     requires_approval: boolean;
     status: PolicyStatus;
 };
@@ -209,9 +216,14 @@ function parseErrorBag(err: unknown): ErrorBag | null {
 /** How a policy reduces a bill, in the operator's words. Amount through formatNaira; percent is not money. */
 function valueLabel(policy: DiscountPolicy): string {
     if (policy.basis === 'percent') {
-        return policy.percent === null
-            ? '—'
-            : `${policy.percent}% of discountable charges`;
+        // The base is read, not assumed. This string is the phrase the ED approved on the approvals
+        // queue (lib/finance/approval-feeds.ts baseLabel), read back on the policy it became.
+        const of =
+            policy.base === 'total'
+                ? 'of the whole bill'
+                : 'of discountable charges';
+
+        return policy.percent === null ? '—' : `${policy.percent}% ${of}`;
     }
 
     return policy.value_minor === null || policy.value_currency === null

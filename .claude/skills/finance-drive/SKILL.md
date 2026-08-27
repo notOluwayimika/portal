@@ -383,9 +383,22 @@ statement". It is already in the committed `.env.drive.example:40`; if you built
 your `.env.drive` from something else, this is the first thing you will hit
 (`docs/handoff/drives/2026-07-25/README.md:77-83`).
 
+**Drive `localhost:8001`, never `127.0.0.1:8001` — `session.domain` is `localhost`.**
+A harness pointed at the IP signs in and appears to succeed: `POST /login` answers a
+302. It then holds no session at all, because the cookie was issued for `localhost`
+and the browser will not send it back to a different host — so every
+`/api/v1/finance/*` call 401s, every page bounces to `/login`, and the login form
+renders again with no error on it. That is indistinguishable from a wrong password,
+and the cycle it costs is spent checking credentials that were never wrong.
+`localhost:8001` is also `app.url`. Not a defect in whatever you are driving; the
+same class as the Sanctum entry above, and measured on the discount-base drive
+(`docs/handoff/drives/2026-08-27-discount-base/README.md` § 2).
+
 **`php artisan serve` is single-threaded**, and the SPA can lose the CSRF race on
 the very first paint. Have the drive script reload once on the error state rather
-than reporting the error state (same source).
+than reporting the error state (the Sanctum entry's source, named rather than
+called "same source" — that read correctly only while the two sat adjacent, which
+the entry between them ended).
 
 **Measure after the redirect settles.** A drive once reported
 `sidebar entry present: false` because it counted links immediately after login,

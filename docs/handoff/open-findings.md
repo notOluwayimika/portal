@@ -8,13 +8,20 @@ Ordered by consequence, not by effort.
 **Where this file sits.** `docs/handoff/tickets/` is the repository's per-finding registry, one file
 per finding, and it is the primary record — roughly a hundred of them. This file is the ordered
 summary a reader starts from; where a ticket exists it is named, and the ticket is longer and more
-current. Five were added on 27 August:
+current. Seven were added on 27 August:
 
 - `the-catalog-single-writer-arch-arm-cannot-see-a-raw-insert.md`
 - `nothing-proves-the-discount-base-control-reaches-the-request.md`
 - `a-caller-supplied-percent-base-survives-when-no-line-cites-a-policy.md`
 - `award-student-discount-has-no-caller-and-therefore-no-gate.md`
 - `half-the-boundary-lint-baseline-has-no-expiry-condition.md`
+- `scholarship-controller-does-not-follow-the-house-request-pattern.md`
+- `model-log-name-is-declared-as-a-static-property-spatie-never-reads.md`
+
+The last two came out of the `scholarships.kind` writer. The second is the wider of them: sixteen
+models declare `protected static $logName = 'academics'`, six declare `'results'` and one `'setup'`,
+and spatie reads none of them — `activity_log` on the production copy holds no row under any of those
+three names. Every model-trait entry the platform has written is in `default`.
 
 ---
 

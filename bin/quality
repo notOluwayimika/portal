@@ -63,7 +63,7 @@ STEP=0
 
 step() {
     STEP=$((STEP + 1))
-    printf '%s[%d/17]%s %s\n' "$BOLD" "$STEP" "$OFF" "$1"
+    printf '%s[%d/18]%s %s\n' "$BOLD" "$STEP" "$OFF" "$1"
 }
 
 # Run a command; record failure but keep going so one push surfaces every problem
@@ -213,6 +213,21 @@ check "authz-lint" php bin/ci-authz-lint.php
 
 step "boundary lint (§17.2)"
 check "boundary-lint" php bin/ci-boundary-lint.php
+
+# dev-namespace lint. STATE-BASED and NO BASELINE: the population was measured at exactly one before
+# the rule landed, and that one is fixed in the same change — a rule that ships red hands the next
+# person a cleanup and invites the baselining it exists to prevent.
+#
+# It sits beside boundary-lint because it enforces the same KIND of thing: a dependency across a line
+# the codebase draws. The line here is composer.json's own autoload vs autoload-dev split, and both
+# sides are DERIVED from that file rather than hardcoded, so a second dev-only namespace added later
+# is covered without anyone remembering this step exists.
+#
+# Before this, the only thing that reacted to a `use Tests\…;` in app/ was the arch pass — and it
+# reacted by exiting 255 with ZERO output on every stream, because the fatal sat in an unflushed
+# output buffer. That is not enforcement; it is a control that dies quietly and costs a bisect.
+step "dev-namespace lint (no autoload-dev import from a production path)"
+check "dev-namespace-lint" php bin/ci-dev-namespace-lint.php
 
 # grants-convergence lint. DIFF-AWARE, and it takes "$BASE" the way lint-changed does at :102 —
 # because this invariant CANNOT be asserted from state. CI's database is freshly seeded, and on a

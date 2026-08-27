@@ -65,5 +65,7 @@ database/sql/SqlClockLintFixture*.sql
 # on a SIGKILL. The markdown patterns matter as much as the PHP one: that lint scans markdown,
 # and two of its fixtures are planted under .claude/skills/ and docs/ deliberately.
 app/Finance/CitationLintFixture*.php
+app/DevNsLintFixture*.php
+tests/Feature/DevNsLintFixture*.php
 .claude/skills/CitationLintFixture*.md
 docs/handoff/tickets/CitationLintFixture*.md

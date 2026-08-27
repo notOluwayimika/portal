@@ -373,6 +373,35 @@ it('refuses the fold when a scored component would be dropped, and names it', fu
         ->where('student_id', $w['student']->id)->where('status', 'promoted')->count())->toBe(0);
 });
 
+it('names the CLASS and the SUBJECT in the refusal, with the ids trailing', function () {
+    $w = mfc_ccm_world_with_unmatched_component(giveTargetACounterpart: false);
+
+    // ── THE ARM THAT DID NOT EXIST ─────────────────────────────────────────────────────────────
+    // The message changed from `curriculum#N` / `subject#N` to the operator's vocabulary and the
+    // WHOLE SUITE STAYED GREEN. CcmFoldSurfaceTest's exact-string arm hand-writes its own message
+    // into failed_jobs — it pins the panel's READ path, never the job's output — and the arms here
+    // matched on the component name, which survived the change. So the sentence an operator acts on
+    // had no test at its source, which is how it shipped naming ids in the first place.
+    $message = null;
+
+    try {
+        (new MoveFromCcmJob($w['ccmCurriculum'], $w['admin']->id, (int) $w['school']->id))->handle();
+    } catch (Throwable $e) {
+        $message = $e->getMessage();
+    }
+
+    expect($message)->not->toBeNull()
+        // LEADS with the class as the gate names it — mfc_classLevelArm builds JSS1 + Gold.
+        ->and($message)->toStartWith('Refusing to fold JSS1 Gold:')
+        // and names the SUBJECT, which is the half nothing on the screen could otherwise supply.
+        ->and($message)->toContain('on Mathematics ')
+        // The ids are kept for whoever reads failed_jobs, but they TRAIL — they do not lead.
+        ->and($message)->toEndWith('(curriculum#'.$w['ccmCurriculum']->id.', subject#'.$w['ccmSubject']->subject_id.')')
+        // And the diagnosable parts survive: the component and its score count are what make the
+        // refusal actionable, so a change that "humanised" the message by dropping them would red.
+        ->and($message)->toContain('"Project" (1 score(s))');
+});
+
 it('folds normally once the non-CCM side has a matching component', function () {
     $w = mfc_ccm_world_with_unmatched_component(giveTargetACounterpart: true);
 

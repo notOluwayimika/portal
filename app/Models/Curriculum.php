@@ -102,6 +102,44 @@ class Curriculum extends Model
         return $this->belongsTo(ClassLevelArm::class, 'class_level_arm_id');
     }
 
+    /**
+     * How an OPERATOR names this class — "Year 9 A", not `curriculum#4`.
+     *
+     * ── ONE CONSTRUCTION, THREE CALLERS, AND IT WAS TWO THAT DISAGREED ───────────────────────────
+     * `RolloverPlanner::describe()` and `RolloverController::describe()` both built this label, and
+     * they had already DRIFTED: the planner trims, falls back to `curriculum#{id}` when there is no
+     * arm, and falls back AGAIN when the assembled label is empty; the controller does none of those
+     * and returns an em dash. So the name an operator saw depended on which path produced it. A third
+     * copy — which is what naming the class in the fold refusal would otherwise have needed — would
+     * have made three definitions with two known disagreements.
+     *
+     * ── IT RETURNS null RATHER THAN A FALLBACK, DELIBERATELY ─────────────────────────────────────
+     * The two existing callers want DIFFERENT fallbacks and both are defensible: a plan that cannot
+     * name a class still has to identify it (`curriculum#{id}`), while a table cell reads better with
+     * an em dash than with an id. Baking either one in here would silently change a screen. This
+     * shares the part that drifts — the assembly — and leaves the part that legitimately differs to
+     * the caller.
+     *
+     * Requires `classLevelArm.classLevel`, `.arm` and `.stream`; callers that use it in a loop should
+     * eager-load them.
+     */
+    public function operatorLabel(): ?string
+    {
+        $arm = $this->classLevelArm;
+
+        if ($arm === null) {
+            return null;
+        }
+
+        $label = trim(implode(' ', array_filter([
+            $arm->classLevel?->name,
+            $arm->arm?->label,
+            $arm->stream?->name,
+        ])));
+
+        return $label !== '' ? $label : null;
+    }
+
     /** @return BelongsTo<ExamType, $this> */
     public function examType(): BelongsTo
     {

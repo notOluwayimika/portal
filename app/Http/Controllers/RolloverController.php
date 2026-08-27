@@ -578,16 +578,9 @@ class RolloverController extends Controller
 
     private function describe(Curriculum $curriculum): string
     {
-        $arm = $curriculum->classLevelArm;
-
-        if ($arm === null) {
-            return '—';
-        }
-
-        return implode(' ', array_filter([
-            $arm->classLevel?->name,
-            $arm->arm?->label,
-            $arm->stream?->name,
-        ]));
+        // Shared assembly, local fallback — unchanged from what this method returned before, so no
+        // cell on the rollover screen moves. See Curriculum::operatorLabel for why the two callers
+        // keep different fallbacks rather than one being imposed on both.
+        return $curriculum->operatorLabel() ?? '—';
     }
 }

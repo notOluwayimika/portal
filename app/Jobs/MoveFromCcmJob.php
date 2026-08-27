@@ -263,15 +263,51 @@ class MoveFromCcmJob implements ShouldQueue
         // direction (CCM is a subset). One component the other way and every fold loses marks.
         if ($dropped !== []) {
             throw new CcmFoldRefused(
-                'Refusing to fold curriculum#'.$oldSubject->curriculum_id.': '
-                .count($dropped).' scored marking component(s) on subject#'.$oldSubject->subject_id
+                // ── THE OPERATOR'S VOCABULARY FIRST, THE IDS AFTER ─────────────────────────────
+                // This said `curriculum#4` and `subject#2` — six lines below a gate that says
+                // "Year 9 A". The whole argument for surfacing this reason is that the operator gets
+                // AN ACTION THEY CAN TAKE, and there is no screen where anyone looks up a curriculum
+                // by integer id, so the remedy was correct and unactionable in the same breath. The
+                // component name was already human, which is what made the ids beside it read as a
+                // convention rather than an oversight.
+                //
+                // The ids are KEPT, in a trailing parenthetical: whoever reads failed_jobs still
+                // needs a handle. What changed is which vocabulary LEADS.
+                'Refusing to fold '.$this->describeCurriculum().': '
+                .count($dropped).' scored marking component(s) on '.$this->describeSubject($oldSubject)
                 .' have no counterpart on the non-CCM side and their marks would be lost — '
                 .collect($dropped)->map(fn (array $d) => "\"{$d['name']}\" ({$d['scores']} score(s))")->implode(', ')
                 .'. Add matching component(s) to the non-CCM marking scheme, then fold again.'
+                .' (curriculum#'.$oldSubject->curriculum_id.', subject#'.$oldSubject->subject_id.')'
             );
         }
 
         return $map;
+    }
+
+    /**
+     * The class as an operator names it, falling back to the id only when there is nothing to name.
+     *
+     * Uses `$this->curriculum` rather than re-reading `$oldSubject->curriculum`: they are the same
+     * row — cloneCurriculumSubjects iterates `$curriculum->curriculumSubjects` — and the job already
+     * holds it, so the label costs the arm relations and nothing else. It is built only on the
+     * refusal path, once per refusal.
+     */
+    private function describeCurriculum(): string
+    {
+        return $this->curriculum->operatorLabel() ?? 'curriculum#'.$this->curriculum->id;
+    }
+
+    /**
+     * The subject by NAME. This is the sharper half of the two ids: a reader can guess
+     * `curriculum#4` is the class they just clicked Fold on, but nothing on the screen tells them
+     * which SUBJECT — and the remedy is per-subject.
+     */
+    private function describeSubject(CurriculumSubject $subject): string
+    {
+        $name = $subject->subject?->name;
+
+        return $name !== null && trim($name) !== '' ? $name : 'subject#'.$subject->subject_id;
     }
 
     /**

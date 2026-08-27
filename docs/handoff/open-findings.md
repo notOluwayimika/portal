@@ -8,29 +8,61 @@ Ordered by consequence, not by effort.
 **Where this file sits.** `docs/handoff/tickets/` is the repository's per-finding registry, one file
 per finding, and it is the primary record — roughly a hundred of them. This file is the ordered
 summary a reader starts from; where a ticket exists it is named, and the ticket is longer and more
-current. Seven were added on 27 August:
+current. **Eleven** were added on 27 August:
+
+From the discount-base arc —
 
 - `the-catalog-single-writer-arch-arm-cannot-see-a-raw-insert.md`
 - `nothing-proves-the-discount-base-control-reaches-the-request.md`
 - `a-caller-supplied-percent-base-survives-when-no-line-cites-a-policy.md`
 - `award-student-discount-has-no-caller-and-therefore-no-gate.md`
 - `half-the-boundary-lint-baseline-has-no-expiry-condition.md`
+- `the-base-radios-have-no-machine-readable-value.md`
+- `a-relative-reference-is-a-citation-with-nothing-behind-it.md`
+
+From the `scholarships.kind` writer and its drive —
+
 - `scholarship-controller-does-not-follow-the-house-request-pattern.md`
 - `model-log-name-is-declared-as-a-static-property-spatie-never-reads.md`
+- `a-permission-refusal-renders-a-dead-end.md`
+- `an-error-handler-logs-the-raw-axios-error-to-the-console.md`
 
-The last two came out of the `scholarships.kind` writer. The second is the wider of them: sixteen
-models declare `protected static $logName = 'academics'`, six declare `'results'` and one `'setup'`,
-and spatie reads none of them — `activity_log` on the production copy holds no row under any of those
-three names. Every model-trait entry the platform has written is in `default`.
+An earlier revision of this list said seven and omitted four. A count in a document is a fact that
+rots the moment anyone adds to what it counts; if this list and `ls docs/handoff/tickets/` disagree,
+the directory is right.
+
+**`model-log-name-…` is the widest of the eleven and belongs beside finding 2 below.** Sixteen models
+declare `protected static $logName = 'academics'`, six declare `'results'` and one `'setup'`, and
+spatie reads none of them — `getLogNameToUse()` (`vendor/spatie/laravel-activitylog`) reads
+`$this->activitylogOptions->logName`, set only by `LogOptions::useLogName()`. The production copy
+holds no row under any of those three names; every model-trait entry the platform has written is in
+`default`.
+
+That is the same failure as finding 2, one layer along. Finding 2 is a log that **did not record**
+something and so could not answer a question. This is a log that **records into a bucket nobody
+queries**, so filtering the activity log by module returns an empty result *that reads like an
+answer*. "Nothing was changed in academics" and "this filter has never matched anything" are the
+same screen. Six models — `Teacher`, `Guardian`, `Student`, `Role`, `Permission` and now
+`Scholarship` — use the working call and do land where they say, which is what makes the other
+twenty-four look deliberate.
 
 ---
 
-## 0. Staging is 36 commits and six migrations ahead of `main`
+## 0. Staging is 44 commits and six migrations ahead of `main`
 
-**Severity: this is the time-critical one, and it is operational rather than a defect.**
+**Severity: this is the time-critical one, and it is operational rather than a defect. It is also
+the gate on everything else: nothing in the BSS scholarship chain can happen on production until
+this promotion does.**
 
-Measured 27 August: `git rev-list --count origin/main..origin/staging` is **36**, and six migrations
-have not run on production:
+Measured 27 August, and it moved from 36 to **44** in the course of a single day's work — the count
+is a snapshot, not a fact. Re-measure before acting:
+
+```
+git rev-list --count origin/main..origin/staging
+git diff --name-only origin/main origin/staging -- database/migrations
+```
+
+Six migrations have not run on production:
 
 ```
 2026_08_21_110000_finance_allocation_not_over_payment_amount

@@ -77,10 +77,28 @@ are `submitted_by_user_id` / `decided_by_user_id`) and `finance_payments_origin_
 converted to triggers — the columns are `CHAR(3)`, so length is enforced by the column type on 5.7
 regardless of version, and only the case-and-alphabet half is lost. Reasoning in the audit's Group C.
 
-## Triggers (35 rows, 40 objects)
+## Triggers (41 rows, 46 objects)
+
+The six `finance_gateway_transaction*` rows were added by
+`2026_08_27_100000_create_finance_gateway_transactions.php` (branch `feat/gateway-transaction-table`).
+All six are **UNREACHABLE** for the same structural reason and it is worth stating once rather than
+six times: nothing writes either table. There is no route, no controller, no action, no job and no
+command that touches `finance_gateway_transactions` or `finance_gateway_transaction_events` — the
+gateway consumers are §6 steps 4-6 and none has landed. **These rows must be re-audited when the
+webhook handler lands**, because that is the commit that gives every one of them a caller.
+
+That migration adds **no `CHECK`**, deliberately: measured on a real MySQL 5.7.23 (2026-08-28),
+`ALTER … ADD CONSTRAINT … CHECK` returns success, `information_schema.TABLE_CONSTRAINTS` then reports
+0 rows for it, and the forbidden value inserts. So the CHECK table below gains nothing from it.
 
 | Name | Table | Forbids | Code | Reachability | Evidence |
 |---|---|---|---|---|---|
+| finance_gateway_transactions_insert_guard | finance_gateway_transactions | status outside the four values (case-sensitive), amount_minor ≤ 0, malformed amount_currency, a fee that is half a money value / negative / in another currency | 1644 | UNREACHABLE | No writer exists. Verified: `grep -r 'GatewayTransaction\|gateway_transaction' app routes` returns only the model and enum themselves. |
+| finance_gateway_transactions_update_guard | finance_gateway_transactions | leaving `success`; returning to `pending`; changing id/school/invoice/uuid/provider/reference/amount/created_at; rewriting any already-reported fact | 1644 | UNREACHABLE | As above. |
+| finance_gateway_transactions_no_delete | finance_gateway_transactions | DELETE an attempt | 1644 | UNREACHABLE | As above; no DELETE route. |
+| finance_gateway_transaction_events_insert_guard | finance_gateway_transaction_events | source outside webhook\|verify (case-sensitive); a row born redacted; a delivery with no payload | 1644 | UNREACHABLE | As above. |
+| finance_gateway_transaction_events_update_guard | finance_gateway_transaction_events | any UPDATE that is not a redaction; a second redaction; a redaction that does not clear the payload; changing anything but the payload | 1644 | UNREACHABLE | As above. |
+| finance_gateway_transaction_events_no_delete | finance_gateway_transaction_events | DELETE a delivery | 1644 | UNREACHABLE | As above. |
 | activity_log_no_delete | activity_log | DELETE a log row | 1644 | UNREACHABLE | No route DELETEs activity_log. |
 | activity_log_no_update | activity_log | UPDATE a log row | 1644 | UNREACHABLE | No route UPDATEs activity_log. |
 | finance_credit_notes_no_delete | finance_credit_notes | DELETE credit note | 1644 | UNREACHABLE | No finance DELETE route (`routes/endpoints/finance.php`). |

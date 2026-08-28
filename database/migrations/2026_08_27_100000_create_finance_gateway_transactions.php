@@ -82,12 +82,28 @@ use Illuminate\Support\Facades\Schema;
  * or it is enforced on the developer's machine and absent on the one holding real money — the worst
  * possible arrangement, because the green is local and the gap is remote.
  *
- * So the three real rules are triggers, and the `CHECK` added here carries ONLY the currency shape —
- * added for uniformity with the ten columns 2026_08_01_120000 constrained, and named to its
- * convention (`{table}_{column}_shape`) so a future sweep over `%_currency_shape` finds this column
- * with the others rather than silently missing it. The same rule is ALSO in the insert guard, which
- * is the copy that is actually live on production. That duplication is deliberate and is the one
- * place in this file where a rule is written twice; the trigger is the authority.
+ * THIS FILE ADDS NO `CHECK` AT ALL, and the first version of it added two — for "uniformity" with
+ * the sixteen `%_currency_shape` constraints that already exist. That was wrong twice over, and both
+ * halves are now MEASURED on a real MySQL **5.7.23** rather than reasoned about (2026-08-28):
+ *
+ *   1. IT WOULD HAVE BROKEN THE DEPLOY. `assertShape()` reads its constraints back out of
+ *      `information_schema.TABLE_CONSTRAINTS`. On 5.7.23 the `ALTER … ADD CONSTRAINT … CHECK`
+ *      RETURNS SUCCESS — no 1064, the grammar accepts it — and then
+ *      `TABLE_CONSTRAINTS` reports **0 rows** for it and `SHOW CREATE TABLE` omits it entirely. So
+ *      the read-back would have found the constraint missing and thrown, AFTER every `CREATE TABLE`
+ *      and `CREATE TRIGGER` in this file had already committed (DDL commits implicitly). Production
+ *      would be left with both tables and all six triggers present and this migration UNRECORDED —
+ *      `migrate` re-run dies on 1050 and there is no `down()` to run because nothing was recorded.
+ *      Local `bin/quality-clean-db` cannot see it: on 8.0.43 the constraints do materialise.
+ *
+ *   2. AND IT WOULD HAVE ENFORCED NOTHING ANYWHERE. Same probe, same server: after that ALTER
+ *      "succeeded", `INSERT … VALUES ('ngn')` was ACCEPTED. On 8.0.43 the constraint is real but
+ *      unreachable, because a `CHECK` is evaluated AFTER every `BEFORE` trigger and the insert guard
+ *      below already refuses the same value first. Inert on one server, shadowed on the other —
+ *      exactly the object `CheckConstraintsAsTriggersTest` was written to keep out of this schema.
+ *
+ * The currency shape lives in the insert guard, which is the copy that is live on both servers. It
+ * is written ONCE, in one place, and that place is a trigger.
  *
  * SIX TRIGGERS, THREE ON EACH TABLE:
  *
@@ -145,10 +161,6 @@ return new class extends Migration
     private const UPDATE_GUARD = 'finance_gateway_transactions_update_guard';
 
     private const NO_DELETE = 'finance_gateway_transactions_no_delete';
-
-    private const CURRENCY_CHECK = 'finance_gateway_transactions_amount_currency_shape';
-
-    private const FEE_CURRENCY_CHECK = 'finance_gateway_transactions_fee_currency_shape';
 
     private const EVENTS_TABLE = 'finance_gateway_transaction_events';
 
@@ -256,20 +268,6 @@ return new class extends Migration
             // The reconciliation read: one school's unsettled attempts.
             $table->index(['school_id', 'status'], 'finance_gateway_transactions_school_status_index');
         });
-
-        // Uniformity with the ten columns 2026_08_01_120000 constrained, under that migration's
-        // naming and its COLLATE utf8mb4_bin (without which 'ngn' matches ^[A-Z]{3}$ and the
-        // constraint is a false all-clear). NOT the live enforcement — see the docblock; production
-        // is 5.7.23 and ignores CHECK. The insert guard carries the same rule.
-        DB::statement(
-            'ALTER TABLE '.self::TABLE.' ADD CONSTRAINT '.self::CURRENCY_CHECK."
-             CHECK (amount_currency IS NULL OR amount_currency COLLATE utf8mb4_bin REGEXP '^[A-Z]{3}\$')"
-        );
-
-        DB::statement(
-            'ALTER TABLE '.self::TABLE.' ADD CONSTRAINT '.self::FEE_CURRENCY_CHECK."
-             CHECK (fee_currency IS NULL OR fee_currency COLLATE utf8mb4_bin REGEXP '^[A-Z]{3}\$')"
-        );
 
         // The parent key the events table's composite FK references (the F3 idiom —
         // `finance_invoices_id_school_unique` and `finance_payments_id_school_unique` exist for
@@ -449,15 +447,17 @@ return new class extends Migration
                 SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT =
                     'finance_gateway_transactions: status may not return to pending once it has left it.';
             END IF;
-            IF NEW.school_id <> OLD.school_id
+            IF NEW.id <> OLD.id
+                OR NEW.school_id <> OLD.school_id
                 OR NEW.invoice_id <> OLD.invoice_id
                 OR NEW.uuid <> OLD.uuid
+                OR NOT (NEW.created_at <=> OLD.created_at)
                 OR NOT (NEW.provider <=> OLD.provider)
                 OR NOT (NEW.reference <=> OLD.reference)
                 OR NEW.amount_minor <> OLD.amount_minor
                 OR NOT (NEW.amount_currency <=> OLD.amount_currency) THEN
                 SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT =
-                    'finance_gateway_transactions: school, invoice, provider, reference and amount are immutable.';
+                    'finance_gateway_transactions: id, school, invoice, provider, reference, amount, created_at frozen.';
             END IF;
             IF (OLD.provider_reference   IS NOT NULL AND NOT (NEW.provider_reference   <=> OLD.provider_reference))
                OR (OLD.paid_at              IS NOT NULL AND NOT (NEW.paid_at              <=> OLD.paid_at))
@@ -499,20 +499,53 @@ return new class extends Migration
      * how indefinite retention of NDPA-relevant data becomes a schema's default — a decision nobody
      * took, arrived at by silence.
      *
-     * And append-only makes it irreversible in the worst way: retrofitting ANY retention capability
-     * later means dropping guards on a live table holding that data. The capability therefore has to
-     * exist BEFORE there is anything to purge, or it never meaningfully exists at all.
+     * THE COST OF RETROFITTING, AT THE STRENGTH IT ACTUALLY HOLDS. An earlier draft of this paragraph
+     * said retrofitting "means dropping guards on a live table holding that data". That is FALSE and
+     * is corrected here rather than left for someone to cite: it is an `ADD COLUMN` plus a trigger
+     * swap, and `installTrigger()` below already performs exactly that swap idempotently, with no
+     * data migration and no window in which the table is unguarded. The true argument is weaker and
+     * still sufficient — retrofitting is cheap but requires someone to NOTICE the gap first, and
+     * shipping the door now makes the retention policy a code change against a schema that already
+     * permits it rather than a schema change against live money data.
      *
      * SO THE FULL PAYLOAD IS KEPT — a live dispute is answered by what the provider actually sent,
      * and §7's "the payer succeeded and our handler threw" is diagnosed from exactly the fields a
-     * write-time redaction would have discarded — AND `redacted_at` is the one door out. The update
-     * guard admits precisely one UPDATE per row: a redaction, once, replacing the payload and
-     * nothing else. A raw row cannot be edited, a redacted row cannot be edited again, and a row
-     * cannot be inserted pre-redacted.
+     * write-time redaction would have discarded — AND `redacted_at` is the one door out.
      *
-     * WHAT IS STILL OWED, named so it is not mistaken for done: there is no schedule, no command and
-     * no stated period. This ships the ABILITY, so the policy becomes a code change against a schema
-     * that already permits it. The policy itself is a decision for the data owner.
+     * REDACTION HAS TO PROVE ITSELF, and the first version of this guard did not make it. It required
+     * `redacted_at` to move and said NOTHING about the payload, so
+     * `UPDATE … SET redacted_at = NOW()` alone was ACCEPTED — and the already-redacted arm then
+     * refused every subsequent UPDATE. That is the worst outcome available: the payer PII stays in
+     * the row, permanently unredactable, unreachable through `_no_delete`, and REPORTED AS HANDLED by
+     * the very query (`WHERE redacted_at IS NOT NULL`) someone would run to demonstrate compliance. A
+     * control that certifies itself is worse than no control, because it stops anyone looking.
+     *
+     * THE REDACTED FORM IS ONE DEFINED VALUE — `payload IS NULL` — and not merely "different from
+     * before". "Different" admits a payload edited into something else entirely, which would leave
+     * `redacted_at IS NOT NULL` meaning "somebody changed this" rather than "the body is gone". With
+     * NULL, the two columns are locked together in both directions: the insert guard refuses a
+     * delivery with no payload, and the update guard refuses a redaction that leaves one. So
+     * `redacted_at IS NOT NULL` ⟺ `payload IS NULL`, and the compliance query is load-bearing.
+     *
+     * The rest of the door: a raw row cannot be edited, a redacted row cannot be edited again, a row
+     * cannot be inserted pre-redacted, and a redaction may change NOTHING else — `id` included, which
+     * the first version also omitted while its own test was named "and nothing else".
+     *
+     * WHAT IS STILL OWED, named so it is not mistaken for done. There is no schedule, no command and
+     * no stated period — this ships the ABILITY only, and the policy is a decision for the data owner.
+     *
+     * AND `redacted_at` REACHES ONE ROW IN ONE DATABASE, which is the part of retention this table
+     * cannot answer at all. A payload redacted on production remains in every dump taken before the
+     * redaction, in the binlog, and in the production copy on a developer machine — which is where
+     * this project's ordinary workflow puts it, since findings are derived against a copy of live.
+     * Row-level redaction is forward-only and has no reach into any of those. That is the larger
+     * retention surface, it extends well past this table, and it is ticketed rather than built here:
+     * docs/handoff/tickets/gateway-payload-retention.md.
+     *
+     * ONE MORE OPEN QUESTION IN THE SAME TICKET: `redacted_at` records WHEN and nothing else. On a
+     * table where redaction is the only evidence-destruction path there is, "who" and "why" are most
+     * of the value of the control, and a `redacted_by` / reason pair is a decision deliberately not
+     * taken here rather than an oversight.
      *
      * THE GAP THIS DOES NOT CLOSE, named rather than left to be discovered: a webhook whose
      * reference matches NO transaction has nowhere to go, because every row here hangs off a parent
@@ -544,7 +577,7 @@ return new class extends Migration
             // IT CARRIES PAYER PII. A Paystack delivery routinely contains the customer's email,
             // often a name, the card BIN and last four, and sometimes an IP. That is why the column
             // below exists: see the RETENTION paragraph in createEventsTable()'s docblock.
-            $table->json('payload');
+            $table->json('payload')->nullable();
 
             // WHEN THIS ROW'S PAYLOAD WAS REDACTED, and the reason this migration ships a redaction
             // path on day one rather than the day someone asks for one.
@@ -585,14 +618,19 @@ return new class extends Migration
                 SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT =
                     'finance_gateway_transaction_events is a raw record: UPDATE is denied except a redaction.';
             END IF;
-            IF NEW.school_id <> OLD.school_id
+            IF NEW.payload IS NOT NULL THEN
+                SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT =
+                    'finance_gateway_transaction_events: a redaction must clear the payload; redacted_at alone is a lie.';
+            END IF;
+            IF NEW.id <> OLD.id
+                OR NEW.school_id <> OLD.school_id
                 OR NEW.gateway_transaction_id <> OLD.gateway_transaction_id
                 OR NEW.uuid <> OLD.uuid
                 OR NOT (NEW.source <=> OLD.source)
                 OR NOT (NEW.event <=> OLD.event)
                 OR NOT (NEW.created_at <=> OLD.created_at) THEN
                 SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT =
-                    'finance_gateway_transaction_events: a redaction may change the payload and nothing else.';
+                    'finance_gateway_transaction_events: a redaction may clear the payload and change nothing else.';
             END IF;
             SQL, self::EVENTS_TABLE);
 
@@ -610,6 +648,10 @@ return new class extends Migration
             IF NEW.redacted_at IS NOT NULL THEN
                 SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT =
                     'finance_gateway_transaction_events: a delivery is stored as it arrived; it cannot be born redacted.';
+            END IF;
+            IF NEW.payload IS NULL THEN
+                SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT =
+                    'finance_gateway_transaction_events: a delivery must carry the body it arrived with.';
             END IF;
             SQL, self::EVENTS_TABLE);
     }
@@ -713,8 +755,6 @@ return new class extends Migration
         $missingConstraints = array_diff([
             'finance_gateway_transactions_invoice_school_foreign',
             'finance_gateway_transactions_payment_school_foreign',
-            self::CURRENCY_CHECK,
-            self::FEE_CURRENCY_CHECK,
         ], $constraints);
 
         if ($missingConstraints !== []) {
@@ -756,6 +796,22 @@ return new class extends Migration
         if ($payloadType !== 'json') {
             throw new RuntimeException(
                 self::EVENTS_TABLE.'.payload is ['.(string) $payloadType.'], expected [json].'
+            );
+        }
+
+        // NULLABLE IS LOAD-BEARING, not incidental: NULL is the defined redacted form, and the two
+        // guards lock it to `redacted_at` in both directions. A NOT NULL payload would make the
+        // redaction the guard demands impossible to perform.
+        $payloadNullable = DB::scalar(
+            'SELECT IS_NULLABLE FROM information_schema.COLUMNS
+              WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?',
+            [self::EVENTS_TABLE, 'payload'],
+        );
+
+        if ($payloadNullable !== 'YES') {
+            throw new RuntimeException(
+                self::EVENTS_TABLE.'.payload must be NULLABLE — NULL is the redacted form, and the update '
+                .'guard requires a redaction to clear it. NOT NULL makes redaction unperformable.'
             );
         }
 

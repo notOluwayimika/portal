@@ -12,7 +12,8 @@ use Illuminate\Support\Carbon;
  * ONE RAW DELIVERY about a gateway transaction, stored verbatim — boundary §5's "raw webhook
  * payloads", and §8.2's reason for capturing them now: they cannot be recovered afterwards.
  *
- * APPEND-ONLY AT THE DATABASE (`_no_update` / `_no_delete`), which is the whole point rather than a
+ * APPEND-ONLY AT THE DATABASE (`_insert_guard` / `_update_guard` / `_no_delete`), which is the whole
+ * point rather than a
  * convention: a payload that can be edited is not evidence, and evidence is all this table is for. A
  * dispute six months from now is answered by what the provider actually sent, not by what this
  * system concluded from it.

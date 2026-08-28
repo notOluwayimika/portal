@@ -85,10 +85,12 @@ enum GatewayTransactionStatus: string
      * The provider says the attempt failed — a declined card, an insufficient balance, a timeout it
      * has given up on.
      *
-     * NOT TERMINAL, and that is measured against how these providers actually behave rather than how
-     * the word reads: a payer whose card declines may complete the SAME reference by transfer
-     * minutes later, and the provider then reports success on a reference it previously reported
-     * failed. Freezing this state would leave that money invisible to the portal and visible only on
+     * NOT TERMINAL, and the reason is how these providers are UNDERSTOOD to behave — not something
+     * measured here, and the word "measured" is deliberately not used: no provider contract was read
+     * and no gateway was observed doing it. The reasoning is that a payer whose card declines may
+     * complete the SAME reference by transfer minutes later, and the provider then reports success on
+     * a reference it previously reported failed. If Paystack's contract says otherwise, tightening
+     * this is a one-line trigger change in a new migration. Freezing this state would leave that money invisible to the portal and visible only on
      * a bank statement, which is the discrepancy the reconciliation report exists to hunt — so the
      * guard permits `failed` → `success` and denies only the return to `Pending`.
      */

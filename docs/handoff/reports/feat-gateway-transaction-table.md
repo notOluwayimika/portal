@@ -1,6 +1,8 @@
 # Implementation report — `feat/gateway-transaction-table`
 
-> **Revised twice after review, 2026-08-27.** Round two added the retention decision below.
+> **Revised three times, 2026-08-27/28.** Round three works the cold review's findings and adds the
+> MySQL 5.7.23 measurements below — which turn the review's central finding from *derived* into
+> *measured*, and confirm it.
 >
 > **Round one.** The first version of this branch omitted the four
 > boundary §5 / §8.2 / §14 settlement requirements — the gateway fee, the settlement reference,
@@ -19,11 +21,11 @@
 Done, with five design deviations named below (the fourth is a correction of my own first version;
 the fifth is the retention decision). Step 2 of the payments advisory §6 — the gateway
 transaction table, its status enum and its migration — is implemented, shape-verified from
-`information_schema`, and bite-proven with twelve watched reds.
+`information_schema`, and bite-proven with fifteen watched reds, and applied against a real MySQL 5.7.23.
 
 Base: `origin/staging` @ `6f54a18a`. Branch: `feat/gateway-transaction-table`. Shape: five new
-files (one enum, two models, one migration, one test file) plus this report. Three commits — the
-second is the settlement data and the guard correction it forced; the third is retention.
+files (one enum, two models, one migration, one test file) plus this report. Four commits — settlement
+data, retention, and the cold review's findings worked.
 
 ## Deviations from the brief
 
@@ -205,7 +207,7 @@ bites at step 4.
 | `app/Finance/Enums/GatewayTransactionStatus.php` | 72 | `pending` · `success` · `failed` · `abandoned`. A reader of the trigger's domain, not a second copy of it. |
 | `app/Finance/Models/GatewayTransaction.php` | — | `AddUuid` + `BelongsToSchool`, `MoneyCast` on `amount` **and `fee`**, enum cast on `status`, `invoice()` / `payment()` / `events()`. |
 | `app/Finance/Models/GatewayTransactionEvent.php` | — | The raw delivery. Append-only at the database; `payload` cast to array. |
-| `tests/Feature/Finance/GatewayTransactionSchemaTest.php` | — | 22 tests, 106 assertions. Every write is raw `DB::table`, never the model — the guards under test are the database's. |
+| `tests/Feature/Finance/GatewayTransactionSchemaTest.php` | — | 22 tests, 112 assertions. Every write is raw `DB::table`, never the model — the guards under test are the database's. |
 
 Re-derive the line counts from the tree rather than from this table; they moved with the second
 commit and a carried number is how a stale fact becomes a confident assertion.
@@ -228,6 +230,154 @@ commit and a carried number is how a stale fact becomes a confident assertion.
    The test asserts driver code **1644** (trigger), not 3819 (`CHECK`), precisely so a refusal that
    is local-only cannot masquerade as one that is live.
 
+## The cold review's findings, and what was done with each
+
+The reviewer's verdict was **do not ship**. Its two load-bearing findings were both right.
+
+**Finding 1 — the CHECKs would have broken the deploy · CLOSED, and wider than asked.** The reviewer
+proposed dropping the two names from `assertShape()`; the fix here **drops the two CHECKs entirely**,
+because its own separate ticket (finding 4) showed they enforce nothing on either server — inert on
+5.7, shadowed on 8.0 by the `BEFORE` trigger carrying the same rule. One change closes both. That puts
+this migration back in line with `2026_08_17_100000`, which dropped the pre-existing CHECKs for this
+exact reason.
+
+**And the guard that should have caught it has been widened.** `CheckConstraintsAsTriggersTest` held
+a *named* list — "these seven must be gone", "these three must be present" — which is structurally
+incapable of noticing a CHECK nobody thought to name, which is why it stayed green while my two
+landed. There is now an **exact-set** assertion over every `CHECK` on a `finance_` table (sixteen,
+enumerated). Adding to that list is allowed; adding silently is not. Mutation 13 below re-adds one
+CHECK and reds it — the named lists stay green throughout, which is the measurement that the old
+shape could not have caught this and the new one does.
+
+**Finding 2 — the redaction door accepted a redaction that did not redact · CLOSED.** It required
+`redacted_at` to move and said nothing about the payload, so `SET redacted_at = NOW()` alone was
+accepted and the already-redacted arm then sealed the row: PII permanently unredactable, undeletable
+through `_no_delete`, and **reported as handled** by the compliance query. The redacted form is now
+**one defined value, `payload IS NULL`** — not merely "different from before", which would admit a
+payload edited into something else and leave `redacted_at` meaning "somebody changed this". The insert
+guard refuses a delivery with no payload and the update guard refuses a redaction that leaves one, so
+`redacted_at IS NOT NULL` ⟺ `payload IS NULL` in both directions and the compliance query is
+load-bearing. Proven on 5.7 above, and the test asserts the biconditional directly.
+
+**Finding 3 — `id` and `created_at` missing from the immutability lists · CLOSED**, in the same
+commit. Both guards now freeze `id`; the parent also freezes `created_at`. The two test loops gained
+those axes. The reviewer's articulation of why reading could not catch this is better than mine and is
+worth keeping: **the test's name was wider than its fixture.**
+
+**Finding 4 — the CHECKs enforce nothing · CLOSED by finding 1's fix.**
+
+**Finding 5 — retention reaches one row in one database · TICKETED, not built.**
+`docs/handoff/tickets/gateway-payload-retention.md`. Dumps, the binlog and the production copy on a
+developer machine are all outside a trigger's reach, and this project's method puts payer PII on a
+laptop by design. `redacted_by` / reason is in the same ticket. All three are data-owner decisions;
+building a schedule before the period is chosen would enforce a number nobody picked.
+
+**Finding 6 — the premise I argued retention from was overstated · CORRECTED IN PLACE.** I wrote that
+retrofitting would mean "dropping guards on a live table". It would not: `installTrigger()` already
+swaps triggers idempotently, with no data migration and no unguarded window. Shipping the door now was
+still right, but for the weaker and sufficient reason — retrofitting is cheap *but requires someone to
+notice the gap first*. The migration and the model both say so now, at that strength.
+
+**Finding 7 — four counts, the file count and the mutation count wrong in this report · CORRECTED**,
+re-derived rather than adjusted. See "Database observations" and "The scope self-check, corrected".
+
+**Finding 8 — three docblock claims contradicted by their artifacts · CORRECTED.** The model said
+`_no_update` after the rename to `_update_guard` — the same stale-name class whose lesson this report
+had recorded one commit earlier, which is a sharp illustration that writing a lesson down is not the
+same as applying it. The enum claimed the `failed → success` transition was "measured" when the report
+said it was not; it now says plainly that nothing was measured and names what would change it.
+`docs/finance/backstop-reachability.md` gained the six new triggers, its counts corrected 35/40 → 41/46,
+all six marked UNREACHABLE with the structural reason (nothing writes either table) and an explicit
+note to re-audit when the webhook handler lands.
+
+**What I did not do:** argue with any of it. Two of the eight were things I had claimed in writing and
+got wrong.
+
+## MySQL 5.7.23, measured — production's exact server, in a container
+
+The review's finding 1 was explicitly **derived, not measured**: neither the reviewer nor I had a 5.7
+server. This repo has been burned by exactly that shape before — `2026_08_25_100000`'s docblock is a
+measured correction to `2026_08_17_100000`'s unmeasured `MESSAGE_TEXT` claim, and records that the 5.7
+half was still unmeasured. A `mysql:5.7.23` container settles it.
+
+**The CHECK question, four probes, one server:**
+
+```
+mysql> SELECT VERSION();                                    5.7.23
+ALTER TABLE t ADD CONSTRAINT t_amount_currency_shape CHECK (…)   -> ALTER RETURNED SUCCESS
+SELECT COUNT(*) … TABLE_CONSTRAINTS … CONSTRAINT_TYPE='CHECK'    -> 0
+SHOW CREATE TABLE t                                              -> no CHECK clause at all
+INSERT INTO t (amount_currency) VALUES ('ngn')                   -> ACCEPTED, the CHECK is inert
+```
+
+So the `ALTER` **parses and succeeds** — the reviewer's "worse possibility" (1064) is ruled out — and
+the constraint then does not exist by any measure. Finding 1 confirmed.
+
+**And confirmed end to end, on the shipped code.** I reconstructed the shape as it stood at
+`cecdb6be`, pointed Laravel at the container and ran the real migration class's `up()`:
+
+```
+server = 5.7.23
+UP: FAILED — RuntimeException: finance_gateway_transactions is missing constraints after
+             ALTER TABLE returned success: finance_gateway_transactions_amount_currency_shape
+
+=== the state the throw LEFT BEHIND ===
+gateway_tables    2
+gateway_triggers  6
+checks_visible    0
+```
+
+Two tables and six triggers committed, the migration unrecorded. Exactly the predicted failure, and
+exactly the state no command repairs — `migrate` re-run dies on 1050 and `down()` never runs because
+nothing was recorded. **This was a real deploy-stopper and it is now measured rather than argued.**
+
+**The fixed migration on the same server:**
+
+```
+server = 5.7.23
+UP: OK — the migration applied on 5.7.23, shape read-back included
+triggers = 6
+  BEFORE INSERT/UPDATE/DELETE on finance_gateway_transactions
+  BEFORE INSERT/UPDATE/DELETE on finance_gateway_transaction_events
+```
+
+**And the guards BITE there, which is the question that actually matters for production:**
+
+```
+baseline insert                    -> SUCCEEDED
+status 'Success' (case variant)    -> ERROR 1644: status must be pending, success, failed or abandoned.
+currency 'ngn'                     -> ERROR 1644: amount_currency must be three upper-case letters (ISO-4217).
+settle it                          -> SUCCEEDED
+settlement AFTER success           -> SUCCEEDED          <- the guard correction, proven on 5.7
+rewrite payment_id to NULL         -> ERROR 1644: a fact learned about this attempt is written once…
+delivery insert                    -> SUCCEEDED
+redacted_at ALONE                  -> ERROR 1644: a redaction must clear the payload; redacted_at alone is a lie.
+redaction with payload cleared     -> SUCCEEDED
+second redaction                   -> ERROR 1644: this delivery is already redacted; redaction happens once.
+DELETE a delivery                  -> ERROR 1644: retained for audit: DELETE is denied.
+
+redacted_but_still_holding_pii     0
+```
+
+Every message and every driver code is the one the trigger intends, on 5.7.23. Nothing in this
+migration relies on 8.0-only behaviour.
+
+**A STANDING UNMEASURED CLAIM IN ANOTHER MIGRATION, RETIRED WHILE THE SERVER WAS UP.**
+`2026_08_17_100000`'s docblock says a `MESSAGE_TEXT` over 128 characters is "SILENTLY TRUNCATED past
+it" on 5.7, and `2026_08_25_100000` measured 8.0.43 doing something different (1648/HY000) while
+recording that "whether 5.7.23 truncates instead of erroring was not measured". Measured now, with a
+129-character message:
+
+```
+ERROR 1648 (HY000): Data too long for condition item 'MESSAGE_TEXT'
+rows_in_g  0
+```
+
+**5.7.23 behaves identically to 8.0.43** — it does not truncate, it errors, and the row is still
+refused. The "silently truncated" claim is false on both servers, and the two servers do not diverge
+here at all. That is a correction owed to `2026_08_17_100000`, outside this branch's scope to make;
+raised below.
+
 ## Proof
 
 Raw output, in the order run. Test DB is `portal_testing` throughout; the production copy
@@ -237,7 +387,7 @@ Raw output, in the order run. Test DB is `portal_testing` throughout; the produc
 
 ```
 $ DB_DATABASE=portal_testing ./vendor/bin/pest tests/Feature/Finance/GatewayTransactionSchemaTest.php
-{"tool":"pest","result":"passed","tests":22,"passed":22,"assertions":106,"duration_ms":13912}
+{"tool":"pest","result":"passed","tests":22,"passed":22,"assertions":112,"duration_ms":16068}
 ```
 
 **The new file plus every sibling that reasons about this schema** — schema conventions (which
@@ -251,14 +401,14 @@ $ DB_DATABASE=portal_testing ./vendor/bin/pest \
     tests/Feature/Finance/CurrencyShapeConstraintTest.php \
     tests/Feature/Finance/PaymentOriginGatewayTest.php \
     tests/Feature/Finance/CheckConstraintsAsTriggersTest.php
-{"tool":"pest","result":"passed","tests":51,"passed":51,"assertions":293,"duration_ms":17832}
+{"tool":"pest","result":"passed","tests":52,"passed":52,"assertions":300,"duration_ms":19486}
 ```
 
 **Arch group** (the boundary rules that decide where these files may live):
 
 ```
 $ DB_DATABASE=portal_testing ./vendor/bin/pest --group=arch
-{"tool":"pest","result":"passed","tests":115,"passed":115,"assertions":599,"duration_ms":41988,"risky":1}
+{"tool":"pest","result":"passed","tests":115,"passed":115,"assertions":599,"duration_ms":42289,"risky":1}
 ```
 
 **Larastan:**
@@ -291,7 +441,7 @@ unrelated file was swept in by formatting.
 
 ```
 $ DB_DATABASE=portal_testing ./vendor/bin/pest --log-junit junit.xml
-{"result":"failed","tests":2393,"passed":2376,"failed":6,"errors":1,"skipped":10,"risky":4}
+{"result":"failed","tests":2394,"passed":2377,"failed":6,"errors":1,"skipped":10,"risky":4}
 PEST_EXIT=2
 
 $ php bin/ci-test-ratchet.php junit.xml
@@ -537,6 +687,38 @@ failed 20 / 22
 Two arms, and the UNIQUE was present throughout both. It stops two rows naming one payment; it does
 nothing about one row unlinking and relinking.
 
+**13 · One `CHECK` re-added on a `finance_` table** — the measurement that the widened allowlist
+catches what the named lists let through:
+
+```
+failed 26 / 28
+ - it_the_table_carries_the_columns__indexes__foreign_keys_and_CHECK_the_migratio
+ - it_the_set_of_CHECK_constraints_on_finance___tables_is_EXACTLY_this_list_—_a_n
+```
+
+The two *named-list* tests in that same file — "the seven replaced are GONE" and "the untouched ones
+are present" — stayed **green** throughout. That is the whole point: they were green when my two
+CHECKs shipped, and they would be green again next time.
+
+**14 · The redaction-must-clear-the-payload arm removed** (the reviewer's finding 2, restored as a
+mutation):
+
+```
+failed 27 / 28
+ - it_a_payload_may_be_redacted_EXACTLY_ONCE__and_a_raw_row_cannot_be_edited_any_
+```
+
+**15 · `id` and `created_at` dropped from BOTH immutability lists** (finding 3):
+
+```
+failed 26 / 28
+ - it_identity_and_money_are_immutable_once_the_attempt_exists
+ - it_a_redaction_may_change_the_payload_and_nothing_else__and_no_row_is_born_red
+```
+
+Two arms, one per table — and note that both of those tests existed before this round and passed
+against the missing clauses. Adding the axis to the fixture is what made them able to fail.
+
 **Restored after each**, and the file verified byte-identical to the pre-mutation copy before the
 final green run (`diff -q` → clean). The greens in the Proof section above were produced by the
 restored file, not by a file I had stopped mutating and hoped was right.
@@ -553,20 +735,38 @@ are §6 step 5 and are not in this change.
 
 ## Database observations
 
-Under the privacy rule — structure and counts only.
+Under the privacy rule — structure and counts only. **Re-derived from `information_schema` at this
+HEAD.** The previous version of this section carried four counts from before the settlement commit
+and stated them as measured; the cold review caught all four. They are wrong no longer, and the
+lesson is the repo's own: never carry a number.
 
-- Written only to `portal_testing`. The production copy was not touched, and `rbac:sync` was not
-  run in any form.
-- Before: `finance_gateway_transactions` did not exist. After: it exists with 16 columns, 5 indexes
-  (`PRIMARY`, three UNIQUE, one plain), 5 foreign keys (`school_id` → `schools`,
-  `initiated_by_user_id` → `users`, the two composite (child, `school_id`) pairs, plus the index
-  Laravel creates alongside), 1 `CHECK`, and 3 triggers.
-- Row counts are whatever `RefreshDatabase` left; no environment carries persistent rows in this
-  table, and production is still five migrations behind this branch's base (advisory §5, unchanged
-  by this work).
-- `SchemaConventionsTest` re-run with the new table present: its `school_id`-on-every-`finance_`-
-  table loop and its canonical-collation sweep both pass, so the new table joins the convention
-  rather than being exempted from it.
+```
+finance_gateway_transactions:       columns=20 indexes=10 triggers=3 UNIQUE=5 PRIMARY KEY=1 FOREIGN KEY=4
+finance_gateway_transaction_events: columns=10 indexes=5  triggers=3 UNIQUE=1 PRIMARY KEY=1 FOREIGN KEY=2
+```
+
+**Zero `CHECK` constraints on either table** — see the 5.7 section above for why that is now an
+assertion rather than an omission.
+
+- Written only to `portal_testing` and to a throwaway MySQL 5.7.23 container. The production copy
+  was not touched, and `rbac:sync` was not run in any form.
+- Before: neither table existed. After: both exist as above; no environment carries rows.
+- `SchemaConventionsTest` re-run with both tables present: the `school_id`-on-every-`finance_`-table
+  loop and the canonical-collation sweep both pass, so both join the conventions rather than being
+  exempted.
+- Production remains five migrations behind this branch's base and its finance tables remain empty
+  (advisory §5, unchanged by this work).
+
+## The scope self-check, corrected
+
+The previous version said "four new files, nothing else touched" against a diff that had six. At this
+HEAD the branch adds **seven files** — migration, enum, two models, one test file, this report and the
+retention ticket — and modifies **two** (`CheckConstraintsAsTriggersTest`, `backstop-reachability.md`).
+That is the first time this branch has modified a file it did not create, and it is deliberate: both
+changes are the review's findings 4 and 8.
+
+A self-check that reports the wrong file count is a self-check that did not happen. It has now been
+run against `git diff --name-status` rather than against memory.
 
 ## Not done
 
@@ -617,6 +817,11 @@ Under the privacy rule — structure and counts only.
   command line, so a wait loop built that way never terminates. It cost this session hours and two
   false "still running" reports. Anywhere a script waits on a process by name, it needs `pgrep -f`
   with an exclusion, a pid file, or `wait`. Severity: **ticket**.
+- **`2026_08_17_100000`'s docblock is wrong about 5.7 and can now be corrected.** It says a
+  `MESSAGE_TEXT` over 128 chars is "SILENTLY TRUNCATED" on 5.7; measured above, 5.7.23 raises
+  1648/HY000 exactly as 8.0.43 does. `2026_08_25_100000` should also lose its "not measured" caveat.
+  Both are docblock-only edits in files this branch does not otherwise touch, so they are raised
+  rather than made. Severity: **ticket**.
 - **A piped `pest` invocation masks its exit code.** `pest … 2>&1 | tail -20` exits 0 even when the
   run fails; only the JSON body says otherwise. I hit this while running the mutations and read the
   body rather than the code. Anywhere a script branches on `$?` after a pipe, that branch is

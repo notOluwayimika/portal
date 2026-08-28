@@ -178,9 +178,17 @@ it('the table carries the columns, indexes, foreign keys and CHECK the migration
     expect($constraints)->toContain(
         'finance_gateway_transactions_invoice_school_foreign',
         'finance_gateway_transactions_payment_school_foreign',
-        'finance_gateway_transactions_amount_currency_shape',
-        'finance_gateway_transactions_fee_currency_shape',
     );
+
+    // NO `CHECK` ON EITHER TABLE, and this is an assertion rather than an omission. Measured on a
+    // real MySQL 5.7.23 (2026-08-28): `ALTER … ADD CONSTRAINT … CHECK` returns success, then
+    // `TABLE_CONSTRAINTS` reports 0 rows for it and `INSERT … 'ngn'` is accepted. On 8.0.43 it is
+    // real but unreachable behind the BEFORE trigger. Inert on one server, shadowed on the other.
+    expect(collect(DB::select(
+        "SELECT CONSTRAINT_NAME AS name FROM information_schema.TABLE_CONSTRAINTS
+          WHERE CONSTRAINT_SCHEMA = DATABASE() AND CONSTRAINT_TYPE = 'CHECK' AND TABLE_NAME IN (?, ?)",
+        [GTX_TABLE, GTX_EVENTS],
+    ))->pluck('name')->all())->toBe([]);
 
     $triggers = collect(DB::select(
         'SELECT TRIGGER_NAME AS name FROM information_schema.TRIGGERS
@@ -367,6 +375,11 @@ it('identity and money are immutable once the attempt exists', function () {
         ['provider' => 'flutterwave'],
         ['uuid' => (string) Str::orderedUuid()],
         ['school_id' => $other['school'], 'invoice_id' => $other['invoice']],
+        // THE AXIS THIS LOOP WAS BLIND TO. The docblock said "identity is immutable from insert" and
+        // the primary key was not in the list — a claim wider than its fixture, which is why reading
+        // the test could not catch it and enumerating the columns can.
+        ['id' => 999000001],
+        ['created_at' => now()->subYear()],
     ] as $mutation) {
         gtxExpectCode(1644, fn () => DB::table(GTX_TABLE)->where('id', $id)->update($mutation));
     }
@@ -593,21 +606,39 @@ it('a payload may be redacted EXACTLY ONCE, and a raw row cannot be edited any o
     $id = gtxInsert($ctx);
     $event = gtxEvent($ctx, $id);
 
-    $redacted = json_encode(['data' => ['status' => 'success', 'customer' => ['email' => null]]]);
+    // THE ARM THIS TEST EXISTS FOR, and the one its first version did not have: `redacted_at` alone,
+    // with the payload left where it is, is REFUSED. Without it, a purge command that builds its body
+    // wrongly — or a plain `->update(['redacted_at' => now()])` — flags the row as redacted with the
+    // payer PII still in it, and the already-redacted arm then seals it for ever. The row would be
+    // permanently unredactable, undeletable, and REPORTED AS HANDLED by the compliance query.
+    gtxExpectCode(1644, fn () => DB::table(GTX_EVENTS)->where('id', $event)->update([
+        'redacted_at' => now(),
+    ]));
+
+    // Nor may a redaction substitute some other body: the redacted form is ONE defined value, so
+    // `redacted_at IS NOT NULL` means "the body is gone" and never "somebody changed this".
+    gtxExpectCode(1644, fn () => DB::table(GTX_EVENTS)->where('id', $event)->update([
+        'payload' => json_encode(['data' => ['status' => 'success', 'customer' => ['email' => null]]]),
+        'redacted_at' => now(),
+    ]));
 
     // The redaction — the ONE update this table admits.
     DB::table(GTX_EVENTS)->where('id', $event)->update([
-        'payload' => $redacted, 'redacted_at' => now(), 'updated_at' => now(),
+        'payload' => null, 'redacted_at' => now(), 'updated_at' => now(),
     ]);
 
     $row = DB::table(GTX_EVENTS)->where('id', $event)->first();
     expect($row->redacted_at)->not->toBeNull()
-        ->and(json_decode($row->payload, true)['data']['customer']['email'])->toBeNull();
+        ->and($row->payload)->toBeNull();
+
+    // The compliance query is load-bearing BECAUSE of the arms above: every row it reports as
+    // redacted has actually had its body removed, which is the claim `redacted_at` is making.
+    expect(DB::table(GTX_EVENTS)->whereNotNull('redacted_at')->whereNotNull('payload')->count())->toBe(0);
 
     // A SECOND redaction is refused, and refused for BEING a second one rather than for whatever
     // column it touched — which is why the already-redacted arm is first in the guard.
     gtxExpectCode(1644, fn () => DB::table(GTX_EVENTS)->where('id', $event)->update([
-        'payload' => json_encode(['data' => []]), 'redacted_at' => now(),
+        'payload' => null, 'redacted_at' => now(),
     ]));
 
     // And the row is otherwise still frozen: a redacted row is not an editable row.
@@ -627,14 +658,21 @@ it('a redaction may change the payload and nothing else, and no row is born reda
         ['source' => 'verify'],
         ['school_id' => $b['school']],
         ['created_at' => now()->subYear()],
+        // Renumbering a delivery under cover of a redaction reorders the evidence chain the
+        // (gateway_transaction_id, id) index exists to read oldest-first. The loop was blind to it.
+        ['id' => 999000002],
     ] as $smuggled) {
         gtxExpectCode(1644, fn () => DB::table(GTX_EVENTS)->where('id', $event)
-            ->update(array_merge(['redacted_at' => now()], $smuggled)));
+            ->update(array_merge(['redacted_at' => now(), 'payload' => null], $smuggled)));
     }
 
     // A row cannot arrive already redacted — that would be a write-time redaction wearing the
     // retention path's clothes, and it would make `redacted_at` stop meaning "this was purged".
     gtxExpectCode(1644, fn () => gtxEvent($a, $id, ['redacted_at' => now()]));
+
+    // And it cannot arrive empty — a NULL payload is the REDACTED form, so a delivery inserted
+    // without one would be born already claiming to have been purged.
+    gtxExpectCode(1644, fn () => gtxEvent($a, $id, ['payload' => null]));
 });
 
 it('a delivery names a known source and cannot be filed against another school\'s transaction', function () {

@@ -1,6 +1,6 @@
 ---
 name: finance-drive
-description: How this project drives a screen in a real browser — the throwaway drive instance, the fixture and its two count tables, the seats and what each one proves, checking isolation by id rather than by label, the friction that has already cost sessions, and what the drive report must contain. Load this whenever a brief says to drive a screen, whenever you are about to write a brief that asks for one, whenever you are asked to look at a page in the running app, and before you claim a screen works. It replaces the DRIVE section that briefs used to carry.
+description: How this project drives a screen in a real browser — the throwaway drive instance, the fixture and its three count tables, the seats and what each one proves, checking isolation by id rather than by label, the friction that has already cost sessions, and what the drive report must contain. Load this whenever a brief says to drive a screen, whenever you are about to write a brief that asks for one, whenever you are asked to look at a page in the running app, and before you claim a screen works. It replaces the DRIVE section that briefs used to carry.
 ---
 
 # Driving a screen
@@ -106,11 +106,24 @@ inverts there.** `DriveCastSeeder::seedScholarships()` writes `scholarships.kind
 as NULL directly, because NULL is a state that EXISTS IN PRODUCTION — the
 2026-08-26 migration backfilled every row to it — and that **no current code path
 can create**, since `ScholarshipController::store()` requires `kind`. Routing it
-through the endpoint would produce two CLASSIFIED rows and destroy the only state
+through the endpoint would produce a CLASSIFIED row and destroy the only state
 that screen acts on, while making the fixture look more principled than it was.
 The seeder says so in those terms at the write. Treat a new exception the same way:
 it is admissible only when the state is real in production and unreachable by every
 writer, and it must be argued at the line that makes it.
+
+**THAT METHOD NOW ALSO WRITES TWO CLASSIFIED ROWS, AND THEY ARE A WEAKER CASE THAT
+IS MARKED AS ONE** (added 2026-08-28 for the discount-award import, which reads the
+`kind` this fixture had never set and needs a holder on each). `discount` and
+`sponsored` ARE reachable — `store()` mints exactly them — so the "no writer exists"
+argument does not cover them. What covers them is narrower and is stated at the
+write: the sanctioned writer is a CONTROLLER rather than an Action, its whole body
+is `Scholarship::create(['school_id', 'name', 'kind'])`, and there is nothing else
+for a seeder to call, so the write is byte-identical rather than a shortcut past it.
+The moment an Action exists, those two move to it and only the NULL row stays.
+**Read the distinction, and copy the weaker form only with the same argument written
+at the same line** — an exemption that spreads by resemblance is how the rule stops
+meaning anything.
 
 **Drive the fixture, not the production copy.** Past drives disagreed on this.
 Three ran against the local production copy — the sidebar
@@ -145,8 +158,8 @@ by construction.
 
 ## Check the fixture before you drive anything
 
-The seed command prints **TWO count tables**, not one, and a reader who takes the
-first one for the whole thing will look for a column that is in the other.
+The seed command prints **THREE count tables**, not one, and a reader who takes the
+first one for the whole thing will look for a column that is in another.
 
 **Table 1 — the bulk-run slot**, FIFTEEN columns: school, academic sessions, terms,
 class levels, bank accounts, discount policies, payments split by `origin`, then
@@ -156,10 +169,23 @@ slot, unplaceable**, then **decided credit notes, decided voids**.
 **Table 2 — the guardians slot**, FOURTEEN columns: the same first ten, then
 **students, guardians**, then **scholarships, scholarships (unconfigured)**.
 
-Both counts were re-derived against the command's actual output on 2026-08-27 and
+**Table 3 — the discount-award import slot**, SEVEN columns: school, **award pairs,
+discount policies, students, on a discount scholarship, on another scholarship,
+discount awards**. It is NARROW ON PURPOSE and **shares nothing with the two above
+except `School` and `Discount policies`** — that screen reads no term, no class
+level, no bank account and no invoice, so repeating the shared ten a third time
+would be waste rather than a cross-check. Added 2026-08-28 by the BSS award-import
+drive; `Discount awards` is expected to be ZERO on a fresh fixture and is printed
+anyway, exactly as `Guardians` is, because it is the denominator a re-upload check
+is measured against.
+
+Tables 1 and 2 were re-derived against the command's actual output on 2026-08-27 and
 both were WRONG here before that — thirteen and twelve, written when U13/U14's two
-columns and U6's three had not all landed. That is this section's own rule failing
-in this very paragraph, which is why the instruction is to read the OUTPUT.
+columns and U6's three had not all landed. Table 3's count was derived the same way
+on 2026-08-28, and that run also CONFIRMED the two above were still right — which is
+the check this paragraph asks for, done rather than assumed. That is this section's
+own rule failing and then holding, in this very paragraph, which is why the
+instruction is to read the OUTPUT.
 
 **`Payments w/ remainder` and `Open invoices` were added for U10's allocation
 drive**, and they are the current instance of the rule two paragraphs down. That
@@ -170,13 +196,17 @@ while `Payments (portal)` read 3. `Open invoices` is a separate question, not th
 same one twice: a payment with a remainder and no open invoice is a real state — the
 money banks as credit — but it is a screen with an empty table.
 
-**THE FIRST TEN COLUMNS ARE DUPLICATED, VALUE FOR VALUE.** Both tables are built
-from the same four closures over the same two schools, so those eight are the same
-numbers printed twice; only the tail of each row is new. That is worth knowing for
-two reasons. Reading them as one wide table double-counts nothing but wastes the
-check, and — more usefully — **if the shared ten ever DISAGREE between the two
-tables, something is wrong with the counting rather than with the fixture**, because
-nothing writes between the two `$this->table()` calls.
+**TABLES 1 AND 2 DUPLICATE THEIR FIRST TEN COLUMNS, VALUE FOR VALUE.** Both are built
+from the same closures over the same two schools, so those ten are the same numbers
+printed twice; only the tail of each row is new. That is worth knowing for two
+reasons. Reading them as one wide table double-counts nothing but wastes the check,
+and — more usefully — **if the shared ten ever DISAGREE between those two tables,
+something is wrong with the counting rather than with the fixture**, because nothing
+writes between the `$this->table()` calls.
+
+**TABLE 3 IS NOT PART OF THAT.** It shares only `School` and `Discount policies`, and
+deliberately: the award-import screen reads none of the other eight, so repeating them
+would be waste rather than a cross-check. Do not read a missing column there as drift.
 
 Between and after them the command prints two more things a drive uses: a line
 naming the bulk-run screen and its slot, and, after table 2, the **generated
@@ -200,11 +230,26 @@ time: three payments, none of them allocatable. U13/U14 added the two decided-do
 columns. And the `scholarships.kind` drive found the FOURTH instance and the starkest:
 `DriveCastSeeder` and `SeedDriveFixture` between them contained the string
 "scholarship" **zero times**, so the Scholarships tab would have opened onto an empty
-list. **When your screen depends on something the tables do not count, add the column
+list. And the BSS discount-award drive found the FIFTH, in the sharpest form yet: the
+fixture held ONE discount policy per school and its scholarships had no holders, so
+that screen — whose third column IS the base axis — could not distinguish a resolver
+that read the axis from one that ignored it, and would have refused every row of any
+sheet for one reason. It added a THIRD table rather than widening either
+(`Award pairs` cannot be derived from `Discount policies`: three rows could be three
+drafts, three fixed amounts, or three on one pair).
+
+**When your screen depends on something the tables do not count, add the column
 before you open a browser** — and update the enumeration in this paragraph with it.
 That last step has now been missed THREE times and caught three times, which is the
 argument for reading the command's ACTUAL output against this paragraph rather than
 trusting it.
+
+**AND CHECK WHETHER A COUNT IS THE RIGHT SHAPE, not only whether it exists.** `Award
+pairs` counts DISTINCT `(percent, base)` pairs, not policies, because the pair is what
+a row of that sheet names — and the two numbers disagree exactly when the fixture is
+degenerate in the way that matters. A column that counts the wrong unit reads healthy
+while the screen it was added for cannot be driven, which is this section's failure
+mode reproduced one level in.
 
 **`Scholarships` is SPLIT into a total and an unconfigured count, for the reason
 `Payments (portal)/(migrated)` is split.** The tab's only actionable state is
@@ -454,8 +499,9 @@ what each one shows without opening it — `maker-03-inline-amount-error.png`,
 `isolation-01-school-b-list.png`. The drive section of your implementation report
 carries:
 
-1. **BOTH fixture count tables**, pasted from the command — see "Check the fixture"
-   for why there are two and what their shared first eight columns mean.
+1. **ALL THREE fixture count tables**, pasted from the command — see "Check the
+   fixture" for why there are three, which ten columns tables 1 and 2 share, and why
+   table 3 shares almost none of them.
 2. **What the selects actually contained — by count and by value.** Not "the page
    loaded", not "the select was populated". The raw lines your script read out of
    the DOM, uncut, exactly as U1 and U2 pasted them. A summary of what a select

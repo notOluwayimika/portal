@@ -17,12 +17,15 @@ use App\Finance\Actions\SubmitVoidRequest;
 use App\Finance\DTOs\InvoiceLineSpec;
 use App\Finance\Enums\CreditNoteKind;
 use App\Finance\Enums\CreditNoteStatus;
+use App\Finance\Enums\DiscountBase;
 use App\Finance\Enums\DiscountBasis;
 use App\Finance\Enums\DiscountPolicyChangeKind;
+use App\Finance\Enums\DiscountPolicyStatus;
 use App\Finance\Enums\FeeScheduleChangeKind;
 use App\Finance\Enums\FeeScheduleStatus;
 use App\Finance\Enums\InvoiceKind;
 use App\Finance\Enums\VoidRequestStatus;
+use App\Finance\Exports\DiscountAwardImportTemplateExport;
 use App\Finance\Models\BankAccount;
 use App\Finance\Models\CreditNote;
 use App\Finance\Models\DiscountPolicy;
@@ -30,7 +33,9 @@ use App\Finance\Models\FeeItem;
 use App\Finance\Models\FeeSchedule;
 use App\Finance\Models\Invoice;
 use App\Finance\Models\Payment;
+use App\Finance\Models\StudentDiscountAward;
 use App\Finance\Models\VoidRequest;
+use App\Finance\Services\DiscountAwardImporter;
 use App\Models\User;
 use App\Support\Money;
 use App\Support\SchoolDay;
@@ -52,6 +57,32 @@ final class DriveFinanceStates
 
     /** The SECOND account's label — see ensureSecondBankAccount(). */
     private const DRIVE_SECOND_ACCOUNT_LABEL = 'Drive trips account';
+
+    /**
+     * THE TWO (percentage, base) PAIRS THE BSS AWARD IMPORT RESOLVES AGAINST, and the pair is the unit
+     * rather than the percentage: a row of that sheet names a percentage AND what it comes off, and
+     * those are two different amounts of money at the same figure.
+     *
+     * THE PERCENTAGES ARE THE TEMPLATE'S OWN SAMPLE VALUES (50 and 100,
+     * {@see DiscountAwardImportTemplateExport::SAMPLE_ROWS}), so a bursar who
+     * downloads the template and changes only the admission numbers gets two rows that RESOLVE. A
+     * fixture whose percentages disagreed with the sample would make the natural first upload reject
+     * every row, and the drive would be measuring the fixture.
+     *
+     * ONE PAIR ON EACH BASE, which is the minimum that can discriminate. Two policies on one base
+     * would let a resolver that ignores the third column entirely land on a policy for every row and
+     * look correct — the degenerate-fixture failure, in a drive rather than in a suite.
+     *
+     * 75% OF THE WHOLE BILL IS DELIBERATELY ABSENT and is not an omission: it is the fixture's
+     * no-active-policy arm. Every other refusal this screen can show has a seeded subject; that one is
+     * shown by a pair nobody approved, so it has to be a gap rather than a row.
+     *
+     * @var list<array{percent: int, base: DiscountBase, name: string}>
+     */
+    private const DRIVE_AWARD_POLICIES = [
+        ['percent' => 50, 'base' => DiscountBase::Discountable, 'name' => 'BSS scholarship — half of discountable charges'],
+        ['percent' => 100, 'base' => DiscountBase::Total, 'name' => 'BSS scholarship — the whole bill'],
+    ];
 
     /** The seeded schedule's label, in one place: the create and the idempotence check read it. */
     private const DRIVE_SCHEDULE_LABEL = 'Drive term bill v1';
@@ -295,6 +326,130 @@ final class DriveFinanceStates
     public function discountPolicyCount(int $schoolId): int
     {
         return DiscountPolicy::query()->where('school_id', $schoolId)->count();
+    }
+
+    /**
+     * THE PAIRS THE BSS AWARD IMPORT NEEDS — two active percentage policies per drive school, one on
+     * each base ({@see self::DRIVE_AWARD_POLICIES}).
+     *
+     * VERIFIED ABSENT BEFORE IT WAS ADDED. The fixture seeded exactly ONE discount policy per school
+     * ({@see self::ensureDiscountPolicy()}), so `/finance/discount-award-imports` would have opened on a
+     * catalog holding a single pair. That is not "thin", it is unable to show the screen's subject:
+     * the third column of that sheet is the base axis, and with one base seeded a resolver that ignored
+     * the column entirely would award every row and read as correct. Same class as the empty term
+     * select U1 commit 1 fixed, and invisible for the same reason — no test can run this seeder.
+     *
+     * THROUGH THE REAL SUBMIT-THEN-APPROVE PATH, exactly as {@see self::ensureDiscountPolicy()} is, and
+     * the reason is sharper here than anywhere else in this class: the import's whole design rests on
+     * {@see ApproveDiscountPolicyChange} being the catalog's single writer — a row of that sheet says
+     * WHICH approved figure a child sits on and never invents one. A fixture that wrote these rows
+     * directly would drive a screen whose central claim it had just falsified.
+     *
+     * `$maker` IS A PARAMETER for the same database fact as the two ensure* methods above: School B's
+     * bursar is a different user and maker ≠ checker is a CHECK, not a convention.
+     *
+     * Idempotent by name, like every ensure* here — a second call finds the rows.
+     *
+     * @return list<int> the policy ids, in DRIVE_AWARD_POLICIES order
+     */
+    public function ensureAwardPolicies(int $schoolId, ?User $maker = null): array
+    {
+        $ids = [];
+
+        foreach (self::DRIVE_AWARD_POLICIES as $spec) {
+            $existing = DiscountPolicy::query()
+                ->where('school_id', $schoolId)
+                ->where('name', $spec['name'])
+                ->first();
+
+            if ($existing !== null) {
+                $ids[] = (int) $existing->id;
+
+                continue;
+            }
+
+            $change = app(SubmitDiscountPolicyChange::class)->handle(
+                DiscountPolicyChangeKind::Create,
+                null,
+                [
+                    'name' => $spec['name'],
+                    'description' => 'Brookstone Scholarship Scheme — carried in from the accounts team\'s list.',
+                    'basis' => DiscountBasis::Percent->value,
+                    'percent' => $spec['percent'],
+                    // THE AXIS THE IMPORT DISCRIMINATES ON. Passed explicitly rather than defaulted:
+                    // `SubmitDiscountPolicyChange` reads `$terms['base'] ?? null`, and a null base on a
+                    // percentage policy is exactly the drift its own docblock records having been found
+                    // once — a fixture relying on the default would seed two policies on one base.
+                    'base' => $spec['base']->value,
+                    'requires_approval' => false,
+                ],
+                'BSS scheme for the coming session.',
+                $maker ?? $this->maker,
+            );
+
+            app(ApproveDiscountPolicyChange::class)->handle($change, $this->checker);
+
+            $ids[] = (int) DiscountPolicy::query()
+                ->where('school_id', $schoolId)
+                ->where('name', $spec['name'])
+                ->value('id');
+        }
+
+        return $ids;
+    }
+
+    /**
+     * DISTINCT (percent, base) PAIRS among ACTIVE PERCENTAGE policies — what the award-import screen
+     * actually reads, and a number `Discount policies` beside it cannot produce.
+     *
+     * A catalog of three could be three drafts, three fixed-amount policies, or three rows on ONE pair;
+     * all three render the screen's empty state or its ambiguity refusal while the policies column reads
+     * healthy. This counts the thing the screen groups by, through the same query shape the route uses.
+     *
+     * Reads the SCOPED model, so it must be called inside `ActiveSchool::runFor($schoolId, …)`.
+     */
+    public function awardPairCount(int $schoolId): int
+    {
+        return count($this->awardPairsFor($schoolId));
+    }
+
+    /**
+     * The pairs themselves, in the phrasing the sheet expects — `50% of DISCOUNTABLE CHARGES`.
+     *
+     * SPOKEN THROUGH {@see DiscountAwardImporter::appliesToLabel()}, not through the enum value. A
+     * driver types these into the third column of the file, and `discountable` is not a phrase that
+     * column accepts; printing the enum would hand somebody a value the reader refuses and produce a
+     * refusal that is the fixture's fault. This is the same function the screen's own prop and the
+     * import's own refusal messages read, so all three say one thing.
+     *
+     * Reads the SCOPED model, so it must be called inside `ActiveSchool::runFor($schoolId, …)`.
+     *
+     * @return list<string>
+     */
+    public function awardPairsFor(int $schoolId): array
+    {
+        return DiscountPolicy::query()
+            ->where('school_id', $schoolId)
+            ->where('status', DiscountPolicyStatus::Active->value)
+            ->where('basis', DiscountBasis::Percent->value)
+            ->whereNotNull('percent')
+            ->orderBy('base')
+            ->orderBy('percent')
+            ->get(['percent', 'base'])
+            ->map(fn (DiscountPolicy $policy) => $policy->percent.'% of '.DiscountAwardImporter::appliesToLabel($policy->base))
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Awards written so far. ZERO ON A FRESH FIXTURE AND PRINTED ANYWAY, exactly as `Guardians` is:
+     * it is the denominator the re-upload check is measured against, so "no second award row after a
+     * second upload" can be checked against where it started rather than asserted.
+     */
+    public function discountAwardCount(int $schoolId): int
+    {
+        return StudentDiscountAward::query()->where('school_id', $schoolId)->count();
     }
 
     /** UNPAID — a charge, nothing settled. */

@@ -276,6 +276,25 @@ it('an attempt for nothing, or for a negative amount, is refused', function () {
     expect(gtxInsert($ctx, ['amount_minor' => 1]))->toBeGreaterThan(0);
 });
 
+it('a wrong-case currency is refused on UPDATE as well as INSERT — the CHECK is not coming back', function () {
+    // THE REGRESSION THIS PINS. The two currency-shape CHECKs were removed (correctly — measured
+    // inert on 5.7.23 and shadowed on 8.0), but the shape rule lived only in the INSERT guard, so
+    // the CHECK had been the sole enforcement on the UPDATE path and went with it. `Money`'s
+    // constructor throws on anything failing ^[A-Z]{3}$, so a row written this way is unreadable by
+    // every consumer — a 500 on READ, from a value nothing refused on write.
+    $ctx = gtxSchool();
+    $id = gtxInsert($ctx);
+
+    gtxExpectCode(1644, fn () => DB::table(GTX_TABLE)->where('id', $id)->update(['amount_currency' => 'ngn']));
+
+    // Accent variants land in the same hole: utf8mb4_unicode_ci is accent-insensitive as well as
+    // case-insensitive, so these compare EQUAL to 'NGN' and the freeze arm alone would not see them.
+    gtxExpectCode(1644, fn () => DB::table(GTX_TABLE)->where('id', $id)->update(['amount_currency' => 'ṄGN']));
+    gtxExpectCode(1644, fn () => DB::table(GTX_TABLE)->where('id', $id)->update(['amount_currency' => 'NGŇ']));
+
+    expect(DB::table(GTX_TABLE)->where('id', $id)->value('amount_currency'))->toBe('NGN');
+});
+
 it('a wrong-case currency is refused by the TRIGGER (1644), not only by the CHECK', function () {
     $ctx = gtxSchool();
 
@@ -380,6 +399,13 @@ it('identity and money are immutable once the attempt exists', function () {
         // the test could not catch it and enumerating the columns can.
         ['id' => 999000001],
         ['created_at' => now()->subYear()],
+        // CASE-VARIANT ARMS. Each of these differs from the stored value only in case, so under the
+        // table's default utf8mb4_unicode_ci they compare EQUAL and a bare freeze arm lets them
+        // through — measured doing exactly that before this fix. Without these the loop passes
+        // whether the guard compares binary or case-insensitively, which is a fixture whose degrees
+        // of freedom have collapsed until the axis under test cannot fail it.
+        ['provider' => 'PAYSTACK'],
+        ['reference' => 'ref-lower-cased'],
     ] as $mutation) {
         gtxExpectCode(1644, fn () => DB::table(GTX_TABLE)->where('id', $id)->update($mutation));
     }
@@ -666,6 +692,16 @@ it('a redaction may change the payload and nothing else, and no row is born reda
             ->update(array_merge(['redacted_at' => now(), 'payload' => null], $smuggled)));
     }
 
+    // THE ARM THE COLD REVIEW MEASURED GETTING THROUGH. `source` was frozen by a comparison under
+    // the column's own case-INSENSITIVE collation, so a redaction could move it to 'WEBHOOK' — a
+    // value the INSERT guard refuses. The events table would then hold a value the schema claims is
+    // impossible, and every reader trusting the domain inherits it, including the discrepancy report
+    // that has not been written yet.
+    gtxExpectCode(1644, fn () => DB::table(GTX_EVENTS)->where('id', $event)
+        ->update(['redacted_at' => now(), 'payload' => null, 'source' => 'WEBHOOK']));
+    gtxExpectCode(1644, fn () => DB::table(GTX_EVENTS)->where('id', $event)
+        ->update(['redacted_at' => now(), 'payload' => null, 'event' => 'CHARGE.SUCCESS']));
+
     // A row cannot arrive already redacted — that would be a write-time redaction wearing the
     // retention path's clothes, and it would make `redacted_at` stop meaning "this was purged".
     gtxExpectCode(1644, fn () => gtxEvent($a, $id, ['redacted_at' => now()]));
@@ -679,6 +715,8 @@ it('a delivery names a known source and cannot be filed against another school\'
     $a = gtxSchool();
     $b = gtxSchool();
     $inA = gtxInsert($a);
+    $event = gtxEvent($a, $inA);
+    $id = $inA;
 
     gtxExpectCode(1644, fn () => gtxEvent($a, $inA, ['source' => 'guess']));
     gtxExpectCode(1644, fn () => gtxEvent($a, $inA, ['source' => 'Webhook'])); // the collation arm
@@ -686,4 +724,144 @@ it('a delivery names a known source and cannot be filed against another school\'
     // School B's row pointing at school A's transaction. Both ids are valid alone; the PAIR has no
     // referent, which is what the composite FK is for.
     gtxExpectCode(1452, fn () => gtxEvent($b, $inA));
+});
+
+// ── The two structural tripwires ─────────────────────────────────────────────────────────────────
+//
+// Both classes below were found by cold review AFTER the point fixes for their first instances had
+// already shipped, which is the argument for pinning the CLASS rather than patching the instance.
+// These read the trigger bodies out of `information_schema.TRIGGERS` — the objects that are actually
+// installed, not the migration source that claims to install them.
+
+/** Every trigger body on the two gateway tables, keyed by name. */
+function gtxTriggerBodies(): array
+{
+    return collect(DB::select(
+        'SELECT TRIGGER_NAME AS n, ACTION_STATEMENT AS a FROM information_schema.TRIGGERS
+          WHERE TRIGGER_SCHEMA = DATABASE() AND EVENT_OBJECT_TABLE IN (?, ?)',
+        [GTX_TABLE, GTX_EVENTS],
+    ))->pluck('a', 'n')->all();
+}
+
+it('CLASS A — every value domain enforced at INSERT is enforced at UPDATE too', function () {
+    // THE DEFECT THIS PINS, twice in one commit: the currency shape lived only in the parent's insert
+    // guard, so `SET amount_currency = 'ngn'` was accepted on UPDATE and `Money`'s constructor then
+    // threw on READ; and the events `source` domain lived only in its insert guard, so a row could be
+    // moved to a value the insert door refuses. A rule at one door is a rule with a hole shaped like
+    // the other door — and the hole is invisible, because the guarded door keeps biting.
+    //
+    // The check is on the OBJECTS, not the source: every literal the insert guard compares a column
+    // against must also appear in the update guard of the same table.
+    $bodies = gtxTriggerBodies();
+
+    foreach ([
+        [GTX_TABLE, 'finance_gateway_transactions_insert_guard', 'finance_gateway_transactions_update_guard'],
+        [GTX_EVENTS, 'finance_gateway_transaction_events_insert_guard', 'finance_gateway_transaction_events_update_guard'],
+    ] as [$table, $insert, $update]) {
+        preg_match_all("/COLLATE\s+utf8mb4_bin\s*(?:=|<>)\s*'([^']*)'/i", $bodies[$insert], $m);
+        $domainLiterals = array_unique($m[1]);
+
+        // The fixture must have something to say. A guard that compares no literal would make this
+        // arm vacuously green — the degenerate-fixture failure, in the tripwire itself.
+        // POSITIVE, not `->not->toBeEmpty($message)`. Pest's `->not->` is a proxy that discards a
+        // custom message and composes its own sentence with every argument shortened-exported into
+        // it, so the message is never the failure description — and `PestNegatedExpectationMessagesTest`
+        // caught this exact line. `toBeGreaterThan(0, …)` also puts the 0 in the output.
+        expect(count($domainLiterals))->toBeGreaterThan(
+            0,
+            "[{$insert}] compares no domain literal, so this arm would pass no matter what the update "
+            .'guard contains. A tripwire that cannot fail is not a tripwire.'
+        );
+
+        // Collected rather than asserted one by one: `toContain`'s second argument is another EXPECTED
+        // VALUE, not a failure message — asserting in the loop with a message appended silently
+        // demands that the body contain the message text too, which is how this arm first went red
+        // against a guard that was correct. The instrument has to be right before its verdict means
+        // anything.
+        $missing = [];
+
+        foreach ($domainLiterals as $literal) {
+            if (! str_contains($bodies[$update], "'{$literal}'")) {
+                $missing[] = "{$table} enforces '{$literal}' at INSERT but not at UPDATE";
+            }
+        }
+
+        expect($missing)->toBe([], implode('; ', $missing)
+            .'. Either add the rule to the update guard, or document it as deliberately insert-only '
+            .'in the migration docblock and exempt it here.');
+    }
+
+    // The REGEXP-shaped domain rule is not a literal comparison, so it needs naming directly.
+    expect($bodies['finance_gateway_transactions_insert_guard'])->toContain('^[A-Z]{3}$')
+        ->and($bodies['finance_gateway_transactions_update_guard'])->toContain('^[A-Z]{3}$');
+});
+
+it('CLASS B — no string column is compared under a case-insensitive collation in these guards', function () {
+    // THE DEFECT THIS PINS: the tables default to utf8mb4_unicode_ci, which is case- AND
+    // accent-insensitive, so a freeze arm written `NOT (NEW.provider <=> OLD.provider)` permits
+    // paystack -> PAYSTACK, and `NEW.amount_currency <=> OLD.amount_currency` permits NGN -> 'ṄGN'.
+    // 2026_08_17_100000 records this class for the DOMAIN arms; what this branch adds is that it
+    // applies to the FREEZE and WRITE-ONCE arms too — a column frozen case-insensitively is not
+    // frozen, and on an evidence table the string stored stops being provably the string that arrived.
+    //
+    // `<=>` MATTERS AS MUCH AS `=`, and is the reason this is a tripwire rather than a habit: the
+    // first scan written for this class matched `=`, `<>` and `REGEXP` and MISSED every `<=>`, which
+    // is precisely the operator the null-safe freeze arms use. An instrument blind to the operator
+    // under test reports a clean sweep over the defect.
+    $stringColumns = collect(DB::select(
+        "SELECT TABLE_NAME AS t, COLUMN_NAME AS c FROM information_schema.COLUMNS
+          WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN (?, ?)
+            AND DATA_TYPE IN ('char','varchar','text','longtext','enum')",
+        [GTX_TABLE, GTX_EVENTS],
+    ))->pluck('c')->unique()->all();
+
+    // Same reason; no message here, but the positive form also reports the count when it fails.
+    expect(count($stringColumns))->toBeGreaterThan(0);
+
+    $offenders = [];
+
+    foreach (gtxTriggerBodies() as $name => $body) {
+        preg_match_all(
+            "/(NEW|OLD)\.(\w+)(\s+COLLATE\s+(\w+))?\s*(<=>|=|<>|NOT\s+REGEXP|REGEXP)\s*('[^']*'|(?:NEW|OLD)\.\w+(?:\s+COLLATE\s+\w+)?)/i",
+            $body,
+            $matches,
+            PREG_SET_ORDER,
+        );
+
+        foreach ($matches as $match) {
+            if (! in_array($match[2], $stringColumns, true)) {
+                continue; // collation is meaningless on an integer or a timestamp
+            }
+
+            $lhsBinary = strtolower(trim($match[4] ?? '')) === 'utf8mb4_bin';
+            $rhsBinary = stripos($match[6], 'utf8mb4_bin') !== false;
+
+            if (! $lhsBinary && ! $rhsBinary) {
+                $offenders[] = "{$name}: NEW.{$match[2]} {$match[5]} {$match[6]}";
+            }
+        }
+    }
+
+    expect($offenders)->toBe([], "string comparisons under the default (case-insensitive) collation:\n  ".implode("\n  ", $offenders));
+});
+
+it('CLASS B — the tripwire above can actually SEE a bare comparison (it is not vacuous)', function () {
+    // A sweep that reports zero offenders is indistinguishable from a sweep whose matcher is broken,
+    // and this project has paid for exactly that (the mutation summariser that counted only Pest's
+    // `failures` bucket). So: run the SAME matcher over a body with a known bare comparison in it and
+    // require it to be found. If the regex ever stops matching `<=>`, this reds rather than the sweep
+    // silently going quiet.
+    $planted = "IF NOT (NEW.provider <=> OLD.provider) THEN SIGNAL SQLSTATE '45000'; END IF;";
+
+    preg_match_all(
+        "/(NEW|OLD)\.(\w+)(\s+COLLATE\s+(\w+))?\s*(<=>|=|<>|NOT\s+REGEXP|REGEXP)\s*('[^']*'|(?:NEW|OLD)\.\w+(?:\s+COLLATE\s+\w+)?)/i",
+        $planted,
+        $matches,
+        PREG_SET_ORDER,
+    );
+
+    expect($matches)->toHaveCount(1)
+        ->and($matches[0][2])->toBe('provider')
+        ->and($matches[0][5])->toBe('<=>')
+        ->and(trim($matches[0][4] ?? ''))->toBe('');
 });

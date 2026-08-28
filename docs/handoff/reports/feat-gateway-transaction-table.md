@@ -1,5 +1,9 @@
 # Implementation report — `feat/gateway-transaction-table`
 
+> **Revised four times, 2026-08-27/28.** Round four works the SECOND cold review, which returned two
+> `fix` findings — **both of them regressions I introduced while fixing round one**. They are worked
+> as two named CLASSES with tripwires, not as four point fixes; see "Two classes, not four fixes".
+>
 > **Revised three times, 2026-08-27/28.** Round three works the cold review's findings and adds the
 > MySQL 5.7.23 measurements below — which turn the review's central finding from *derived* into
 > *measured*, and confirm it.
@@ -21,11 +25,11 @@
 Done, with five design deviations named below (the fourth is a correction of my own first version;
 the fifth is the retention decision). Step 2 of the payments advisory §6 — the gateway
 transaction table, its status enum and its migration — is implemented, shape-verified from
-`information_schema`, and bite-proven with fifteen watched reds, and applied against a real MySQL 5.7.23.
+`information_schema`, and bite-proven with twenty watched reds, and applied against a real MySQL 5.7.23.
 
 Base: `origin/staging` @ `6f54a18a`. Branch: `feat/gateway-transaction-table`. Shape: five new
-files (one enum, two models, one migration, one test file) plus this report. Four commits — settlement
-data, retention, and the cold review's findings worked.
+files (one enum, two models, one migration, one test file) plus this report. Five commits — settlement data,
+retention, the first review's findings, and the second review's two classes.
 
 ## Deviations from the brief
 
@@ -207,7 +211,7 @@ bites at step 4.
 | `app/Finance/Enums/GatewayTransactionStatus.php` | 72 | `pending` · `success` · `failed` · `abandoned`. A reader of the trigger's domain, not a second copy of it. |
 | `app/Finance/Models/GatewayTransaction.php` | — | `AddUuid` + `BelongsToSchool`, `MoneyCast` on `amount` **and `fee`**, enum cast on `status`, `invoice()` / `payment()` / `events()`. |
 | `app/Finance/Models/GatewayTransactionEvent.php` | — | The raw delivery. Append-only at the database; `payload` cast to array. |
-| `tests/Feature/Finance/GatewayTransactionSchemaTest.php` | — | 22 tests, 112 assertions. Every write is raw `DB::table`, never the model — the guards under test are the database's. |
+| `tests/Feature/Finance/GatewayTransactionSchemaTest.php` | — | 26 tests, 132 assertions. Every write is raw `DB::table`, never the model — the guards under test are the database's. |
 
 Re-derive the line counts from the tree rather than from this table; they moved with the second
 commit and a carried number is how a stale fact becomes a confident assertion.
@@ -229,6 +233,106 @@ commit and a carried number is how a stale fact becomes a confident assertion.
    trigger is the authority: production is MySQL 5.7.23, which parses and ignores `CHECK` entirely.
    The test asserts driver code **1644** (trigger), not 3819 (`CHECK`), precisely so a refusal that
    is local-only cannot masquerade as one that is live.
+
+## Two classes, not four fixes — the second cold review
+
+The second pass returned **do not ship as-is**: the currency shape was enforced at INSERT and not at
+UPDATE, and the immutability loops compared strings under a case-insensitive collation. Both were
+mine, and **both were introduced by round one's fixes** — dropping the CHECKs (right) removed the only
+UPDATE-path enforcement of the currency shape (not noticed), and widening the immutability loops to
+close finding 3 (right) added a column axis while leaving the equality axis untested (not noticed).
+
+Four findings, but only two structural gaps, and patching four instances would have left both gaps
+live for the next table. So each is now a **named rule with a tripwire behind it**, in the migration's
+class docblock and in `GatewayTransactionSchemaTest`.
+
+### Class A · BOTH DOORS
+
+> **Every domain rule enforced at INSERT is enforced at UPDATE, or is documented as deliberately
+> insert-only with a reason.**
+
+It failed twice in one commit: the parent's currency shape, and the events `source` domain. A rule at
+one door is a rule with a hole shaped like the other door, and the hole is invisible **because the
+guarded door keeps biting**.
+
+The fix is structural rather than additive: the shared predicates now live in their own methods —
+`statusDomainBody()`, `feePairingBody()`, `currencyShapeBody()`, `sourceDomainBody()` — and both guards
+CALL them. A predicate written twice is a predicate that will come to differ; a predicate written once
+cannot. The insert-only exceptions are stated explicitly in the docblock (`amount_minor > 0`, "a
+delivery must carry a payload", `redacted_at IS NULL`) with the reason each is safe — in every case
+the update guard freezes the column outright, so no update can reach a violating value.
+
+**The tripwire** reads both guards' bodies out of `information_schema.TRIGGERS` and fails when the
+insert guard compares a column against a literal the update guard does not carry. It reads the
+installed objects, not the migration source that claims to install them.
+
+### Class B · BINARY COLLATION ON EVERY GUARDING STRING COMPARISON
+
+> **Every string equality or pattern comparison in a finance trigger that guards a value — domain,
+> freeze, or write-once — runs under `COLLATE utf8mb4_bin`.**
+
+`2026_08_17_100000` already records this class **for domain arms**, including why it is hard to see:
+omitting the clause from ONE arm is the quiet failure, because the others keep biting and the guard
+still looks alive. What this branch adds is that it applies to **freeze and write-once arms too** — and
+those are the ones nobody thought of, because "immutable" reads as a stronger word than it is. Measured
+consequences: `paystack → PAYSTACK` accepted, `reference` case-mutable, and an events row moved to
+`source = 'WEBHOOK'` under cover of a redaction — a value the insert guard refuses, reachable on the
+update path.
+
+**The tripwire** scans the installed trigger bodies for any comparison of a string-typed column not
+under `utf8mb4_bin`. It is scoped to the two gateway tables; §"Findings raised, not fixed" says why and
+what it would take to widen.
+
+**And the tripwire has a tripwire.** A third test runs the same matcher over a planted bare comparison
+and requires it to be found. That is not ceremony: the first version of this scan matched `=`, `<>` and
+`REGEXP` and **missed every `<=>`** — precisely the null-safe operator the freeze arms use — so it swept
+cleanly over the defect it was written to find. Same family as the mutation summariser that counted
+only Pest's `failures` bucket. An instrument blind to the operator under test reports a clean sweep
+over the defect.
+
+### Which of the two mattered more
+
+`source` over `reference`, and not by a little. A row moved outside the source domain means the events
+table can hold a value the schema claims is impossible, and every reader that trusts the domain
+inherits it — including the discrepancy report that has not been written yet. `reference` being
+case-mutable is real but narrower: the unique index is equally case-insensitive so no collision can be
+forged and lookups still match; the harm is **evidentiary** — the string stored stops being provably
+the string that crossed the wire — which on an evidence table is still worth fixing, just not the same
+order.
+
+### And the ratchet caught a defect in the FIX, before any reviewer did
+
+Worth recording because it is the loop working at the layer below the review.
+`tests/Feature/Quality/PestNegatedExpectationMessagesTest` — a standing gate with zero exemptions —
+failed on one line of the Class A tripwire I had just written:
+
+```
+ratchet: 1 NEW test failure(s) not in the baseline (regression):
+  ✗ tests/Feature/Quality/PestNegatedExpectationMessagesTest.php::it no test passes a custom
+    failure message to a negated Pest expectation
+```
+
+`expect($domainLiterals)->not->toBeEmpty("… this arm would prove nothing")`. Pest's `->not->` is a
+proxy: it runs the positive assertion and, when that succeeds, discards the exception and composes
+its own sentence with every argument shortened-exported into it. **The message I wrote would never
+have reached a reader** — and it was the message on the arm whose whole job is to say "this tripwire
+has gone vacuous", which is the worst place in the file for a silent message. Rewritten as
+`expect(count($domainLiterals))->toBeGreaterThan(0, …)`, which carries the message and puts the count
+in the output.
+
+The tripwire was re-mutated afterwards to confirm the rewrite did not blunt it: mutation 16 still
+reds it.
+
+### The stopping rule, set now rather than after
+
+Round 1: three findings. Round 2: two findings, both regressions from round 1's fixes. That reads as
+convergence — the count is falling and the last two collapse into two nameable classes. But the fix
+cycle is producing defects at close to the rate it removes them, and the honest reading is not settled
+by one more round going well.
+
+**So: if a third review turns up another regression introduced by these fixes, that is the signal to
+stop adding arms and rethink the guard design as a whole** — not to patch again. Written here so the
+decision is made in advance rather than in the moment, by whoever reads the next review.
 
 ## The cold review's findings, and what was done with each
 
@@ -387,7 +491,7 @@ Raw output, in the order run. Test DB is `portal_testing` throughout; the produc
 
 ```
 $ DB_DATABASE=portal_testing ./vendor/bin/pest tests/Feature/Finance/GatewayTransactionSchemaTest.php
-{"tool":"pest","result":"passed","tests":22,"passed":22,"assertions":112,"duration_ms":16068}
+{"tool":"pest","result":"passed","tests":26,"passed":26,"assertions":132,"duration_ms":13442}
 ```
 
 **The new file plus every sibling that reasons about this schema** — schema conventions (which
@@ -401,14 +505,14 @@ $ DB_DATABASE=portal_testing ./vendor/bin/pest \
     tests/Feature/Finance/CurrencyShapeConstraintTest.php \
     tests/Feature/Finance/PaymentOriginGatewayTest.php \
     tests/Feature/Finance/CheckConstraintsAsTriggersTest.php
-{"tool":"pest","result":"passed","tests":52,"passed":52,"assertions":300,"duration_ms":19486}
+{"tool":"pest","result":"passed","tests":56,"passed":56,"assertions":320,"duration_ms":20857}
 ```
 
 **Arch group** (the boundary rules that decide where these files may live):
 
 ```
 $ DB_DATABASE=portal_testing ./vendor/bin/pest --group=arch
-{"tool":"pest","result":"passed","tests":115,"passed":115,"assertions":599,"duration_ms":42289,"risky":1}
+{"tool":"pest","result":"passed","tests":115,"passed":115,"assertions":599,"duration_ms":38734,"risky":1}
 ```
 
 **Larastan:**
@@ -441,7 +545,7 @@ unrelated file was swept in by formatting.
 
 ```
 $ DB_DATABASE=portal_testing ./vendor/bin/pest --log-junit junit.xml
-{"result":"failed","tests":2394,"passed":2377,"failed":6,"errors":1,"skipped":10,"risky":4}
+{"result":"failed","tests":2398,"passed":2381,"failed":6,"errors":1,"skipped":10,"risky":4}
 PEST_EXIT=2
 
 $ php bin/ci-test-ratchet.php junit.xml
@@ -719,6 +823,51 @@ failed 26 / 28
 Two arms, one per table — and note that both of those tests existed before this round and passed
 against the missing clauses. Adding the axis to the fixture is what made them able to fail.
 
+**16 · The currency shape removed from the UPDATE door** — the reviewer's finding 1, restored as a
+mutation. Class A's tripwire catches it:
+
+```
+failed 24 / 25
+ - it_CLASS_A_—_every_value_domain_enforced_at_INSERT_is_enforced_at_UPDA
+```
+
+**17 · The source domain removed from the events UPDATE door** — same tripwire, other table:
+
+```
+failed 24 / 25
+ - it_CLASS_A_—_every_value_domain_enforced_at_INSERT_is_enforced_at_UPDA
+```
+
+**18 · `COLLATE utf8mb4_bin` stripped from ONE freeze arm** (`provider`) — the single-arm omission
+`2026_08_17_100000` warns is the quiet failure:
+
+```
+failed 24 / 25
+ - it_CLASS_B_—_no_string_column_is_compared_under_a_case_insensitive_col
+```
+
+**19 · The shipped state at `342010c9` reconstructed exactly, currency half** — both halves of the
+defect restored together (the shape rule off the update door AND the collation off the freeze arm),
+because either alone leaves the other catching it. The strongest arm in the file: it reds the
+behavioural test *and* both class tripwires, three at a time.
+
+```
+failed 23 / 26
+ - it_a_wrong_case_currency_is_refused_on_UPDATE_as_well_as_INSERT_—_the_
+ - it_CLASS_A_—_every_value_domain_enforced_at_INSERT_is_enforced_at_UPDA
+ - it_CLASS_B_—_no_string_column_is_compared_under_a_case_insensitive_col
+```
+
+**20 · The same, source half** — the events domain rule off the update door and the collation off its
+freeze arm, which is exactly the state in which `webhook` → `WEBHOOK` was measured getting through:
+
+```
+failed 23 / 26
+ - it_a_redaction_may_change_the_payload_and_nothing_else__and_no_row_is_
+ - it_CLASS_A_—_every_value_domain_enforced_at_INSERT_is_enforced_at_UPDA
+ - it_CLASS_B_—_no_string_column_is_compared_under_a_case_insensitive_col
+```
+
 **Restored after each**, and the file verified byte-identical to the pre-mutation copy before the
 final green run (`diff -q` → clean). The greens in the Proof section above were produced by the
 restored file, not by a file I had stopped mutating and hoped was right.
@@ -757,16 +906,43 @@ assertion rather than an omission.
 - Production remains five migrations behind this branch's base and its finance tables remain empty
   (advisory §5, unchanged by this work).
 
-## The scope self-check, corrected
+## The scope self-check, DERIVED
 
-The previous version said "four new files, nothing else touched" against a diff that had six. At this
-HEAD the branch adds **seven files** — migration, enum, two models, one test file, this report and the
-retention ticket — and modifies **two** (`CheckConstraintsAsTriggersTest`, `backstop-reachability.md`).
-That is the first time this branch has modified a file it did not create, and it is deliberate: both
-changes are the review's findings 4 and 8.
+Not retyped. Round three's version said "four new files, nothing else touched" against a diff of six,
+and the cold review caught it; the numbers below come from `git diff --cached --name-status 6f54a18a`
+against the staged tree that becomes this commit.
 
-A self-check that reports the wrong file count is a self-check that did not happen. It has now been
-run against `git diff --name-status` rather than against memory.
+```
+9 A     app/Finance/Enums/GatewayTransactionStatus.php
+        app/Finance/Models/GatewayTransaction.php
+        app/Finance/Models/GatewayTransactionEvent.php
+        database/migrations/2026_08_27_100000_create_finance_gateway_transactions.php
+        tests/Feature/Finance/GatewayTransactionSchemaTest.php
+        docs/handoff/reports/feat-gateway-transaction-table.md
+        docs/handoff/tickets/gateway-payload-retention.md
+        docs/handoff/tickets/finance-trigger-string-comparisons-are-case-insensitive.md
+        docs/handoff/decisions/settlement-account-and-milestone-risk.md
+
+4 M     tests/Feature/Finance/CheckConstraintsAsTriggersTest.php
+        docs/finance/backstop-reachability.md
+        docs/handoff/tickets/reviewer-can-see-implementer-scratchpad.md
+        .claude/skills/finance-execute/SKILL.md
+```
+
+**Read against my own model of the change, which is what `git diff --stat` is for.** Five of the nine
+additions are the change itself; four are documents the reviews produced — two tickets, one decision
+request to Developer 1, and this report. Of the four modifications, **none is a behaviour change to
+code I do not own**: the shared test gains an assertion, and three are documentation. The two docblock
+corrections to Developer 1's origin-pairing migrations are deliberately **NOT here** — they are on
+`docs/mysql-5-7-measured`, off `staging`, for the reason §10 gives about collisions and because a
+measured fact about production is useful to everyone immediately rather than when this branch merges.
+
+**One coordination consequence to state plainly, because it lands on other people:**
+`CheckConstraintsAsTriggersTest` now enumerates an exact set, so anyone adding a legitimate `CHECK`
+anywhere in finance will red a shared file they do not own, and will meet it as a failure in a
+test whose name does not mention their table. That is the intended behaviour — silent addition is what
+this branch did and what the named lists could not see — but it is a cost borne by others and it
+should be said out loud rather than discovered.
 
 ## Not done
 
@@ -804,6 +980,27 @@ run against `git diff --name-status` rather than against memory.
   guard is a one-line trigger change and a new migration.
 
 ## Findings raised, not fixed
+
+- **The same collation class is live in 24 other places in the finance schema**, measured across all
+  58 `finance_` triggers and restricted to string-typed columns. Two look worth attention first —
+  `finance_credit_notes` compares `status = 'approved'` bare, which gates the credit-note **ceiling**
+  check, and `finance_opening_balance_batches` compares `status = 'posted'` bare, which gates the
+  terminal-state guard. **Whether either is reachable was not established** and should not be assumed
+  either way. Ticketed:
+  `docs/handoff/tickets/finance-trigger-string-comparisons-are-case-insensitive.md`. Severity:
+  **ticket**, with those two worth a look before the rest.
+  The Class B tripwire is deliberately scoped to the two gateway tables for exactly this reason —
+  widening it now would fire on those 24 and invite baselining a working tripwire, which is the one
+  thing the ratchet's own message warns against. Widening is a one-line change to a table filter once
+  they are fixed.
+- **The cold reviewer's isolation was observed, not engineered — for the second time.** It found
+  another session's clone and four `probe*.php` files on its own scratchpad path, named them,
+  declined to open them, and could not make its own clone because the path was occupied. Reviews are
+  now spawned with `isolation: "worktree"`;
+  `docs/handoff/tickets/reviewer-can-see-implementer-scratchpad.md` and the `finance-execute` skill
+  are updated. **Mitigated, not closed** — it is one forgotten parameter away from absent, and the
+  proper fix is still the harness question that ticket already describes.
+
 
 - **The settlement-account gap is still open** (advisory §2). Nothing in `finance_bank_accounts`
   (`2026_08_10_100000`) or `finance_school_settings` says which account a gateway payment settles

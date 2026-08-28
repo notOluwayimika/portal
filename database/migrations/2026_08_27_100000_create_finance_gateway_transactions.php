@@ -141,6 +141,36 @@ use Illuminate\Support\Facades\Schema;
  * those are §6 steps 6 and 7. The columns land now because a column added later is NULL for every
  * transaction that happened before it existed, permanently.
  *
+ * ── TWO RULES THIS FILE FOLLOWS, BOTH PAID FOR ON THIS BRANCH ───────────────────────────────────
+ *
+ * Neither is style. Each was violated here, measured by a cold review, and each is now pinned by a
+ * tripwire in `GatewayTransactionSchemaTest` so the next table cannot repeat it quietly.
+ *
+ * **BOTH DOORS.** Every domain rule enforced at INSERT is enforced at UPDATE, or is documented as
+ * deliberately insert-only with a reason. A rule at one door is not a rule — it is a rule with a
+ * hole shaped like the other door, and the hole is invisible because the guarded door keeps biting.
+ * It happened twice in one commit: the currency shape was insert-only (so `SET amount_currency =
+ * 'ngn'` was accepted, and `Money`'s constructor then throws on READ, making the row's amount
+ * unreadable by every consumer), and the events `source` domain was insert-only. That is why the
+ * shared predicates live in their own methods — `statusDomainBody()`, `feePairingBody()`,
+ * `currencyShapeBody()`, `sourceDomainBody()` — and both guards CALL them. A predicate written twice
+ * is a predicate that will come to differ; a predicate written once cannot.
+ *
+ * The insert-only exceptions, stated rather than left to be inferred: `amount_minor > 0` and "a
+ * delivery must carry a payload" are insert-only BECAUSE the update guards freeze those columns
+ * outright, so no update can reach a violating value. `redacted_at IS NULL` is insert-only for the
+ * mirror reason — its update counterpart is the redaction door itself.
+ *
+ * **BINARY COLLATION ON EVERY STRING COMPARISON THAT GUARDS A VALUE.** Under the tables' default
+ * `utf8mb4_unicode_ci`, `=` and `<=>` are case- AND accent-insensitive, so `'ngn'`, `'ṄGN'` and
+ * `'NGŇ'` all compare equal to `'NGN'` — and a freeze arm written `NOT (NEW.provider <=> OLD.provider)`
+ * therefore permits `paystack` → `PAYSTACK`. `2026_08_17_100000` records this class already, for the
+ * DOMAIN arms: omitting `COLLATE utf8mb4_bin` from ONE arm is the quiet failure, because the others
+ * keep biting and the guard still looks alive. What this branch adds to that lesson is that it
+ * applies to the FREEZE and WRITE-ONCE arms too, not only to domain arms — a column frozen under a
+ * case-insensitive collation is not frozen, and on an evidence table that means the string stored
+ * stops being provably the string that arrived.
+ *
  * `MESSAGE_TEXT` IS CAPPED AT 128 CHARACTERS and every sentence below is counted, not eyeballed.
  * Past it, 8.0.43 does not truncate: `SIGNAL` itself fails with 1648/HY000, so the row is still
  * refused but the guard stops speaking its own refusal and every caller classifying on the driver
@@ -342,17 +372,30 @@ return new class extends Migration
             SQL;
     }
 
-    /** The status domain and the fee pairing, plus a positive amount and the currency shape. */
-    private function insertGuardBody(): string
+    /**
+     * THE CURRENCY SHAPE, SHARED BY BOTH DOORS — extracted for the reason the class docblock's
+     * BOTH DOORS section gives. It was insert-only for one commit, and the cold review measured the
+     * consequence: with the `CHECK` gone (correctly) and no shape arm on UPDATE, `SET amount_currency
+     * = 'ngn'` was ACCEPTED, and `Money`'s constructor then throws on read, so the row's amount is
+     * unreadable by any consumer. The rule now lives in one method and both guards call it.
+     */
+    private function currencyShapeBody(): string
     {
-        return $this->statusDomainBody()."\n".$this->feePairingBody()."\n".<<<'SQL'
-            IF NEW.amount_minor <= 0 THEN
-                SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT =
-                    'finance_gateway_transactions.amount_minor must be greater than zero: nothing is not a checkout.';
-            END IF;
+        return <<<'SQL'
             IF NEW.amount_currency COLLATE utf8mb4_bin NOT REGEXP '^[A-Z]{3}$' THEN
                 SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT =
                     'finance_gateway_transactions.amount_currency must be three upper-case letters (ISO-4217).';
+            END IF;
+            SQL;
+    }
+
+    /** The status domain, the fee pairing and the currency shape — all shared — plus a positive amount. */
+    private function insertGuardBody(): string
+    {
+        return $this->statusDomainBody()."\n".$this->feePairingBody()."\n".$this->currencyShapeBody()."\n".<<<'SQL'
+            IF NEW.amount_minor <= 0 THEN
+                SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT =
+                    'finance_gateway_transactions.amount_minor must be greater than zero: nothing is not a checkout.';
             END IF;
             SQL;
     }
@@ -438,7 +481,7 @@ return new class extends Migration
      */
     private function updateGuardBody(): string
     {
-        return $this->statusDomainBody()."\n".$this->feePairingBody()."\n".<<<'SQL'
+        return $this->statusDomainBody()."\n".$this->feePairingBody()."\n".$this->currencyShapeBody()."\n".<<<'SQL'
             IF OLD.status COLLATE utf8mb4_bin = 'success' AND NEW.status COLLATE utf8mb4_bin <> 'success' THEN
                 SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT =
                     'finance_gateway_transactions: a settled attempt is final; its status may not change.';
@@ -450,22 +493,22 @@ return new class extends Migration
             IF NEW.id <> OLD.id
                 OR NEW.school_id <> OLD.school_id
                 OR NEW.invoice_id <> OLD.invoice_id
-                OR NEW.uuid <> OLD.uuid
+                OR NEW.uuid COLLATE utf8mb4_bin <> OLD.uuid
                 OR NOT (NEW.created_at <=> OLD.created_at)
-                OR NOT (NEW.provider <=> OLD.provider)
-                OR NOT (NEW.reference <=> OLD.reference)
+                OR NOT (NEW.provider COLLATE utf8mb4_bin <=> OLD.provider)
+                OR NOT (NEW.reference COLLATE utf8mb4_bin <=> OLD.reference)
                 OR NEW.amount_minor <> OLD.amount_minor
-                OR NOT (NEW.amount_currency <=> OLD.amount_currency) THEN
+                OR NOT (NEW.amount_currency COLLATE utf8mb4_bin <=> OLD.amount_currency) THEN
                 SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT =
                     'finance_gateway_transactions: id, school, invoice, provider, reference, amount, created_at frozen.';
             END IF;
-            IF (OLD.provider_reference   IS NOT NULL AND NOT (NEW.provider_reference   <=> OLD.provider_reference))
+            IF (OLD.provider_reference   IS NOT NULL AND NOT (NEW.provider_reference   COLLATE utf8mb4_bin <=> OLD.provider_reference))
                OR (OLD.paid_at              IS NOT NULL AND NOT (NEW.paid_at              <=> OLD.paid_at))
                OR (OLD.payment_id           IS NOT NULL AND NOT (NEW.payment_id           <=> OLD.payment_id))
-               OR (OLD.failure_reason       IS NOT NULL AND NOT (NEW.failure_reason       <=> OLD.failure_reason))
+               OR (OLD.failure_reason       IS NOT NULL AND NOT (NEW.failure_reason       COLLATE utf8mb4_bin <=> OLD.failure_reason))
                OR (OLD.fee_minor            IS NOT NULL AND NOT (NEW.fee_minor            <=> OLD.fee_minor))
-               OR (OLD.fee_currency         IS NOT NULL AND NOT (NEW.fee_currency         <=> OLD.fee_currency))
-               OR (OLD.settlement_reference IS NOT NULL AND NOT (NEW.settlement_reference <=> OLD.settlement_reference))
+               OR (OLD.fee_currency         IS NOT NULL AND NOT (NEW.fee_currency         COLLATE utf8mb4_bin <=> OLD.fee_currency))
+               OR (OLD.settlement_reference IS NOT NULL AND NOT (NEW.settlement_reference COLLATE utf8mb4_bin <=> OLD.settlement_reference))
                OR (OLD.settled_at           IS NOT NULL AND NOT (NEW.settled_at           <=> OLD.settled_at)) THEN
                 SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT =
                     'finance_gateway_transactions: a fact learned about this attempt is written once, never rewritten.';
@@ -609,7 +652,7 @@ return new class extends Migration
         // true reason), then any UPDATE that is not a redaction, then the columns a redaction may
         // not touch. `updated_at` moves and `created_at` does not — when the row arrived is part of
         // the evidence; when it was redacted is `redacted_at`.
-        $this->installTrigger(self::EVENTS_UPDATE_GUARD, 'UPDATE', <<<'SQL'
+        $this->installTrigger(self::EVENTS_UPDATE_GUARD, 'UPDATE', $this->sourceDomainBody()."\n".<<<'SQL'
             IF OLD.redacted_at IS NOT NULL THEN
                 SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT =
                     'finance_gateway_transaction_events: this delivery is already redacted; redaction happens once.';
@@ -625,9 +668,9 @@ return new class extends Migration
             IF NEW.id <> OLD.id
                 OR NEW.school_id <> OLD.school_id
                 OR NEW.gateway_transaction_id <> OLD.gateway_transaction_id
-                OR NEW.uuid <> OLD.uuid
-                OR NOT (NEW.source <=> OLD.source)
-                OR NOT (NEW.event <=> OLD.event)
+                OR NEW.uuid COLLATE utf8mb4_bin <> OLD.uuid
+                OR NOT (NEW.source COLLATE utf8mb4_bin <=> OLD.source)
+                OR NOT (NEW.event COLLATE utf8mb4_bin <=> OLD.event)
                 OR NOT (NEW.created_at <=> OLD.created_at) THEN
                 SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT =
                     'finance_gateway_transaction_events: a redaction may clear the payload and change nothing else.';
@@ -639,12 +682,7 @@ return new class extends Migration
                 'finance_gateway_transaction_events is retained for audit: DELETE is denied.';
             SQL, self::EVENTS_TABLE);
 
-        $this->installTrigger(self::EVENTS_INSERT_GUARD, 'INSERT', <<<'SQL'
-            IF NOT COALESCE(NEW.source COLLATE utf8mb4_bin = 'webhook'
-                         OR NEW.source COLLATE utf8mb4_bin = 'verify', 0) THEN
-                SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT =
-                    'finance_gateway_transaction_events.source must be webhook or verify.';
-            END IF;
+        $this->installTrigger(self::EVENTS_INSERT_GUARD, 'INSERT', $this->sourceDomainBody()."\n".<<<'SQL'
             IF NEW.redacted_at IS NOT NULL THEN
                 SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT =
                     'finance_gateway_transaction_events: a delivery is stored as it arrived; it cannot be born redacted.';
@@ -662,6 +700,28 @@ return new class extends Migration
         return <<<'SQL'
             SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT =
                 'finance_gateway_transactions is retained for audit: DELETE is denied.';
+            SQL;
+    }
+
+    /**
+     * THE SOURCE DOMAIN, SHARED BY BOTH DOORS. It was insert-only for one commit, and the cold review
+     * measured the consequence: `source` was frozen on UPDATE by a comparison under the column's own
+     * case-INSENSITIVE collation, so `webhook` → `WEBHOOK` was accepted — a value the insert guard
+     * refuses, reachable on the update path, under cover of a redaction. The events table could hold
+     * a value the schema claims is impossible, and every reader trusting the domain inherits it.
+     *
+     * Two independent things had to be wrong for that: the domain rule at one door only (BOTH DOORS,
+     * class docblock) and a bare string comparison (BINARY COLLATION, same place). Both are closed
+     * here, and both are now pinned by tripwires in GatewayTransactionSchemaTest.
+     */
+    private function sourceDomainBody(): string
+    {
+        return <<<'SQL'
+            IF NOT COALESCE(NEW.source COLLATE utf8mb4_bin = 'webhook'
+                         OR NEW.source COLLATE utf8mb4_bin = 'verify', 0) THEN
+                SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT =
+                    'finance_gateway_transaction_events.source must be webhook or verify.';
+            END IF;
             SQL;
     }
 

@@ -6,6 +6,7 @@ use App\Finance\Actions\ApproveCreditNote;
 use App\Finance\Actions\ApproveDiscountPolicyChange;
 use App\Finance\Actions\ApproveFeeScheduleChange;
 use App\Finance\Actions\ApproveVoidRequest;
+use App\Finance\Actions\AwardStudentDiscount;
 use App\Finance\Actions\CreateFeeSchedule;
 use App\Finance\Actions\GenerateInvoice;
 use App\Finance\Actions\RecordAccountPayment;
@@ -289,6 +290,41 @@ final class DriveFinanceStates
                 'sort_order' => 1,
                 'bank_account_id' => $accountUuid,
             ],
+            [
+                /*
+                 * MANDATORY **AND** NON-DISCOUNTABLE — the third line, and the ONLY thing on this
+                 * schedule that can tell the two discount bases apart on a bulk-run bill.
+                 *
+                 * WHY THE BUS LINE ABOVE CANNOT DO IT, which is the trap this item was added to close.
+                 * The bus is non-discountable, so a reader checking "is there a false `is_discountable`
+                 * on this schedule?" answers yes and stops. But it is also NOT MANDATORY, and
+                 * {@see FeeScheduleLineMapper::linesFor()} filters `is_mandatory = true` — so no bulk
+                 * run ever puts it on a bill. Before this item, EVERY invoice a run produced held
+                 * exactly one line, Tuition, and that line was discountable: `discountable` and `total`
+                 * therefore denoted the SAME money, and a resolver that ignored the base axis entirely
+                 * would have produced identical totals and passed. The fixture looked like it covered
+                 * the axis and could not.
+                 *
+                 * That is the degenerate-fixture failure one level in from the one the bus line already
+                 * guards: it is not enough for the SCHEDULE to be mixed, the BILLED SUBSET has to be.
+                 *
+                 * WITH IT, the arithmetic separates: a 50%-of-discountable award reduces 250,000 by
+                 * 125,000 and leaves the 30,000 levy untouched, while a 100%-of-total award reduces the
+                 * whole 280,000. Half of the total (140,000) and half of the discountable (125,000) are
+                 * different numbers, so an implementation that read the wrong base is visible on the
+                 * bill rather than invisible.
+                 *
+                 * A LEVY IS THE RIGHT SHAPE for this, not a contrivance: schools charge one, every
+                 * child pays it, and no scholarship discounts it.
+                 */
+                'description' => 'Development levy',
+                'amount_minor' => 3000000,
+                'currency' => Money::DEFAULT_CURRENCY,
+                'is_mandatory' => true,
+                'is_discountable' => false,
+                'sort_order' => 2,
+                'bank_account_id' => $accountUuid,
+            ],
         ]);
 
         $change = app(SubmitFeeScheduleChange::class)->handle(
@@ -452,6 +488,84 @@ final class DriveFinanceStates
         return StudentDiscountAward::query()->where('school_id', $schoolId)->count();
     }
 
+    /**
+     * PUT ONE STUDENT ON ONE ALREADY-APPROVED POLICY — the state the money drive bills against.
+     *
+     * VERIFIED ABSENT BEFORE IT WAS ADDED. The award-import drive left `Discount awards` at zero by
+     * design, and every award-bearing state in this fixture was made by a human uploading a sheet. That
+     * is fine for driving the IMPORT and useless for driving the MONEY: a run has to find an award
+     * already sitting on a placed student, from a bare seed, or the arithmetic drive begins with a
+     * manual step and is not reproducible.
+     *
+     * THROUGH THE REAL ACTION, which here is not a formality either — {@see AwardStudentDiscount} is
+     * where the gate lives. It re-checks `finance.discount-award.manage` against the actor on every
+     * call, refuses a student whose scholarship is not a discount scheme, and refuses a second award.
+     * A row write would skip all three and seed a state the application refuses to create.
+     *
+     * IT IS SEPARATE FROM THE IMPORT DRIVE'S HOLDERS ON PURPOSE, and that separation is the whole
+     * reason these students exist. That drive needs holders with NO award (its first upload must be
+     * able to report `awarded`); this one needs holders WITH one. The same student cannot be both, and
+     * a fixture that reused them would make whichever drive ran second measure the first one's
+     * leftovers. See DriveCastSeeder::seedCohortAwardHolders().
+     *
+     * Idempotent: a second call finds the existing award rather than meeting the Action's own refusal.
+     */
+    public function awardDiscount(int $studentId, int $policyId, User $actor): int
+    {
+        $existing = StudentDiscountAward::query()->where('student_id', $studentId)->first();
+
+        if ($existing !== null) {
+            return (int) $existing->id;
+        }
+
+        return (int) app(AwardStudentDiscount::class)->handle($studentId, $policyId, (int) $actor->id)->id;
+    }
+
+    /**
+     * How many of a COHORT hold a discount award — the count that decides whether the reduction arm of
+     * a bulk run can be driven at all.
+     *
+     * NOT DERIVABLE FROM `Discount awards`, which is School-wide and counts holders nobody has placed:
+     * the award-import drive's four holders are deliberately unenrolled, so a School could show four
+     * awards and bill none of them. And not derivable from `Cohort at slot`, which counts everybody at
+     * the coordinates regardless of what they hold. Zero here means every invoice the run raises is
+     * full price and the whole arithmetic drive is reading one number with nothing to compare it to.
+     *
+     * @param  list<int>  $studentIds  the cohort's student ids, resolved by the caller through the port
+     */
+    public function awardedAmong(array $studentIds): int
+    {
+        return $studentIds === [] ? 0 : StudentDiscountAward::query()->whereIn('student_id', $studentIds)->count();
+    }
+
+    /**
+     * The MANDATORY lines of the school's active drive schedule, as `description|amount|discountable`.
+     *
+     * Printed rather than counted, for the reason the admission numbers and the award pairs are: they
+     * are the INPUTS to every total the money drive reports by hand, and a drive that pastes an
+     * arithmetic check has to state what it computed from. Filtered to `is_mandatory` because that is
+     * what {@see FeeScheduleLineMapper::linesFor()} bills — the optional bus line is on the schedule
+     * and can never be on a run's invoice, and printing it here would invite it into the arithmetic.
+     *
+     * @return list<string>
+     */
+    public function billableScheduleLines(int $schoolId): array
+    {
+        return FeeItem::query()
+            ->whereHas('schedule', fn ($q) => $q->where('school_id', $schoolId)->where('label', self::DRIVE_SCHEDULE_LABEL))
+            ->where('is_mandatory', true)
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->get()
+            ->map(fn (FeeItem $item) => sprintf(
+                '%s %s (%s)',
+                $item->description,
+                $item->amount->format(),
+                $item->is_discountable ? 'discountable' : 'NOT discountable',
+            ))
+            ->all();
+    }
+
     /** UNPAID — a charge, nothing settled. */
     public function unpaid(string $enrollmentUuid): void
     {
@@ -577,10 +691,18 @@ final class DriveFinanceStates
      */
     public function unallocatedRemainder(string $enrollmentUuid, int $schoolId, bool $intoSecondAccount): void
     {
-        // The mandatory item on the school's active drive schedule — the one with a destination.
+        // The FIRST mandatory item on the school's active drive schedule — the one with a destination.
+        //
+        // `orderBy('sort_order')` IS LOAD-BEARING AS OF THE THIRD FEE ITEM. This read was written when
+        // the schedule had exactly one mandatory line and `value('id')` was therefore unambiguous;
+        // adding the mandatory Development levy made it a bare "whichever row the engine returns
+        // first", which is not a decision anybody made. Ordered, it deterministically takes Tuition,
+        // which is what the line below is describing.
         $feeItemId = (int) FeeItem::query()
             ->whereHas('schedule', fn ($q) => $q->where('school_id', $schoolId)->where('label', self::DRIVE_SCHEDULE_LABEL))
             ->where('is_mandatory', true)
+            ->orderBy('sort_order')
+            ->orderBy('id')
             ->value('id');
 
         $termBill = app(GenerateInvoice::class)->handle(

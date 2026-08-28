@@ -161,10 +161,15 @@ by construction.
 The seed command prints **THREE count tables**, not one, and a reader who takes the
 first one for the whole thing will look for a column that is in another.
 
-**Table 1 — the bulk-run slot**, FIFTEEN columns: school, academic sessions, terms,
+**Table 1 — the bulk-run slot**, SEVENTEEN columns: school, academic sessions, terms,
 class levels, bank accounts, discount policies, payments split by `origin`, then
 **payments w/ remainder, open invoices**, then **active fee schedules, cohort at
-slot, unplaceable**, then **decided credit notes, decided voids**.
+slot, awarded in cohort, sponsored in cohort, unplaceable**, then **decided credit
+notes, decided voids**. After it the command prints each school's **billable schedule
+lines** — the schedule's MANDATORY items with their amounts and their `discountable`
+flags, which are the inputs to any arithmetic a money drive checks by hand (added
+2026-08-28; read those flags as a SET, because with every mandatory line discountable
+the two discount bases denote the same money).
 
 **Table 2 — the guardians slot**, FOURTEEN columns: the same first ten, then
 **students, guardians**, then **scholarships, scholarships (unconfigured)**.
@@ -175,9 +180,12 @@ discount awards**. It is NARROW ON PURPOSE and **shares nothing with the two abo
 except `School` and `Discount policies`** — that screen reads no term, no class
 level, no bank account and no invoice, so repeating the shared ten a third time
 would be waste rather than a cross-check. Added 2026-08-28 by the BSS award-import
-drive; `Discount awards` is expected to be ZERO on a fresh fixture and is printed
-anyway, exactly as `Guardians` is, because it is the denominator a re-upload check
-is measured against.
+drive. `Discount awards` was ZERO on a fresh fixture and is no longer: the money drive
+later that day seeded two standing awards per school on PLACED students, so it now
+reads 2. It is still the denominator the import drive's re-upload check is measured
+against — that check simply starts from two. The import drive's own four holders remain
+unawarded and unplaced, which is what keeps its first upload able to report `awarded`;
+the two sets of holders are deliberately different students.
 
 Tables 1 and 2 were re-derived against the command's actual output on 2026-08-27 and
 both were WRONG here before that — thirteen and twelve, written when U13/U14's two
@@ -236,7 +244,16 @@ that screen — whose third column IS the base axis — could not distinguish a 
 that read the axis from one that ignored it, and would have refused every row of any
 sheet for one reason. It added a THIRD table rather than widening either
 (`Award pairs` cannot be derived from `Discount policies`: three rows could be three
-drafts, three fixed amounts, or three on one pair).
+drafts, three fixed amounts, or three on one pair). And the money drive found the SIXTH
+the same day, in the place the fixture looked most convincing: the schedule carried one
+discountable item and one NON-discountable one, so a reader asking "can this fixture
+tell the two discount bases apart?" answered yes — but the non-discountable item was
+also NOT MANDATORY, and a run bills mandatory items only. Every invoice a run produced
+held one line and that line was discountable, so `discountable` and `total` denoted the
+SAME money and an implementation ignoring the base axis entirely would have passed.
+**It is not enough for the SCHEDULE to be mixed; the BILLED SUBSET has to be** — check
+the flags on the lines that actually reach the document, not on the ones the catalog
+holds.
 
 **When your screen depends on something the tables do not count, add the column
 before you open a browser** — and update the enumeration in this paragraph with it.

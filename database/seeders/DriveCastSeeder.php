@@ -76,6 +76,23 @@ class DriveCastSeeder extends Seeder
      */
     public array $coordinates = [];
 
+    /**
+     * The two PLACED students per school who are to receive a discount award, in
+     * {@see DriveCastSeeder::seedCohortAwardHolders()} order — [ A (discountable base), B (whole bill) ]
+     * — keyed by school id.
+     *
+     * EXPOSED AS IDS BECAUSE THE AWARD IS NOT MADE HERE. This class imports no Finance code by design,
+     * so `SeedDriveFixture` makes both awards through the real Action afterwards and needs to know who
+     * on. Ids rather than models: the command re-reads nothing off them, it only names two students.
+     *
+     * ORDER IS LOAD-BEARING and is the reason this is a list and not a set — the command pairs
+     * element 0 with the discountable-base policy and element 1 with the whole-bill one, which is the
+     * only thing that makes A and B mean different bases.
+     *
+     * @var array<int, list<int>>
+     */
+    public array $cohortAwardees = [];
+
     /** The guardian-create drive's operator seat (School A) and its isolation counterpart (School B). */
     public ?User $adminA = null;
 
@@ -155,6 +172,10 @@ class DriveCastSeeder extends Seeder
         // driver of the award import can pick them out without cross-referencing the cast.
         $this->seedScholarshipHolders($schoolA);
         $this->seedScholarshipHolders($schoolB);
+
+        // And then the money drive's three, after them, for the same reason.
+        $this->seedCohortAwardHolders($schoolA);
+        $this->seedCohortAwardHolders($schoolB);
     }
 
     /**
@@ -285,6 +306,50 @@ class DriveCastSeeder extends Seeder
 
         $this->student($school, 'Nadia', 'Nullkind')
             ->update(['scholarship_id' => $of(self::SCHOLARSHIP_UNCONFIGURED)->id]);
+    }
+
+    /**
+     * THE MONEY DRIVE'S COHORT — three students PLACED at the school's pricing coordinates, so that a
+     * bulk run bills them and the arithmetic of a discount can be read off a real invoice.
+     *
+     * WHY IT EXISTS. Everything before this proves an AWARD ROW was written; nothing proves a naira
+     * left an invoice. The two meet only in a bulk run, and a run bills a COHORT — so the award has to
+     * sit on somebody the cohort query returns. {@see seedScholarshipHolders()} above deliberately
+     * leaves its four UNPLACED, so not one of them can be billed.
+     *
+     * THEY ARE NOT THOSE FOUR, AND THE SEPARATION IS THE POINT. The award-import drive needs holders
+     * with NO award — its first upload must be able to report `awarded` — while this one needs holders
+     * WITH one. The same student cannot be both, and reusing them would make whichever drive ran second
+     * measure the first one's leftovers.
+     *
+     * THREE, AND THE FOURTH COMES FREE. A (awarded on the discountable base) and B (awarded on the
+     * whole bill) are what the base axis is read from; C is on a SPONSORED scheme, which the run
+     * excludes rather than bills. The CONTROL — a placed student with no award at all, billed at full
+     * price — is already here: `Cody Cohort` and `Cleo Cohort` are placed, carry no scholarship and
+     * carry no award, and every reduced total is read against theirs. Without an unreduced number
+     * beside them the reduced ones cannot be checked at all.
+     *
+     * NO AWARD IS MADE HERE. This class touches no Finance code by design; `SeedDriveFixture` awards
+     * A and B through the real Action afterwards, and the sponsored student C is left holding nothing,
+     * which is the state a run must refuse to bill rather than bill at zero.
+     */
+    private function seedCohortAwardHolders(School $school): void
+    {
+        $of = fn (string $name): Scholarship => Scholarship::query()
+            ->where('school_id', $school->id)->where('name', $name)->sole();
+
+        $discount = $of(self::SCHOLARSHIP_DISCOUNT)->id;
+
+        foreach ([['Ada', 'Awarded'], ['Bode', 'Bothbases']] as [$first, $last]) {
+            $student = $this->student($school, $first, $last);
+            $student->update(['scholarship_id' => $discount]);
+            $this->enrollAt($school, $student);
+            $this->cohortAwardees[(int) $school->id][] = (int) $student->id;
+        }
+
+        $sponsored = $this->student($school, 'Chidi', 'Coveredfor');
+        $sponsored->update(['scholarship_id' => $of(self::SCHOLARSHIP_SPONSORED)->id]);
+        $this->enrollAt($school, $sponsored);
     }
 
     /**

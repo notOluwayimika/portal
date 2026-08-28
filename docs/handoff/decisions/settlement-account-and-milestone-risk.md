@@ -1,9 +1,50 @@
 # Decision request → Developer 1 — settlement account, and the 6 September milestone
 
-**Raised:** 2026-08-28. **Answer needed:** today.
+**Raised:** 2026-08-28. **Answer needed by: 31 August 2026.**
 **Blocks:** §6 step 4 (the webhook handler) entirely. Steps 2, 3, 6 and 7 proceed without it.
 
-Two things, and only the first is a decision. The second is a risk that needs an owner and a date.
+**Why the 31st and not "when you get to it".** The definition of done is 6 September. The 31st leaves
+3 September for configuration and the deploy, and two days of slack. **After the 31st this stops
+being a technical question and becomes a milestone one** — at that point it escalates to whoever owns
+the milestone rather than being chased again, because an unanswered dependency past its date is a
+schedule fact, not a dependency.
+
+Three things. Only the first is a decision; the second needs an owner and a date; the third is
+information about your code that should not wait for my branch to merge.
+
+---
+
+## The covering note — DRAFTED, NOT SENT
+
+**I cannot send this.** It is written to be pasted into whatever channel you actually use, and the
+distinction matters: until a human sends it, the state of this dependency is *"raised in a file in
+the repository"*, which is not the same as *"asked"*. A document nobody has been pointed at is the
+paper form of a control with no enforcement behind it.
+
+> Two things that need you, both today.
+>
+> **1. The settlement bank account — blocking.** A gateway payment is required by the trigger to name
+> a bank account, and nothing in the schema says which one; both candidate homes are your tables.
+> It's a decision plus one small commit — same shape as the `origin` contract. I've suggested
+> `settlement_bank_account_id` on `finance_school_settings` and I'm coding against a resolver stub
+> meanwhile, so I'm not idle — but nothing that writes a gateway payment can ship until it lands.
+>
+> **2. Production readiness — same document, needs an owner.** Live is five migrations behind
+> staging, so `origin = 'gateway'` is refused there today. The finance module is unconfigured: no
+> bank accounts, no fee items, no fee schedules, no `invoice_number_prefix`, no maker/checker
+> accounts. None of it is mine to fix, all of it is between "code complete" and line one of the
+> definition of done. The prefix specifically must be set *before* the first invoice is issued — it's
+> applied at render, so setting it later re-renders the display number of every invoice already out.
+>
+> **What I need:** a decision on (1) and a named owner plus date on (2) **by 31 August**. That leaves
+> 3 September for configuration and deploy, and two days of slack before resumption. After the 31st
+> it stops being a technical question and becomes a milestone one.
+>
+> **Separately, worth your eyes this week:** while fixing a collation defect on my branch I found the
+> same class live in 24 existing finance triggers, two of which gate the credit-note ceiling and the
+> opening-balance terminal state — string comparisons under `utf8mb4_unicode_ci` where `'X' = 'x'`.
+> Reachability not established, so I've ticketed rather than claimed it. But it's your code and it's
+> on production. `2026_08_17_100000`'s own docblock already names this failure mode.
 
 ---
 
@@ -96,3 +137,46 @@ assumed — both are mine, both are visible in the branch:
 - **`invoice_id` is REQUIRED on the gateway transaction, which answers §11 decision 5** (one invoice
   per checkout, not several) by building. The table is not append-only so the grain can be widened by
   an ordinary migration, but the decision was yours and I have taken it by default.
+
+
+---
+
+## 3 · Your code, on production — 24 collation-degenerate string comparisons in finance triggers
+
+**Not blocking me, not mine to fix, and not something to sit on until my branch merges.** Raised now
+because it is live on production today and it is in your files.
+
+Every `finance_` table is `utf8mb4_unicode_ci`, which is case- **and accent**-insensitive. Inside a
+trigger that makes `NEW.status = 'approved'` match `'Approved'`, and `NEW.x <=> OLD.x` treat a
+case-variant rewrite as no change at all. Measured across all 58 finance triggers, restricted to
+string-typed columns (collation is meaningless on an integer): **48 such comparisons, 24 of them
+bare.**
+
+Two are worth your eyes before the rest, because they are domain comparisons on a `status` column —
+the shape that admits a value the rest of the system believes impossible:
+
+- `finance_credit_notes_insert_guard` / `_update_guard` — `NEW.status = 'approved'`, which gates the
+  **credit-note ceiling check**, the arm stopping a credit note exceeding the invoice it credits.
+- `finance_opening_balance_batches_no_delete_posted` / `_no_unpost` — `NEW.status = 'posted'`, which
+  gates the **terminal-state guard** the enum's own docblock calls terminal *at the database*.
+
+**Reachability was NOT established** and should not be assumed either way — it depends on whether any
+writer can put a case variant into `status` at all, which is an app-layer question these triggers do
+not answer. That is the first thing to measure, and note that a `status` column with no DB-level
+domain guard would itself be the finding.
+
+This class is already named in your own `2026_08_17_100000` docblock, for domain arms: *omitting
+`COLLATE utf8mb4_bin` from ONE arm is the quiet failure, because the other arms keep biting and the
+guard still looks alive.* What my branch adds is that it applies to **freeze and write-once** arms
+too — a column frozen under a case-insensitive collation is not frozen.
+
+Full write-up, the scan, and why the scan under-reported its first time:
+`docs/handoff/tickets/finance-trigger-string-comparisons-are-case-insensitive.md`.
+
+---
+
+## If the 31st passes with no answer
+
+This escalates to the milestone owner rather than being chased a third time. Recorded here so that
+step is a pre-agreed consequence rather than a judgement call made in the moment, and so the date
+this was raised — 2026-08-28 — is on the record alongside it.

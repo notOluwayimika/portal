@@ -300,6 +300,35 @@ forged and lookups still match; the harm is **evidentiary** — the string store
 the string that crossed the wire — which on an evidence table is still worth fixing, just not the same
 order.
 
+### THE RECURRING CLASS ON THIS BRANCH: an instrument blind to the axis under test
+
+Three times, in one branch, and they are not three anecdotes — they are one failure mode wearing
+three costumes. Naming it here because the next one will wear a fourth.
+
+> **A measuring instrument that cannot see the axis it is measuring reports a clean sweep over the
+> defect, and a clean sweep is indistinguishable from an absence of defects.**
+
+| The instrument | The axis it could not see | What it reported |
+|---|---|---|
+| `CheckConstraintsAsTriggersTest`, named lists | a CHECK nobody thought to name | green, while two shipped |
+| the Class B scanner, first version | the `<=>` operator — the one the freeze arms use | zero offenders, over two live defects |
+| the immutability test loops | value **equality** (only value *identity* was varied) | green, against a guard comparing case-insensitively |
+
+And the repo already carries a fourth from an earlier session — a mutation summariser that printed
+only Pest's `failures` bucket and so filed every exception-based kill as a survivor, disagreeing with
+reality for exactly the controls most likely to be guards.
+
+**What the three have in common** is not carelessness: every one of them was a deliberate, reasonable
+instrument that happened to be blind on one axis, and in every case the blindness was invisible from
+the instrument's own output. The green was not a lie about the code — it was a true statement about a
+question nobody had asked.
+
+**The practice that catches it**, and it is cheap: **give the instrument something it must find.**
+The Class B tripwire now runs its own matcher over a planted bare `<=>` comparison and fails if it
+does not match it. That single test is what converts "the sweep found nothing" from a claim about the
+schema into a claim about the schema *and* the sweep. Before trusting any instrument's silence, ask
+what it would have to see to speak, and then make it see exactly that.
+
 ### And the ratchet caught a defect in the FIX, before any reviewer did
 
 Worth recording because it is the loop working at the layer below the review.

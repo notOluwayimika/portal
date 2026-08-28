@@ -37,6 +37,7 @@
  *     hold for any reduction at all.
  */
 
+use App\Enums\Permission as PermissionEnum;
 use App\Enums\ScholarshipKind;
 use App\Enums\StudentStatusEnum;
 use App\Enums\TermStatusEnum;
@@ -66,6 +67,7 @@ use App\Models\Arm;
 use App\Models\ClassLevel;
 use App\Models\ClassLevelArm;
 use App\Models\Curriculum;
+use App\Models\Permission as PermissionModel;
 use App\Models\Scholarship;
 use App\Models\School;
 use App\Models\Student;
@@ -192,9 +194,50 @@ function bdStudent(array $ctx, ?Scholarship $scholarship = null): Student
     });
 }
 
-/** Award $policy to $student through the Action under test. */
+/**
+ * A user who MAY award a discount in $ctx's School.
+ *
+ * IT EXISTS BECAUSE THE ACTION IS NOW GATED. `AwardStudentDiscount` asserts
+ * `finance.discount-award.manage` against the actor it is passed, and its `$actorId` stopped being
+ * nullable when the BSS import gave it its first request-borne caller — a gate with an unnamed path
+ * through it fails open. So every arm in this file that awards now names an actor, and this is the
+ * cheapest one that is not a lie.
+ *
+ * THE PERMISSION IS GRANTED DIRECTLY, NOT THROUGH A ROLE, and that is deliberate: the arms in this
+ * file are about the DISCOUNT rules, not about seats, and an actor holding `accounts_officer` would
+ * bring eleven other finance abilities with it — any of which a future arm could then pass on by
+ * accident. One permission, so an arm that passes does so because of the one being tested.
+ */
+function bdActor(array $ctx): User
+{
+    $user = User::factory()->create(['school_id' => $ctx['school']->id]);
+
+    $permission = PermissionModel::query()
+        ->where('name', PermissionEnum::FINANCE_DISCOUNT_AWARD_MANAGE->value)
+        ->where('guard_name', 'web')
+        ->first()
+        ?? PermissionModel::create([
+            'name' => PermissionEnum::FINANCE_DISCOUNT_AWARD_MANAGE->value,
+            'guard_name' => 'web',
+        ]);
+
+    setPermissionsTeamId($ctx['school']->id);
+    $user->givePermissionTo($permission);
+
+    return $user;
+}
+
+/**
+ * Award $policy to $student through the Action under test.
+ *
+ * `$actorId` DEFAULTS TO A PERMITTED ACTOR rather than to null. Null used to mean "no causer"; it now
+ * means "unauthorised", and the arms below are not about authorization — the two that ARE live in
+ * DiscountAwardImportTest, where the ability is the subject rather than the setup.
+ */
 function bdAward(array $ctx, Student $student, DiscountPolicy $policy, ?int $actorId = null): StudentDiscountAward
 {
+    $actorId ??= bdActor($ctx)->id;
+
     return ActiveSchool::runFor(
         $ctx['school']->id,
         fn () => app(AwardStudentDiscount::class)->handle($student->id, $policy->id, $actorId),
@@ -1146,7 +1189,7 @@ it('a student whose reduction cannot be built gets a failed row, and the cohort 
 
 it('awarding writes an activity entry naming causer, subject and the terms', function () {
     $ctx = bdSchool();
-    $actor = User::factory()->create(['school_id' => $ctx['school']->id]);
+    $actor = bdActor($ctx);
     $student = bdStudent($ctx, bdScholarship($ctx));
     $policy = bdPolicy($ctx, 50, DiscountBase::Total);
 
@@ -1173,7 +1216,7 @@ it('awarding writes an activity entry naming causer, subject and the terms', fun
 
 it('changing an award writes the terms EITHER SIDE, even when the writer is not the Action', function () {
     $ctx = bdSchool();
-    $actor = User::factory()->create(['school_id' => $ctx['school']->id]);
+    $actor = bdActor($ctx);
     $student = bdStudent($ctx, bdScholarship($ctx));
 
     $first = bdPolicy($ctx, 50, DiscountBase::Discountable);

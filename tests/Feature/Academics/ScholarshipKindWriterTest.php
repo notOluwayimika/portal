@@ -32,12 +32,14 @@
  *     the only question anyone asks of a classification audit.
  */
 
+use App\Enums\Permission as PermissionEnum;
 use App\Enums\ScholarshipKind;
 use App\Exceptions\BusinessRuleException;
 use App\Finance\Actions\AwardStudentDiscount;
 use App\Finance\Enums\DiscountBase;
 use App\Finance\Models\DiscountPolicy;
 use App\Finance\Models\StudentDiscountAward;
+use App\Models\Permission as PermissionModel;
 use App\Models\Scholarship;
 use App\Models\School;
 use App\Models\Student;
@@ -66,6 +68,22 @@ function swAdmin(): User
     $user->grantSchoolAccess($school, 'admin');
     $user->flushSchoolAccessCache();
     setPermissionsTeamId($school->id);
+
+    // `finance.discount-award.manage`, granted DIRECTLY and not through the `admin` role — which
+    // does not hold it, by decision (RbacSeeder puts it on `accounts_officer` alone). Arm (vii)
+    // below calls AwardStudentDiscount, which gates on that ability since the BSS import gave it its
+    // first request-borne caller, and the arm's subject is the scholarship WRITER: without the grant
+    // it would still refuse, for the wrong reason, and would go on reading as covered.
+    $permission = PermissionModel::query()
+        ->where('name', PermissionEnum::FINANCE_DISCOUNT_AWARD_MANAGE->value)
+        ->where('guard_name', 'web')
+        ->first()
+        ?? PermissionModel::create([
+            'name' => PermissionEnum::FINANCE_DISCOUNT_AWARD_MANAGE->value,
+            'guard_name' => 'web',
+        ]);
+
+    $user->givePermissionTo($permission);
 
     return $user;
 }

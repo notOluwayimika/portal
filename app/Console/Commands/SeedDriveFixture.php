@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Enums\ScholarshipKind;
 use App\Finance\Console\DriveFinanceStates;
 use App\Finance\Contracts\BillableEnrollmentProvider;
 use App\Support\ActiveSchool;
@@ -94,6 +95,17 @@ class SeedDriveFixture extends Command
         // made by School B's own bursar. See DriveFinanceStates::ensureDiscountPolicy().
         ActiveSchool::runFor($cast->schoolAId, fn () => $states->ensureDiscountPolicy($cast->schoolAId));
         ActiveSchool::runFor($cast->schoolBId, fn () => $states->ensureDiscountPolicy($cast->schoolBId, $cast->schoolBMaker));
+
+        // TWO MORE ACTIVE PERCENTAGE POLICIES PER SCHOOL, ONE ON EACH BASE — the pairs the BSS
+        // discount-award import resolves a sheet against. The single policy above cannot serve this
+        // screen: its rows name a (percentage, base) PAIR, and with one base seeded a resolver that
+        // ignored the base column entirely would award every row and read as correct. Same real
+        // submit-then-approve path, and for a sharper reason than anywhere else here — that import's
+        // whole design rests on ApproveDiscountPolicyChange being the catalog's single writer, so a
+        // fixture writing these rows directly would drive a screen whose central claim it had just
+        // falsified. See DriveFinanceStates::ensureAwardPolicies().
+        ActiveSchool::runFor($cast->schoolAId, fn () => $states->ensureAwardPolicies($cast->schoolAId));
+        ActiveSchool::runFor($cast->schoolBId, fn () => $states->ensureAwardPolicies($cast->schoolBId, $cast->schoolBMaker));
 
         // ONE ACTIVE FEE SCHEDULE PER SCHOOL, at the coordinates the cast placed its cohort at (U6).
         // Without it EVERY bulk-run preview answers "No active fee schedule exists at these
@@ -247,6 +259,48 @@ class SeedDriveFixture extends Command
         $unconfiguredScholarships = fn (int $schoolId): int => (int) DB::table('scholarships')
             ->where('school_id', $schoolId)->whereNull('kind')->count();
 
+        /*
+         * THE DISCOUNT-AWARD IMPORT'S FOUR COLUMNS — a THIRD table below, not a widening of either one
+         * above, following the precedent the guardians fixture set when it added the second.
+         *
+         * NONE OF THEM IS ANSWERABLE FROM A COLUMN THAT ALREADY EXISTS, which is the test this file's
+         * own rule applies before a column is added:
+         *
+         *  - `Discount policies` counts rows. The award screen groups ACTIVE PERCENTAGE policies into
+         *    distinct (percent, base) PAIRS, and a catalog of three could be three drafts, three fixed
+         *    amounts, or three rows on one pair — all of which render the empty state or the ambiguity
+         *    refusal while that column reads healthy. Hence `Award pairs`.
+         *  - `Scholarships` and `Scholarships (unconfigured)` count SCHEMES. This screen acts on
+         *    HOLDERS, and asks a different question of each kind: a discount holder can be awarded, a
+         *    sponsored or unconfigured one is refused with a different sentence each. Zero in the
+         *    discount column means no row of any sheet can ever be awarded; zero in the other means the
+         *    scholarship refusals cannot be shown at all.
+         *  - `Discount awards` is expected to be ZERO on a fresh fixture and is printed anyway, exactly
+         *    as `Guardians` is and for the same reason: it is the denominator the re-upload check is
+         *    measured against, so "no second award row after a second upload" is checked rather than
+         *    asserted. Do not read that zero as an abort.
+         *
+         * The award columns come through DriveFinanceStates for the boundary-lint reason the accounts
+         * column gives; the two holder columns read `students`, a core table, so they are counted here.
+         */
+        $awardPairs = fn (int $schoolId): int => ActiveSchool::runFor($schoolId, fn () => $states->awardPairCount($schoolId));
+
+        $awards = fn (int $schoolId): int => ActiveSchool::runFor($schoolId, fn () => $states->discountAwardCount($schoolId));
+
+        $holders = fn (int $schoolId, bool $discount): int => (int) DB::table('students')
+            ->join('scholarships', 'scholarships.id', '=', 'students.scholarship_id')
+            ->where('students.school_id', $schoolId)
+            ->whereNull('students.deleted_at')
+            ->when(
+                $discount,
+                fn ($q) => $q->where('scholarships.kind', ScholarshipKind::Discount->value),
+                // NOT `!= discount` — a NULL kind fails every inequality in SQL, and the unconfigured
+                // holder is precisely one of the two refusals this column exists to count.
+                fn ($q) => $q->where(fn ($w) => $w->whereNull('scholarships.kind')
+                    ->orWhere('scholarships.kind', '!=', ScholarshipKind::Discount->value)),
+            )
+            ->count();
+
         $port = app(BillableEnrollmentProvider::class);
 
         $cohort = fn (int $schoolId): int => count($port->listForCohort(
@@ -282,6 +336,32 @@ class SeedDriveFixture extends Command
                 ['B (school#'.$cast->schoolBId.')', $count('academic_sessions', $cast->schoolBId), $count('terms', $cast->schoolBId), $count('class_levels', $cast->schoolBId), $accounts($cast->schoolBId), $policies($cast->schoolBId), $payments($cast->schoolBId, 'portal'), $payments($cast->schoolBId, 'migrated'), $remainders($cast->schoolBId), $openInvoices($cast->schoolBId), $count('students', $cast->schoolBId), $count('guardians', $cast->schoolBId), $scholarships($cast->schoolBId), $unconfiguredScholarships($cast->schoolBId)],
             ],
         );
+
+        /*
+         * TABLE 3 — the discount-award import slot. A THIRD table and a NARROW one.
+         *
+         * IT DOES NOT REPEAT THE SHARED TEN that tables 1 and 2 both carry. Those two duplicate each
+         * other value for value, which is a useful cross-check between them; printing them a third time
+         * would be waste, and this screen reads none of them — no term, no class level, no bank account
+         * and no invoice is involved in putting a named child on an approved figure.
+         */
+        $this->info('Authoring slot per school — the BSS discount-award import (/finance/discount-award-imports) resolves each row of a sheet to an ACTIVE percentage policy on a (percentage, base) PAIR, and asks the student\'s SCHOLARSHIP whether a discount may be awarded at all:');
+        $this->table(
+            ['School', 'Award pairs', 'Discount policies', 'Students', 'On a discount scholarship', 'On another scholarship', 'Discount awards'],
+            [
+                ['A (school#'.$cast->schoolAId.')', $awardPairs($cast->schoolAId), $policies($cast->schoolAId), $count('students', $cast->schoolAId), $holders($cast->schoolAId, true), $holders($cast->schoolAId, false), $awards($cast->schoolAId)],
+                ['B (school#'.$cast->schoolBId.')', $awardPairs($cast->schoolBId), $policies($cast->schoolBId), $count('students', $cast->schoolBId), $holders($cast->schoolBId, true), $holders($cast->schoolBId, false), $awards($cast->schoolBId)],
+            ],
+        );
+
+        // THE PAIRS THEMSELVES, printed for the reason the admission numbers below are: a driver has to
+        // TYPE them into the third column of the sheet, and a pair that is merely counted still has to
+        // be looked up in the seeder. Read through the same scoped model the screen's own prop query
+        // uses, so what is printed here is what that screen will offer.
+        foreach ([['A', $cast->schoolAId], ['B', $cast->schoolBId]] as [$label, $schoolId]) {
+            $pairs = ActiveSchool::runFor($schoolId, fn () => $states->awardPairsFor($schoolId));
+            $this->line("  School {$label} (school#{$schoolId}) award pairs: ".implode(' · ', $pairs));
+        }
 
         // The admission numbers the guardians screen needs, printed because they are
         // GENERATED (HasAdmissionNumber + the Sequences counter) and therefore unknowable

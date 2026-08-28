@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Enums\ScholarshipKind;
 use App\Enums\TermStatusEnum;
 use App\Models\AcademicSession;
 use App\Models\Arm;
@@ -149,10 +150,37 @@ class DriveCastSeeder extends Seeder
         $this->enrollments['patVoid'] = $this->enrollFor($schoolA, $pat);
 
         $this->student($schoolA, 'Emma', 'Empty'); // no enrollment — the "no invoices" edge
+
+        // LAST, so these four land at the END of each school's printed admission-number list and a
+        // driver of the award import can pick them out without cross-referencing the cast.
+        $this->seedScholarshipHolders($schoolA);
+        $this->seedScholarshipHolders($schoolB);
     }
 
     /**
-     * TWO SCHOLARSHIPS PER SCHOOL, BOTH WITH `kind` NULL — the Scholarships tab's whole subject.
+     * THREE SCHOLARSHIPS PER SCHOOL, ONE PER `kind` — one classified `discount`, one `sponsored`, one
+     * left NULL. Read {@see seedScholarships()} for why the NULL one is written directly and why the
+     * other two are not the same question.
+     *
+     * @var array<string, ?ScholarshipKind>
+     */
+    private const SCHOLARSHIPS = [
+        self::SCHOLARSHIP_DISCOUNT => ScholarshipKind::Discount,
+        self::SCHOLARSHIP_SPONSORED => ScholarshipKind::Sponsored,
+        self::SCHOLARSHIP_UNCONFIGURED => null,
+    ];
+
+    /** Brookstone's own name for the scheme the discount-award import carries in. */
+    private const SCHOLARSHIP_DISCOUNT = 'BSS';
+
+    private const SCHOLARSHIP_SPONSORED = 'Endowed';
+
+    /** The one the Scholarships tab can still act on. Its name is unchanged from before this fixture grew. */
+    private const SCHOLARSHIP_UNCONFIGURED = 'C2C';
+
+    /**
+     * THREE SCHOLARSHIPS PER SCHOOL, ONE PER KIND — and the NULL one is the Scholarships tab's whole
+     * subject.
      *
      * That tab classifies a scholarship as `discount` (the school reduces the bill; the family still
      * gets a smaller one) or `sponsored` (an outside body pays; the family is not billed at all), and
@@ -162,44 +190,101 @@ class DriveCastSeeder extends Seeder
      * invisible for the same reason (`SeedDriveFixture` refuses outside `APP_ENV=drive`; the suite is
      * pinned to `APP_ENV=testing`, so no test can read this seeder at all).
      *
-     * ── THIS IS THE ONE PLACE THE FIXTURE WRITES A ROW INSTEAD OF EXECUTING AN ACTION ────────────────
+     * ── THE ROW WRITE, AND THE TWO DIFFERENT ARGUMENTS BEHIND IT ─────────────────────────────────────
      *
-     * It is the SAME EXEMPTION `Payments (migrated)` already carries: a state that EXISTS IN
-     * PRODUCTION and that NO CURRENT CODE PATH CAN CREATE. `2026_08_26_100000` backfilled every
+     * THE `C2C` ROW carries the SAME EXEMPTION `Payments (migrated)` already does: a state that EXISTS
+     * IN PRODUCTION and that NO CURRENT CODE PATH CAN CREATE. `2026_08_26_100000` backfilled every
      * existing `scholarships` row to NULL deliberately, because nothing in the data said which scheme
      * any of them was — the local production copy holds two scholarships and both are NULL. And since
      * `ScholarshipController::store()` now makes `kind` REQUIRED, there is no endpoint, no console
      * command and no Action anywhere that can mint an unconfigured row.
      *
-     * SO DO NOT "FIX" THIS BY ROUTING IT THROUGH THE ENDPOINT. Doing so would produce two CLASSIFIED
-     * scholarships and destroy the only state this screen is about, while leaving the fixture looking
-     * more correct than it was. If a legitimate writer for NULL ever appears, this method should move
-     * to it; until then the direct write is the honest reproduction of production.
+     * SO DO NOT "FIX" THAT ONE BY ROUTING IT THROUGH THE ENDPOINT. Doing so would classify the only
+     * state the Scholarships tab is about, while leaving the fixture looking more correct than it was.
+     * If a legitimate writer for NULL ever appears, this method should move to it.
      *
-     * ── WHY NO STUDENTS ARE PUT ON THEM ──────────────────────────────────────────────────────────────
+     * THE `BSS` AND `Endowed` ROWS ARE A WEAKER CASE AND ARE MARKED AS ONE. A classified scholarship IS
+     * reachable — `ScholarshipController::store()` mints exactly this — so the "no writer exists"
+     * argument does not cover them. What covers them is narrower: that writer is a controller and not
+     * an Action, its whole body is `Scholarship::create(['school_id', 'name', 'kind'])`, and there is
+     * nothing else for a seeder to call. The write here is byte-identical to the sanctioned one rather
+     * than a shortcut past it. THE MOMENT AN ACTION EXISTS, THESE TWO MOVE TO IT and only `C2C` stays.
      *
-     * The tab renders a name, a kind control and row actions. It does not count holders, does not list
-     * students and does not read `students.scholarship_id` at any point
-     * (`resources/js/pages/admin/scholarships-tab.tsx`). Seeding holders would add rows nothing on the
-     * screen can see. The one place it would matter is `destroy()`, which this drive does not exercise
-     * — a scholarship with holders is an FK question, and it is named in the report as undriven rather
-     * than half-staged here.
+     * ── STUDENTS ARE NOW PUT ON THEM, WHICH REVERSES WHAT THIS DOCBLOCK USED TO SAY ──────────────────
+     *
+     * It used to argue that seeding holders "would add rows nothing on the screen can see", and that
+     * was true of the screen it was written for: the Scholarships tab renders a name, a kind control
+     * and row actions, counts no holders and never reads `students.scholarship_id`
+     * (`resources/js/pages/admin/scholarships-tab.tsx`). It stopped being true when a SECOND screen
+     * started reading these rows. The BSS discount-award import asks a student's scholarship whether a
+     * discount may be awarded at all, and answers three different refusals depending on what it finds
+     * — so with no holders that screen refuses every row identically and can demonstrate none of them.
+     * The holders are seeded in {@see seedScholarshipHolders()}, which argues the shape there.
      *
      * ── IDENTICAL NAMES ACROSS THE TWO SCHOOLS, ON PURPOSE ───────────────────────────────────────────
      *
-     * `BSS` and `C2C` in both, exactly as `First Term` and `JSS 1` are identical by construction. A
-     * screen showing "BSS" therefore proves nothing about WHICH school's row it is, which forces the
-     * isolation check onto the ids and uuids where it belongs.
+     * `BSS`, `Endowed` and `C2C` in both, exactly as `First Term` and `JSS 1` are identical by
+     * construction. A screen showing "BSS" therefore proves nothing about WHICH school's row it is,
+     * which forces the isolation check onto the ids and uuids where it belongs.
      */
     private function seedScholarships(School $school): void
     {
-        foreach (['BSS', 'C2C'] as $name) {
+        foreach (self::SCHOLARSHIPS as $name => $kind) {
             Scholarship::create([
                 'school_id' => $school->id,
                 'name' => $name,
-                'kind' => null,
+                'kind' => $kind,
             ]);
         }
+    }
+
+    /**
+     * THE STUDENTS THE BSS DISCOUNT-AWARD IMPORT ACTS ON — four per school, one per outcome that
+     * screen can produce, and NONE of them enrolled.
+     *
+     * WHY IT WAS ADDED. `/finance/discount-award-imports` joins a sheet to students by admission number
+     * and then asks the student's SCHOLARSHIP whether a discount may be awarded at all
+     * (`App\Finance\Actions\AwardStudentDiscount` — NAMED IN PROSE and not as a `{@see}`, because
+     * pint's fully_qualified_strict_types rewrites a fully-qualified see-tag into a real `use`
+     * statement, and this seeder imports no Finance code by design. Paid for twice inside one minute:
+     * the first fix wrote that rule out with an illustrative tag in it, and pint imported THAT too).
+     * Before this the fixture's scholarships had no
+     * holders — the docblock above says so and gave the right reason for the screen it was written for,
+     * the Scholarships tab, which reads no holder. This screen reads nothing else. So the import would
+     * have refused every row for the same reason, and a report of four identical refusals cannot show
+     * that four different refusals exist.
+     *
+     * THREE OF THE FOUR ARE REFUSALS, and each refusal has a DIFFERENT subject: a sponsored holder (an
+     * outside body pays, so there is no bill to discount), an unconfigured holder (nobody has said
+     * which scheme it is), and — supplied by the sheet rather than by the fixture — a percentage-and-
+     * base pair no policy covers, plus an admission number nobody holds. A fixture with one refusable
+     * student could only ever demonstrate one sentence.
+     *
+     * TWO ON THE DISCOUNT SCHEME AND NOT ONE. One holder can show "awarded"; it cannot show a second
+     * upload reporting ALREADY AWARDED beside a still-refused row, and it cannot carry both bases.
+     *
+     * NOT ENROLLED, DELIBERATELY. An award needs no episode — the Action reads the scholarship and the
+     * policy and nothing else — while enrolling them would move `Cohort at slot` or `Unplaceable`,
+     * which two other drives read. New students with no episode move exactly one column, `Students`.
+     * A SPONSORED student in particular must not be placed: the bulk run excludes them, so placing one
+     * would silently change what U6's drive bills.
+     */
+    private function seedScholarshipHolders(School $school): void
+    {
+        $of = fn (string $name): Scholarship => Scholarship::query()
+            ->where('school_id', $school->id)->where('name', $name)->sole();
+
+        $award = $of(self::SCHOLARSHIP_DISCOUNT);
+
+        foreach ([['Bisi', 'Bursary'], ['Dele', 'Discount']] as [$first, $last]) {
+            $this->student($school, $first, $last)->update(['scholarship_id' => $award->id]);
+        }
+
+        $this->student($school, 'Sonia', 'Sponsored')
+            ->update(['scholarship_id' => $of(self::SCHOLARSHIP_SPONSORED)->id]);
+
+        $this->student($school, 'Nadia', 'Nullkind')
+            ->update(['scholarship_id' => $of(self::SCHOLARSHIP_UNCONFIGURED)->id]);
     }
 
     /**

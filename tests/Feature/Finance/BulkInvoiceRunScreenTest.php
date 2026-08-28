@@ -39,6 +39,7 @@
  * docs/handoff/reports/feat-u6-bulk-run-screen.md.
  */
 
+use App\Enums\ScholarshipKind;
 use App\Enums\StudentStatusEnum;
 use App\Enums\TermStatusEnum;
 use App\Finance\Actions\CreateFeeSchedule;
@@ -57,6 +58,7 @@ use App\Models\ClassLevelArm;
 use App\Models\Curriculum;
 use App\Models\Permission;
 use App\Models\Role;
+use App\Models\Scholarship;
 use App\Models\School;
 use App\Models\Student;
 use App\Models\StudentCurriculum;
@@ -173,13 +175,18 @@ function birsSchedule(array $ctx, ?array $items = null, ?ClassLevel $level = nul
     });
 }
 
-/** A student in $ctx's School with one ACTIVE enrollment at the given coordinates. */
-function birsStudent(array $ctx, ?int $armId, ?int $termId): Student
+/**
+ * A student in $ctx's School with one ACTIVE enrollment at the given coordinates, optionally
+ * holding a scholarship. The parameter is OPTIONAL so the twenty existing call sites are untouched
+ * — a student with no scholarship is the state they all mean.
+ */
+function birsStudent(array $ctx, ?int $armId, ?int $termId, ?Scholarship $scholarship = null): Student
 {
-    return ActiveSchool::runFor($ctx['school']->id, function () use ($ctx, $armId, $termId) {
+    return ActiveSchool::runFor($ctx['school']->id, function () use ($ctx, $armId, $termId, $scholarship) {
         $student = Student::factory()->create([
             'school_id' => $ctx['school']->id,
             'admission_number' => 'ADM-'.Str::random(8),
+            'scholarship_id' => $scholarship?->id,
         ]);
 
         StudentCurriculum::create([
@@ -256,6 +263,200 @@ it('counts the cohort members that already carry a term bill, and does not offer
     $response->assertOk()
         ->assertJsonPath('cohort_size', 2)
         ->assertJsonPath('already_billed', 2);
+});
+
+/* ── 1a · The preview and the run must agree about WHO GETS BILLED ─────────────────────────── */
+
+/*
+ * WHY THESE ARMS EXIST, MEASURED. On the 2026-08-28 money drive the preview read "WOULD BE BILLED
+ * 5" and the confirm button read "Bill 5 student(s)". FOUR were billed: the fifth was on a
+ * sponsored scholarship, which the run excludes and the preview did not know about. The fixture
+ * understates the defect badly — in school#1 ninety-one students sit on one sponsored scheme, so
+ * the same arithmetic overstates by however many of them a run's cohort contains, on the last
+ * human check before hundreds of append-only invoices are raised.
+ *
+ * WHAT MAKES THE FIXTURE BELOW DISCRIMINATING, stated because a fixture whose degrees of freedom
+ * have collapsed passes for the wrong reason while its name stays true. The cohort is FOUR students
+ * split across THREE outcomes — one already billed, one sponsored, two to bill — so the four
+ * candidate formulas land on four different numbers:
+ *
+ *     cohort                                  = 4   (what the button used to say)
+ *     cohort − already_billed                 = 3   (what "Would be billed" used to say)
+ *     cohort − sponsored                      = 3
+ *     cohort − already_billed − sponsored     = 2   ← the only one that matches the run
+ *
+ * A cohort with one sponsored student and nothing else would let two of those four agree.
+ */
+
+/**
+ * A cohort of four at $ctx's coordinates, split across the three outcomes a run can reach without
+ * failing: one ALREADY BILLED (by a first run, through the real path), one SPONSORED, two plain.
+ *
+ * @return array{sponsored: Student, alreadyBilled: Student, plain: list<Student>}
+ */
+function birsSplitCohort(array $ctx, User $actor): array
+{
+    // Billed by a FIRST run, before the other three exist — so their invoice is raised by the same
+    // path a real one would be, and `already_billed` is a fact about the episode rather than
+    // something this fixture wrote by hand.
+    $alreadyBilled = birsStudent($ctx, $ctx['arm']->id, $ctx['term']->id);
+
+    birsAs($actor, $ctx['school'])->postJson('/api/v1/finance/bulk-invoice-runs', [
+        'term_id' => $ctx['term']->id,
+        'class_level_id' => $ctx['level']->id,
+    ])->assertCreated();
+
+    $scholarship = ActiveSchool::runFor($ctx['school']->id, fn () => Scholarship::create([
+        'school_id' => $ctx['school']->id,
+        'name' => 'C2C '.Str::random(4),
+        'kind' => ScholarshipKind::Sponsored,
+    ]));
+
+    return [
+        'sponsored' => birsStudent($ctx, $ctx['arm']->id, $ctx['term']->id, $scholarship),
+        'alreadyBilled' => $alreadyBilled,
+        'plain' => [
+            birsStudent($ctx, $ctx['arm']->id, $ctx['term']->id),
+            birsStudent($ctx, $ctx['arm']->id, $ctx['term']->id),
+        ],
+    ];
+}
+
+it('excludes a sponsored student from the figure it offers to bill, and reports the exclusion separately', function () {
+    $ctx = birsSchool();
+    birsSchedule($ctx);
+    $actor = birsUser($ctx['school'], [BIRS_ACCESS, BIRS_GENERATE]);
+    birsSplitCohort($ctx, $actor);
+
+    $response = birsAs($actor, $ctx['school'])
+        ->getJson('/api/v1/finance/bulk-invoice-runs/preview?term_id='.$ctx['term']->id.'&class_level_id='.$ctx['level']->id);
+
+    $response->assertOk()
+        ->assertJsonPath('cohort_size', 4)
+        // NOT NETTED OFF SILENTLY. A bursar reading "2 to bill · 1 sponsored, billed by hand" can
+        // sanity-check the figure; one reading only "2" has to trust it.
+        ->assertJsonPath('sponsored', 1)
+        // DISJOINT FROM `sponsored`, in the job's own order: the run settles the scheme first and
+        // never asks the invoice question of a sponsored student.
+        ->assertJsonPath('already_billed', 1)
+        ->assertJsonPath('would_bill', 2);
+});
+
+it('offers to bill exactly the number the run then bills, over the same cohort', function () {
+    $ctx = birsSchool();
+    birsSchedule($ctx);
+    $actor = birsUser($ctx['school'], [BIRS_ACCESS, BIRS_GENERATE]);
+    birsSplitCohort($ctx, $actor);
+
+    $preview = birsAs($actor, $ctx['school'])
+        ->getJson('/api/v1/finance/bulk-invoice-runs/preview?term_id='.$ctx['term']->id.'&class_level_id='.$ctx['level']->id)
+        ->assertOk()->json();
+
+    // Then start the run the preview described. `sync` queue, so it has finished by the time this
+    // returns.
+    $uuid = birsAs($actor, $ctx['school'])->postJson('/api/v1/finance/bulk-invoice-runs', [
+        'term_id' => $ctx['term']->id,
+        'class_level_id' => $ctx['level']->id,
+    ])->assertCreated()->json('uuid');
+
+    $run = BulkInvoiceRun::withoutGlobalScopes()->where('uuid', $uuid)->firstOrFail();
+
+    /** The run's OWN accounting, counted from the rows it persisted. @return array<string, int> */
+    $counted = fn (BulkInvoiceRunOutcome $outcome) => BulkInvoiceRunRow::withoutGlobalScopes()
+        ->where('run_id', $run->id)->where('outcome', $outcome->value)->count();
+
+    // ── THE ARM. Two MEASURED figures compared to each other — the preview's promise and the run's
+    // rows. Neither side is pinned to a literal here, deliberately: a hardcoded expectation would
+    // be satisfied by pinning one path and would say nothing about whether the two still agree,
+    // which is the property that actually failed on the drive. If the preview's predicate and the
+    // job's predicate are ever allowed to drift apart, this is what reds.
+    expect($preview['would_bill'])->toBe($counted(BulkInvoiceRunOutcome::Billed));
+    expect($preview['sponsored'])->toBe($counted(BulkInvoiceRunOutcome::Sponsored));
+    expect($preview['already_billed'])->toBe($counted(BulkInvoiceRunOutcome::AlreadyBilled));
+
+    // ── AND THE FIXTURE IS NOT DEGENERATE. Every bucket is non-empty and `would_bill` differs from
+    // all three wrong formulas, so an equality above cannot be satisfied by an implementation that
+    // ignores one of the two exclusions. Without this, "0 === 0" would pass every assertion.
+    expect($preview['cohort_size'])->toBe(4);
+    expect($preview['would_bill'])->toBe(2);
+    expect($preview['would_bill'])->not->toBe($preview['cohort_size']);
+    expect($preview['would_bill'])->not->toBe($preview['cohort_size'] - $preview['already_billed']);
+    expect($preview['would_bill'])->not->toBe($preview['cohort_size'] - $preview['sponsored']);
+
+    // The run agrees with itself too, which is what makes the comparison above meaningful rather
+    // than a comparison of two numbers that happen to be equal.
+    expect($run->fresh()?->status)->toBe(BulkInvoiceRunStatus::Completed);
+    expect($counted(BulkInvoiceRunOutcome::Failed))->toBe(0);
+});
+
+it('leaves the ordinary figure exactly where it was when no cohort member is sponsored', function () {
+    $ctx = birsSchool();
+    birsSchedule($ctx);
+    $actor = birsUser($ctx['school'], [BIRS_ACCESS, BIRS_GENERATE]);
+
+    // The same shape as the split cohort, minus the sponsored student: one already billed, two
+    // plain. The fix must not move this number.
+    birsStudent($ctx, $ctx['arm']->id, $ctx['term']->id);
+    birsAs($actor, $ctx['school'])->postJson('/api/v1/finance/bulk-invoice-runs', [
+        'term_id' => $ctx['term']->id,
+        'class_level_id' => $ctx['level']->id,
+    ])->assertCreated();
+
+    birsStudent($ctx, $ctx['arm']->id, $ctx['term']->id);
+    birsStudent($ctx, $ctx['arm']->id, $ctx['term']->id);
+
+    birsAs($actor, $ctx['school'])
+        ->getJson('/api/v1/finance/bulk-invoice-runs/preview?term_id='.$ctx['term']->id.'&class_level_id='.$ctx['level']->id)
+        ->assertOk()
+        ->assertJsonPath('cohort_size', 3)
+        ->assertJsonPath('already_billed', 1)
+        ->assertJsonPath('sponsored', 0)
+        // Cohort minus those already carrying a term bill — unchanged from what this screen said
+        // before the sponsored axis existed.
+        ->assertJsonPath('would_bill', 2);
+});
+
+it('reports the cohort-level refusal an UNCONFIGURED scholarship produces, in the job’s own words', function () {
+    $ctx = birsSchool();
+    birsSchedule($ctx);
+    $actor = birsUser($ctx['school'], [BIRS_ACCESS, BIRS_GENERATE]);
+
+    // `kind` NULL is the backfill state: nobody has said whether this scheme is a discount one or
+    // a sponsored one. THE JOB REFUSES THE WHOLE RUN over it — it does not bill the holder and it
+    // does not skip them — so that, and not "they are billed anyway", is what this arm pins. See
+    // ProcessBulkInvoiceRun's class docblock for why the fall-through was judged worse than a
+    // refusal.
+    $unconfigured = ActiveSchool::runFor($ctx['school']->id, fn () => Scholarship::create([
+        'school_id' => $ctx['school']->id,
+        'name' => 'Legacy '.Str::random(4),
+        'kind' => null,
+    ]));
+
+    birsStudent($ctx, $ctx['arm']->id, $ctx['term']->id);
+    birsStudent($ctx, $ctx['arm']->id, $ctx['term']->id, $unconfigured);
+
+    $refusal = birsAs($actor, $ctx['school'])
+        ->getJson('/api/v1/finance/bulk-invoice-runs/preview?term_id='.$ctx['term']->id.'&class_level_id='.$ctx['level']->id)
+        ->assertOk()->json('refusal');
+
+    expect($refusal)->toBeString();
+
+    // THE JOB'S OWN SENTENCE, VERBATIM, derived by running the thing rather than by restating the
+    // string here. A second wording is a second thing that can disagree with the job about why a
+    // run cannot happen — and the preview is the only place an operator sees it BEFORE the row.
+    $uuid = birsAs($actor, $ctx['school'])->postJson('/api/v1/finance/bulk-invoice-runs', [
+        'term_id' => $ctx['term']->id,
+        'class_level_id' => $ctx['level']->id,
+    ])->assertCreated()->json('uuid');
+
+    $run = BulkInvoiceRun::withoutGlobalScopes()->where('uuid', $uuid)->firstOrFail();
+
+    expect($run->status)->toBe(BulkInvoiceRunStatus::Failed);
+    expect($refusal)->toBe($run->failure_reason);
+
+    // And the refusal is a refusal: nothing was billed, and no row was written for anyone.
+    expect(Invoice::withoutGlobalScopes()->count())->toBe(0);
+    expect(BulkInvoiceRunRow::withoutGlobalScopes()->where('run_id', $run->id)->count())->toBe(0);
 });
 
 it('reports the schedule-level refusal in the JOB’s own words, before anything is created', function () {

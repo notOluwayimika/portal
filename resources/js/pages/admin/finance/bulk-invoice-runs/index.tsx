@@ -540,7 +540,14 @@ export default function BulkInvoiceRunsIndex({
                                     </div>
                                 )}
 
-                                <div className="grid gap-3 sm:grid-cols-3">
+                                {/* FOUR FIGURES, AND THE FOURTH IS SERVER-COMPUTED. "Would be
+                                    billed" used to be `cohort_size - already_billed`, subtracted
+                                    here — which overstated by every sponsored student in the
+                                    cohort, because the run excludes them and this screen did not
+                                    know it. The arithmetic moved to the server, beside the
+                                    predicates it depends on, so the next exclusion the job grows
+                                    cannot leave this render behind. */}
+                                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                                     <PreviewFigure
                                         label="Students in this cohort"
                                         value={String(preview.cohort_size)}
@@ -552,12 +559,14 @@ export default function BulkInvoiceRunsIndex({
                                         note="Of that cohort. They will be recorded, not billed again."
                                     />
                                     <PreviewFigure
+                                        label="Sponsored"
+                                        value={String(preview.sponsored)}
+                                        note="An outside body pays for them, by hand and off platform. Recorded, never billed here."
+                                    />
+                                    <PreviewFigure
                                         label="Would be billed"
-                                        value={String(
-                                            preview.cohort_size -
-                                                preview.already_billed,
-                                        )}
-                                        note="Cohort minus those already carrying a term bill."
+                                        value={String(preview.would_bill)}
+                                        note="Cohort minus those already carrying a term bill, minus the sponsored."
                                     />
                                 </div>
 
@@ -838,19 +847,28 @@ export default function BulkInvoiceRunsIndex({
                             ) : (
                                 <Play className="mr-2 h-4 w-4" />
                             )}
+                            {/* THE BUTTON IS A SENTENCE ABOUT WHAT PRESSING IT WILL DO, so it
+                                names `would_bill` and not the cohort. It said `cohort_size`, which
+                                overstated by every sponsored student AND by everyone already
+                                carrying a term bill — on the last control between a bursar and an
+                                act undone one two-signature void request per child. */}
                             {starting
                                 ? 'Starting…'
-                                : `Bill ${String(preview?.cohort_size ?? 0)} student(s)`}
+                                : `Bill ${String(preview?.would_bill ?? 0)} student(s)`}
                         </Button>
                     </div>
                 }
             >
                 {preview !== null && (
                     <div className="space-y-3 text-sm text-slate-600 dark:text-slate-300">
+                        {/* THE NUMBER OF INVOICES THIS WILL RAISE, not the size of the cohort it
+                            will walk. The two differ by the sponsored students and by those
+                            already billed, and this sentence is the operator's last reading of
+                            what they are committing to. */}
                         <p>
                             This raises the term bill for{' '}
                             <span className="font-bold text-slate-900 dark:text-white">
-                                {String(preview.cohort_size)}
+                                {String(preview.would_bill)}
                             </span>{' '}
                             student(s) in{' '}
                             <span className="font-semibold">
@@ -863,12 +881,31 @@ export default function BulkInvoiceRunsIndex({
                             .
                         </p>
                         <p>
+                            Of the{' '}
+                            <span className="font-bold text-slate-900 dark:text-white">
+                                {String(preview.cohort_size)}
+                            </span>{' '}
+                            student(s) at these coordinates,{' '}
                             <span className="font-bold text-slate-900 dark:text-white">
                                 {String(preview.already_billed)}
                             </span>{' '}
-                            of them already carry a term bill and will be
-                            recorded as already billed, not billed twice.
+                            already carry a term bill and will be recorded as
+                            already billed, not billed twice.
                         </p>
+                        {/* NAMED AT THE POINT OF COMMITMENT, not merely subtracted. An exclusion
+                            the operator cannot see is one they cannot check — and this one is
+                            ninety-one students in the largest school. */}
+                        {preview.sponsored > 0 && (
+                            <p>
+                                <span className="font-bold text-slate-900 dark:text-white">
+                                    {String(preview.sponsored)}
+                                </span>{' '}
+                                are on a sponsored scheme and will NOT be billed
+                                here. An outside body pays for them, by hand and
+                                off platform. They are recorded on the run so
+                                nobody is lost.
+                            </p>
+                        )}
                         {/* THE OVERRIDE, RESTATED AT THE POINT OF COMMITMENT. The term was
                             defaulted; if the operator moved it, the confirmation is the last place
                             they can notice — and billing the wrong term is not correctable by

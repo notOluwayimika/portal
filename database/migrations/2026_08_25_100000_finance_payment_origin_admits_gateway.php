@@ -74,10 +74,17 @@ use Illuminate\Support\Facades\Schema;
  *    Loud, not quiet, and it fails CLOSED rather than open. That is a better failure than the one the
  *    earlier docblock described, but it is a DIFFERENT one, and the count is what avoids both.
  *
- *    **Measured on 8.0.43 only.** Whether 5.7.23 truncates instead of erroring was not measured — no
- *    MySQL 5.7 was available here either, exactly as 2026_08_17_100000 records for its own five
- *    bullets. Under 128 characters the question does not arise on either server, which is why the
- *    count is the control rather than the behaviour.
+ *    **MEASURED ON 5.7.23 TOO, on 2026-08-28 — this caveat is retired.** It read "Measured on 8.0.43
+ *    only. Whether 5.7.23 truncates instead of erroring was not measured — no MySQL 5.7 was available
+ *    here either." One is now: a throwaway `mysql:5.7.23` container, production's exact patch version
+ *    (recipe in docs/testing.md § "Measuring a MySQL 5.7 claim"). With a 129-character message,
+ *    5.7.23 raises the SAME 1648/HY000 as 8.0.43 and the row is still refused. **It does not
+ *    truncate, and the two servers do not diverge here at all** — so 2026_08_17_100000's "silently
+ *    truncated" is false on BOTH, not merely on the newer one. Written up in
+ *    docs/finance/check-constraints-on-mysql-5-7.md.
+ *
+ *    Under 128 characters the question does not arise on either server, which is why the count
+ *    remains the control rather than the behaviour.
  *
  * VERIFIED BY SHAPE, NOT BY EXIT CODE (ADR 0052). `CREATE TRIGGER` returning success is not evidence
  * that the right trigger exists — a mis-named, mis-timed or mis-evented trigger is created just as

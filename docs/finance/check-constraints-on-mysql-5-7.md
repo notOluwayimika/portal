@@ -19,6 +19,63 @@ This is not a regression. It is a belief the repository has been carrying: sever
 docblocks and two ADR-adjacent documents describe these constraints as the independent database-level
 backstop, and on production there is no such backstop. Production has run this way throughout.
 
+## MEASURED on a real 5.7.23, 2026-08-28 — no longer inferred from the manual
+
+Everything above this section was derived from MySQL's documentation and from the production server's
+version string. It is now **measured**, on a throwaway `mysql:5.7.23` container — production's exact
+patch version. Recipe in `docs/testing.md` § "Measuring a MySQL 5.7 claim"; it takes about ten
+minutes, and it is the reason nothing on this page has to be reasoned about again.
+
+Four probes, one table, one session:
+
+| Probe | Result on 5.7.23 |
+|---|---|
+| `ALTER TABLE t ADD CONSTRAINT … CHECK (…)` | **Returns success.** No 1064 — the grammar accepts it. |
+| `information_schema.TABLE_CONSTRAINTS` for it | **0 rows.** |
+| `SHOW CREATE TABLE t` | No `CHECK` clause at all. |
+| `INSERT` of the value the CHECK forbids | **Accepted.** The constraint is inert. |
+
+The second row is the one worth having, because it is the one the documentation does not say. "Parsed
+and ignored" tells you the constraint does not *bite*; it does not tell you the constraint is
+**invisible to `information_schema`**, and that difference is a deploy-stopper rather than a missing
+guard:
+
+> **A migration that adds a `CHECK` and then verifies its own shape from `information_schema` will
+> THROW on 5.7 — after its DDL has already committed.** DDL commits implicitly, so the tables and
+> triggers exist while the migration is not recorded. `migrate` re-run then dies on 1050 and `down()`
+> never runs, because nothing was recorded. Manual schema repair is the only exit, on the server
+> holding real money.
+
+Measured end to end by running a real migration class against the container: it left **2 tables and 6
+triggers committed with the migration unrecorded**. The ADR 0052 shape-read-back discipline is right
+and is not the problem — the problem is asserting the presence of an object this server does not
+create. **So: on a `finance_` table, do not add a `CHECK`.** Use a trigger, which behaves identically
+on both servers, and which `tests/Feature/Finance/CheckConstraintsAsTriggersTest` now pins by an
+exact enumeration of every `CHECK` remaining on a `finance_` table.
+
+### `SIGNAL … SET MESSAGE_TEXT` over 128 characters — 5.7 does NOT truncate
+
+A separate claim, measured in the same session, because two migration docblocks rest on it.
+`2026_08_17_100000_maker_checker_and_payment_origin_as_triggers.php` says a `MESSAGE_TEXT` past 128
+characters is "SILENTLY TRUNCATED"; `2026_08_25_100000_finance_payment_origin_admits_gateway.php`
+measured 8.0.43 doing something else entirely and recorded that the 5.7 half was **not measured**.
+
+With a 129-character message on 5.7.23:
+
+```
+ERROR 1648 (HY000): Data too long for condition item 'MESSAGE_TEXT'
+rows_in_g  0
+```
+
+**5.7.23 behaves identically to 8.0.43.** It does not truncate — `SIGNAL` itself fails, so the write
+is still refused but by 1648/HY000 instead of 1644/45000, and any caller classifying on the driver
+code gets the wrong answer. The two servers do not diverge here at all.
+
+Two consequences: the "silently truncated" claim is **false on both servers** and the docblocks now
+point here rather than restating it; and the 128-character cap remains the control, for the reason
+`2026_08_25_100000` gives — under 128 the question does not arise on either server, and counting the
+sentence is cheaper than remembering which failure you get.
+
 ## What still works on 5.7
 
 Everything else the schema relies on. `TRIGGER` with `SIGNAL SQLSTATE '45000'` is MySQL 5.5-era, so

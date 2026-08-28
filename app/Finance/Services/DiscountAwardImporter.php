@@ -123,10 +123,17 @@ final class DiscountAwardImporter
         ],
         'discount_applies_to' => [
             'required' => true,
-            'format' => 'TUITION ONLY  or  THE WHOLE BILL',
-            'example' => 'TUITION ONLY',
+            'format' => 'DISCOUNTABLE CHARGES  or  THE WHOLE BILL',
+            'example' => 'DISCOUNTABLE CHARGES',
             // THE COLUMN THAT CANNOT BE DEFAULTED — the argument is in self::APPLIES_TO.
-            'notes' => 'REQUIRED, on every row, and there is no default. Write TUITION ONLY or THE WHOLE BILL. It is per student and it changes the money: 100% of TUITION ONLY still leaves the child paying for transport and anything else the school does not treat as discountable, while 100% of THE WHOLE BILL leaves them paying nothing at all. Those are different amounts, so we will not guess which one you meant.',
+            //
+            // "WHICH IN YOUR FEE SCHEDULE TODAY MEANS TUITION" IS IN THE NOTE AND NOT IN THE HEADING,
+            // because it is a fact that can stop being true. The column NAMES the rule (whatever the
+            // schedule marks discountable) and the note says what that currently amounts to; a heading
+            // reading TUITION ONLY states the consequence as though it were the rule, and the day
+            // transport is marked discountable the heading is simply a lie on a file that decides what
+            // families pay.
+            'notes' => 'REQUIRED, on every row, and there is no default. Write DISCOUNTABLE CHARGES or THE WHOLE BILL. DISCOUNTABLE CHARGES means every charge your fee schedule marks as discountable — which in your fee schedule today means tuition, and will mean whatever else you mark later. It is per student and it changes the money: 100% of DISCOUNTABLE CHARGES still leaves the child paying for transport and anything else not marked discountable, while 100% of THE WHOLE BILL leaves them paying nothing at all. Those are different amounts, so we will not guess which one you meant. If your list is written in Brookstone\'s own words, TUITION ONLY is accepted and means DISCOUNTABLE CHARGES.',
         ],
     ];
 
@@ -138,12 +145,22 @@ final class DiscountAwardImporter
      * is circular and "total" reads like a sum. The phrases below say what HAPPENS to the bill,
      * which is the same standard the scholarship-kind control was held to.
      *
-     * THE LABEL IS BROOKSTONE'S OWN AND THE NOTE IS THE MECHANISM — read both. Brookstone describe
-     * the two offers as "50% off tuition only" and "50% off the whole bill", so TUITION ONLY is
-     * their vocabulary. What it resolves to is `DiscountBase::Discountable`, which is every charge
-     * line whose fee item is marked `is_discountable` — tuition in Brookstone's schedule, and
-     * whatever else a school marks. The COLUMNS note above states that explicitly rather than
-     * letting the short label carry a claim it cannot support on a schedule nobody has read.
+     * THE CANONICAL PHRASES ARE THIS PROJECT'S OWN, AND THEY WERE NOT INVENTED HERE. `baseLabel`
+     * (resources/js/lib/finance/approval-feeds.ts) already holds the two words this codebase uses for
+     * exactly this axis — "of discountable charges" and "of the whole bill" — and the catalog screen
+     * and the approvals queue both render them through it. This constant is the same two phrases in
+     * the template's case, so the base axis has ONE vocabulary across four surfaces instead of three
+     * across four. `appliesToLabel()` below is read into `'%d%% of %s'`, which is `baseLabel`'s own
+     * sentence: "50% of THE WHOLE BILL" here is "50% of the whole bill" there.
+     *
+     * TUITION ONLY WAS THE CANONICAL PHRASE UNTIL THIS COMMIT AND IS NOW AN ALIAS. Brookstone describe
+     * the two offers as "50% off tuition only" and "50% off the whole bill", so it is their vocabulary
+     * and a bursar typing from memory must not be refused for using it. But it is a CLAIM rather than
+     * a rule: `DiscountBase::Discountable` is every charge line whose fee item is marked
+     * `is_discountable`, which is tuition in Brookstone's schedule today and is whatever a school
+     * marks tomorrow. A heading that says TUITION ONLY over a schedule that has since marked transport
+     * discountable is a false statement on the one file that decides what a family pays — so the rule
+     * is the heading and the consequence is in the COLUMNS note, where a fact that can change belongs.
      *
      * THE ENUM VALUES ARE ACCEPTED TOO, and cost one array entry. A file exported by somebody
      * reading the API, or a row copied out of the catalog screen, arrives with `discountable` or
@@ -156,11 +173,18 @@ final class DiscountAwardImporter
      * "THE  WHOLE  BILL" and " The Whole Bill " are one answer. "Whole bill", "everything" and
      * "all fees" are not answers and are refused by name.
      *
+     * ACCEPTING MORE THAN WE EMIT COSTS NOTHING. Three of these five are never offered anywhere; they
+     * exist so that a sheet typed from memory, or copied out of the catalog screen, is read rather
+     * than returned as ninety-one refusals over a wording.
+     *
      * @var array<string, DiscountBase>
      */
     public const APPLIES_TO = [
-        'TUITION ONLY' => DiscountBase::Discountable,
+        'DISCOUNTABLE CHARGES' => DiscountBase::Discountable,
         'THE WHOLE BILL' => DiscountBase::Total,
+        // Brookstone's own wording for the discountable side, canonical until this commit. Kept
+        // because a bursar filling the sheet from the BSS list will write it.
+        'TUITION ONLY' => DiscountBase::Discountable,
         'DISCOUNTABLE' => DiscountBase::Discountable,
         'TOTAL' => DiscountBase::Total,
     ];
@@ -168,12 +192,16 @@ final class DiscountAwardImporter
     /**
      * The two phrases a template offers and a report speaks, in the order they are offered. Derived
      * from {@see self::APPLIES_TO} nowhere: these are the CANONICAL forms, and the map above also
-     * carries the two aliases, so a derivation would have to encode which entries are canonical.
+     * carries three aliases, so a derivation would have to encode which entries are canonical.
+     *
+     * THESE TWO LITERALS ARE PINNED, in tests/Feature/Finance/DiscountAwardImportScreenTest.php and
+     * again in resources/js/pages/admin/finance/discount-policies.test.ts. See the comment on either
+     * arm: it is deliberately two pins rather than one link.
      *
      * @var array<string, DiscountBase>
      */
     public const APPLIES_TO_CANONICAL = [
-        'TUITION ONLY' => DiscountBase::Discountable,
+        'DISCOUNTABLE CHARGES' => DiscountBase::Discountable,
         'THE WHOLE BILL' => DiscountBase::Total,
     ];
 
@@ -197,16 +225,17 @@ final class DiscountAwardImporter
             'This import never creates a discount policy. It looks for one that is already APPROVED and '
                 .'ACTIVE at the percentage and the "applies to" your row names, and refuses the row if there '
                 .'is none — naming the pair it could not find. Every percentage you intend to use, on each '
-                .'of TUITION ONLY and THE WHOLE BILL, must have been submitted and approved through the '
+                .'of DISCOUNTABLE CHARGES and THE WHOLE BILL, must have been submitted and approved through the '
                 .'discount-policy approval flow first. That approval is what makes the figure legitimate; '
                 .'this sheet only says which student is on which already-approved figure.',
         ],
         [
             'THE THIRD COLUMN IS MONEY — it has no default',
-            'TUITION ONLY discounts only the fees the school treats as discountable. THE WHOLE BILL '
-                .'discounts everything on the invoice. At 100% those are the difference between a child who '
-                .'still pays for the bus and a child who pays nothing. Every row must say which, and a blank '
-                .'REJECTS the row rather than being read as either one.',
+            'DISCOUNTABLE CHARGES discounts only the fees your fee schedule marks as discountable, which '
+                .'in your schedule today means tuition. THE WHOLE BILL discounts everything on the invoice. '
+                .'At 100% those are the difference between a child who still pays for the bus and a child who '
+                .'pays nothing. Every row must say which, and a blank REJECTS the row rather than being read '
+                .'as either one. TUITION ONLY is accepted as another way of writing DISCOUNTABLE CHARGES.',
         ],
         [
             'Re-uploading the same sheet is safe',

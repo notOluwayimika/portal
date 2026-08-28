@@ -155,12 +155,26 @@ class DiscountAwardImportController extends Controller
     }
 
     /**
-     * The wire shape. Counters, not rows: the per-row outcomes are in the report, which is a file
-     * because it is what a bursar works from.
+     * The wire shape: the counters, AND the per-row outcomes.
      *
      * `skipped` IS NAMED IN THE PAYLOAD AS WHAT IT MEANS. The column is generic; on this import every
      * skipped row is a student already on exactly the policy their row named, which is the outcome a
      * re-upload produces and the one nobody should read as a failure.
+     *
+     * `rows` IS STRUCTURED DATA AND NOT A SECOND REPORT. It is the array the job computed, persisted
+     * beside the CSV from the same `$results` ({@see ProcessDiscountAwardImport::rowsPathFor()}), so
+     * the screen renders what the download contains without parsing a CSV in the browser. The
+     * downloadable file remains the artifact a bursar works from; this is the same content, once, as
+     * data.
+     *
+     * IT IS READ ONLY ON A FINISHED IMPORT, which is also the only time it exists. The screen polls
+     * this endpoint every two seconds until the status is terminal, so a payload carrying every row on
+     * every poll would send the whole report N times to show a spinner. Terminal is reached once, and
+     * the rows arrive once with it.
+     *
+     * NULL IS NOT AN EMPTY LIST. An import that ran before the rows file existed, or one that failed
+     * before any row was read, has no structured outcome — and "we cannot show you the rows, download
+     * the report" is a different sentence from "your file had no rows in it".
      *
      * @return array<string, mixed>
      */
@@ -177,8 +191,35 @@ class DiscountAwardImportController extends Controller
             'rejected' => (int) $import->failed,
             'error' => $import->error,
             'has_report' => $import->report_path !== null,
+            'rows' => $this->rows($import),
             'started_at' => $import->started_at,
             'completed_at' => $import->completed_at,
         ];
+    }
+
+    /**
+     * The per-row outcomes the job wrote, or null when there are none to read.
+     *
+     * A CORRUPT OR TRUNCATED FILE IS NULL, NOT A THROW. This is the status poll; the counters and the
+     * download link are the load-bearing half of the payload and a screen that 500s because a
+     * side-file could not be decoded has lost the operator the whole report to save them one table.
+     *
+     * @return list<array<string, mixed>>|null
+     */
+    private function rows(Import $import): ?array
+    {
+        if (! in_array($import->status, ['completed', 'failed'], true)) {
+            return null;
+        }
+
+        $path = ProcessDiscountAwardImport::rowsPathFor($import);
+
+        if (! Storage::exists($path)) {
+            return null;
+        }
+
+        $decoded = json_decode((string) Storage::get($path), true);
+
+        return is_array($decoded) ? array_values($decoded) : null;
     }
 }

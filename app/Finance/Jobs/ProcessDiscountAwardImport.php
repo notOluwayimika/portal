@@ -90,6 +90,33 @@ class ProcessDiscountAwardImport implements ShouldQueue
         return self::directoryFor((int) $import->school_id)."/{$import->uuid}-report.csv";
     }
 
+    /**
+     * THE SAME OUTCOMES, AS STRUCTURED DATA, for the screen to render.
+     *
+     * WHY THIS EXISTS AT ALL. The CSV is a rendering — the outcomes are computed as an array of rows
+     * in {@see self::finish()} and then flattened into text. The operator screen has to show every row
+     * keyed by the line number and admission number the bursar typed, and the only alternative to
+     * writing the structure down here is to PARSE THE CSV BACK, in the client, in TypeScript. That is
+     * a hand-rolled parser over commas inside reason sentences, quotes inside a verbatim cell an
+     * operator typed, and whatever encoding their spreadsheet chose — and it would fail on exactly the
+     * unusual row the bursar most needs to read. Both files are written from ONE `$results` array, in
+     * one method, so they cannot describe different runs.
+     *
+     * IT IS A FILE AND NOT A COLUMN. `imports` is shared with the guardian import
+     * (2026_05_15_000000_create_imports_table.php) and carries no JSON column; adding one would be a
+     * migration on a shared table for a per-feature payload, and the table already has the pattern for
+     * "the outcome lives in storage" in `report_path`. This path is DERIVED from the uuid, the way
+     * `reportPathFor` above is derived and for the same reason — nothing else has to agree with it.
+     *
+     * AN IMPORT THAT RAN BEFORE THIS COMMIT HAS NO SUCH FILE. That is why the controller reports
+     * `rows` as null rather than as an empty list: "this run predates the structured report" and "this
+     * run produced no rows" are different facts and the screen says different things about them.
+     */
+    public static function rowsPathFor(Import $import): string
+    {
+        return self::directoryFor((int) $import->school_id)."/{$import->uuid}-rows.json";
+    }
+
     public function middleware(): array
     {
         return [new SchoolAware];
@@ -184,8 +211,13 @@ class ProcessDiscountAwardImport implements ShouldQueue
         $skipped = $count(DiscountAwardImportOutcome::AlreadyAwarded);
         $failed = $count(DiscountAwardImportOutcome::Rejected);
 
+        // TWO RENDERINGS OF ONE ARRAY, written before the row is completed. The CSV is what a bursar
+        // downloads and works from; the JSON is what the screen renders. Neither is derived from the
+        // other — deriving would mean parsing back structure this method already has — and both come
+        // from `$results`, so a run cannot be described two ways.
         $reportPath = self::reportPathFor($import);
         Storage::put($reportPath, $this->renderReport($results));
+        Storage::put(self::rowsPathFor($import), $this->renderRows($results));
 
         $import->update([
             'status' => 'completed',
@@ -249,6 +281,30 @@ class ProcessDiscountAwardImport implements ShouldQueue
         fclose($handle);
 
         return $csv;
+    }
+
+    /**
+     * The same rows the CSV carries, as JSON, for {@see DiscountAwardImportController::serialize()}.
+     *
+     * THE KEYS ARE THE REPORT'S COLUMN NAMES, deliberately: the screen and the downloaded file show a
+     * bursar the same six things under the same names, so "the report says X and the screen says Y" is
+     * not a sentence anybody can utter about one run.
+     *
+     * The outcome is written as the enum's VALUE, not its name — `awarded` / `already_awarded` /
+     * `rejected` are what the CSV carries and what the client's union declares.
+     *
+     * @param  list<array{line_number: int, admission_number: string, discount_percentage: string, discount_applies_to: string, outcome: DiscountAwardImportOutcome, reason: string}>  $results
+     */
+    private function renderRows(array $results): string
+    {
+        return (string) json_encode(array_map(fn (array $result) => [
+            'line_number' => $result['line_number'],
+            'admission_number' => $result['admission_number'],
+            'discount_percentage' => $result['discount_percentage'],
+            'discount_applies_to' => $result['discount_applies_to'],
+            'outcome' => $result['outcome']->value,
+            'reason' => $result['reason'],
+        ], $results), JSON_THROW_ON_ERROR);
     }
 
     private function fail(Import $import, string $message): void

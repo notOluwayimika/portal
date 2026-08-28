@@ -290,13 +290,21 @@ it('refuses a row whose applies-to column is blank rather than defaulting it', f
 
     $report = daReport($actor, $school, $import['uuid']);
 
+    // THE REFUSAL OFFERS THE CHOICES, and that — not the choice of words — is what this arm is about.
+    // Derived from the canonical map rather than written out, so a reword of the two phrases does not
+    // red an arm that has nothing to say about the wording. The strings themselves are pinned once, in
+    // DiscountAwardImportScreenTest.
     expect($report['rows'][0]['reason'])
-        ->toContain('TUITION ONLY')
-        ->toContain('THE WHOLE BILL');
+        ->toContain(array_keys(DiscountAwardImporter::APPLIES_TO_CANONICAL)[0])
+        ->toContain(array_keys(DiscountAwardImporter::APPLIES_TO_CANONICAL)[1]);
 });
 
 it('accepts the two phrases case-insensitively, and the enum values, and refuses anything else', function () {
     expect(DiscountAwardImporter::parseAppliesTo('  the   whole   bill '))->toBe(DiscountBase::Total)
+        ->and(DiscountAwardImporter::parseAppliesTo('Discountable Charges'))->toBe(DiscountBase::Discountable)
+        // Brookstone's own wording. It stopped being the phrase the template EMITS when "tuition" was
+        // recognised as a claim about one school's current fee schedule; it stays an accepted alias,
+        // because a bursar filling the sheet from the BSS list will write it.
         ->and(DiscountAwardImporter::parseAppliesTo('Tuition Only'))->toBe(DiscountBase::Discountable)
         ->and(DiscountAwardImporter::parseAppliesTo('total'))->toBe(DiscountBase::Total)
         ->and(DiscountAwardImporter::parseAppliesTo('discountable'))->toBe(DiscountBase::Discountable)
@@ -498,9 +506,13 @@ it('REFUSES a row asking for a different policy than the student already holds',
     expect((int) StudentDiscountAward::withoutGlobalScopes()->where('student_id', $student->id)
         ->sole()->discount_policy_id)->toBe($held->id);
 
+    // BOTH PAIRS ARE NAMED, the one held and the one asked for, and each is stated through the
+    // importer's own labeller rather than as a literal — this arm is about the message naming two
+    // DIFFERENT pairs, not about how the base axis is worded. The wording is pinned in
+    // DiscountAwardImportScreenTest. The percentages stay literal: they are this fixture's own.
     expect(daReport($actor, $school, $second['uuid'])['rows'][0]['reason'])
-        ->toContain('already on 50% of TUITION ONLY')
-        ->toContain('asks for 100% of THE WHOLE BILL')
+        ->toContain('already on 50% of '.DiscountAwardImporter::appliesToLabel(DiscountBase::Discountable))
+        ->toContain('asks for 100% of '.DiscountAwardImporter::appliesToLabel(DiscountBase::Total))
         ->toContain('does not change an award that already exists');
 });
 
@@ -728,8 +740,12 @@ it('does not match a superseded or a retired policy, and matches once one is mad
     $first = daRun($actor, $school, $sheet);
 
     expect($first['rejected'])->toBe(1)->and($first['awarded'])->toBe(0);
+    // The pair is named through the importer's own labeller, not as a literal — this arm is about
+    // status filtering, and the base axis's wording is pinned once in DiscountAwardImportScreenTest.
+    // The sheet above deliberately keeps writing TUITION ONLY: that is the alias path, and the refusal
+    // must state the CANONICAL phrase back rather than echoing whatever the operator typed.
     expect(daReport($actor, $school, $first['uuid'])['rows'][0]['reason'])
-        ->toContain('no active discount policy for 50% of TUITION ONLY');
+        ->toContain('no active discount policy for 50% of '.DiscountAwardImporter::appliesToLabel(DiscountBase::Discountable));
 
     // THE OTHER HALF OF THE CLAIM. "Superseded and retired do not match" also holds for a resolver
     // that matches nothing at all. One status changed, same sheet, same school — and it awards.
@@ -825,6 +841,55 @@ it('accounts for EVERY line of the sheet in the report, awarded rows included', 
         ->and(array_column($report['rows'], 'line_number'))->toBe(['2', '3', '4'])
         ->and((int) $import['total_rows'])->toBe(3)
         ->and((int) $import['processed_rows'])->toBe(3);
+
+    /*
+     * AND THE STATUS ENDPOINT CARRIES THE SAME ROWS AS DATA — this is the screen commit's addition and
+     * it is asserted against the DOWNLOAD, not against the array the job held.
+     *
+     * The alternative it replaces was parsing this CSV back in TypeScript, in the browser, over commas
+     * inside reason sentences and quotes inside a cell an operator typed verbatim. Two renderings of
+     * one `$results` array is the fix; two renderings that DISAGREE would be worse than the parser, so
+     * the arm compares them rather than checking the new one is well-shaped.
+     *
+     * The report's cells are strings (that is what a CSV carries); `line_number` is an int on the wire,
+     * so it is compared as one on each side rather than by loosening the comparison.
+     */
+    expect($import['rows'])->toHaveCount(3)
+        ->and(array_column($import['rows'], 'outcome'))
+        ->toBe(array_column($report['rows'], 'outcome'))
+        ->and(array_column($import['rows'], 'admission_number'))
+        ->toBe(array_column($report['rows'], 'admission_number'))
+        ->and(array_column($import['rows'], 'reason'))
+        ->toBe(array_column($report['rows'], 'reason'))
+        ->and(array_column($import['rows'], 'line_number'))
+        ->toBe(array_map('intval', array_column($report['rows'], 'line_number')));
+});
+
+it('reports rows as NULL rather than as an empty list when the file itself was refused', function () {
+    // NULL IS NOT AN EMPTY LIST, and the screen says different things about them: "download the report,
+    // it carries the rows" versus "your file had no rows in it". A file the reader refused outright
+    // produced no outcomes at all — there is nothing to show and the reason is on the import.
+    $school = daSchool();
+    $actor = daUser($school, [DA_ACCESS, DA_MANAGE]);
+
+    // The same fixture the arm above uses — a sheet missing the base column, which the reader refuses
+    // outright — so this arm is about the PAYLOAD and introduces no second theory of what a bad file is.
+    $response = daUpload($actor, $school, UploadedFile::fake()->createWithContent(
+        'bss.csv',
+        "admission_number,discount_percentage\nADM-200,50\n",
+    ));
+    $response->assertCreated();
+
+    $import = test()->actingAs($actor)->withSession(['school_id' => $school->id])
+        ->getJson('/api/v1/finance/discount-award-imports/'.$response->json('import.uuid'))
+        ->assertOk()
+        ->json('import');
+
+    expect($import['status'])->toBe('failed')
+        ->and($import['rows'])->toBeNull()
+        ->and($import['has_report'])->toBeFalse()
+        // The reason is a fact about THEIR file, and it is the only thing the screen can show.
+        ->and($import['error'])->not->toBeNull();
 });
 
 it('echoes the three cells back VERBATIM, whitespace included, and leaks no SQL', function () {

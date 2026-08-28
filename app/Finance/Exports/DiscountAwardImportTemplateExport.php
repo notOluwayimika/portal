@@ -49,13 +49,15 @@ class DiscountAwardImportTemplateExport extends StringValueBinder implements Fro
      * the map therefore appears in every sample row carrying its own example, with no edit here.
      *
      * TWO ROWS, AND THEY DIFFER ON THE AXIS THAT COSTS MONEY. A one-row sample — or two rows both
-     * saying TUITION ONLY — would teach that the third column is a constant to be copied down, which
-     * is precisely the misreading that turns "100% of tuition" into "100% of everything" for a whole
-     * cohort. The percentages differ too, for the same reason at lower stakes: a sample where every
-     * figure is 50 invites a sheet where every figure is 50.
+     * saying DISCOUNTABLE CHARGES — would teach that the third column is a constant to be copied down,
+     * which is precisely the misreading that turns "100% of tuition" into "100% of everything" for a
+     * whole cohort. The percentages differ too, for the same reason at lower stakes: a sample where
+     * every figure is 50 invites a sheet where every figure is 50.
      *
      * The two phrases here are {@see DiscountAwardImporter::APPLIES_TO_CANONICAL}'s, so a template
-     * offering a phrase the reader would refuse is not expressible.
+     * offering a phrase the reader would refuse is not expressible. They are the CANONICAL forms and
+     * not the aliases: TUITION ONLY parses, but a template that EMITTED it would put a claim about
+     * one school's current fee schedule into the format itself.
      *
      * @var list<array<string, string>>
      */
@@ -63,7 +65,7 @@ class DiscountAwardImportTemplateExport extends StringValueBinder implements Fro
         [
             'admission_number' => 'STU2025001',
             'discount_percentage' => '50',
-            'discount_applies_to' => 'TUITION ONLY',
+            'discount_applies_to' => 'DISCOUNTABLE CHARGES',
         ],
         [
             'admission_number' => 'STU2025002',

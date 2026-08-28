@@ -47,6 +47,20 @@
  * an assertion: the arm claimed that the permission collection contained neither `$ability` nor the
  * English sentence "precondition: super_admin must not HOLD …". The second half is trivially true.
  *
+ * IT HAS SINCE RECURRED, WHICH IS THE POINT OF LEAVING IT NAMED. `06e9054` (the BSS discount-award
+ * import) wrote a new tripwire in tests/Feature/Finance/DiscountPoliciesScreenTest.php as
+ * `->not->toContain($needle, $message)`, the same shape, in a file whose whole purpose was to make an
+ * admitted claim checkable. It was not caught by reading it — it was caught by BITE-PROVING it: the
+ * import endpoint was planted in the page under test and the arm stayed green. It is now written as
+ * `str_contains(...)` + `toBeFalse($message)`.
+ *
+ * TWO INSTANCES, AND THE SECOND ONE STRENGTHENS THE ARGUMENT BELOW RATHER THAN WEAKENING IT. A
+ * recurrence is evidence the hole is real and that authors will keep walking into it — and it is also
+ * evidence about WHICH instrument finds it. The first was found by a human reading the file; the
+ * second survived review by two readers and was found only by making the guard's subject true and
+ * watching it not fail. That is an argument for MUTATING the arm, not for tuning a prose heuristic
+ * until it separates today's ~300 `->not->` calls the way a human already has.
+ *
  * READ THE WARNING PRECISELY, because the two defects are not the same size. Everything else this
  * gate is about is a LOST MESSAGE — the assertion still holds, only the diagnostic is gone. THIS one
  * is a VACUOUS ASSERTION: an `->not->toContain` over several needles fails only if the subject

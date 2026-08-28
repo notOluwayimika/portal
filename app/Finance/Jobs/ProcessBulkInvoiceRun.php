@@ -17,11 +17,11 @@ use App\Finance\Models\BulkInvoiceRunRow;
 use App\Finance\Models\DiscountPolicy;
 use App\Finance\Models\FeeSchedule;
 use App\Finance\Models\StudentDiscountAward;
+use App\Finance\Services\CohortScholarshipSchemes;
 use App\Finance\Services\FeeScheduleLineMapper;
 use App\Finance\Services\FeeScheduleLookup;
 use App\Finance\Services\InvoiceReadModel;
 use App\Jobs\Middleware\SchoolAware;
-use App\Models\Scholarship;
 use App\Models\User;
 use App\Support\ActiveSchool;
 use Closure;
@@ -214,6 +214,7 @@ class ProcessBulkInvoiceRun implements ShouldQueue
         FeeScheduleLineMapper $mapper,
         GenerateInvoice $generate,
         InvoiceReadModel $invoices,
+        CohortScholarshipSchemes $schemes,
     ): void {
         // The declared schoolId is the sole School context (SchoolAware -> ActiveSchool::runFor), so
         // the mapper's ambient guard is satisfied by EQUALITY with the School it is handed rather
@@ -233,7 +234,7 @@ class ProcessBulkInvoiceRun implements ShouldQueue
         }
 
         try {
-            $this->process($run, $enrollments, $schedules, $mapper, $generate, $invoices);
+            $this->process($run, $enrollments, $schedules, $mapper, $generate, $invoices, $schemes);
         } catch (Throwable $e) {
             // A fact about US, not about their cohort. `tries = 1`, so a rethrow would leave the run
             // sitting in `running` with nothing said and a screen polling it forever.
@@ -255,6 +256,7 @@ class ProcessBulkInvoiceRun implements ShouldQueue
         FeeScheduleLineMapper $mapper,
         GenerateInvoice $generate,
         InvoiceReadModel $invoices,
+        CohortScholarshipSchemes $schemes,
     ): void {
         $run->update(['status' => BulkInvoiceRunStatus::Running, 'started_at' => now()]);
 
@@ -292,10 +294,15 @@ class ProcessBulkInvoiceRun implements ShouldQueue
         $unplaceable = $enrollments->listUnplaceableForSchool($this->schoolId);
         $cohort = $enrollments->listForCohort($this->schoolId, $run->term_id, $run->class_level_id);
 
-        $schemes = $this->schemesForCohort($cohort, $enrollments);
+        // THE SHARED SOURCE, NOT A COPY. {@see CohortScholarshipSchemes} is the one expression of
+        // which scheme each cohort member is on and of the refusal an unconfigured one produces;
+        // the PREVIEW reads the same object, so the screen cannot report a different exclusion
+        // from the one this loop applies. It used to be two private methods here, which was right
+        // while this job was the only reader.
+        $cohortSchemes = $schemes->forCohort($cohort, $this->schoolId);
 
-        if ($schemes['refusal'] !== null) {
-            $this->failRun($run, $schemes['refusal']);
+        if ($cohortSchemes['refusal'] !== null) {
+            $this->failRun($run, $cohortSchemes['refusal']);
 
             return;
         }
@@ -322,7 +329,7 @@ class ProcessBulkInvoiceRun implements ShouldQueue
             // them from the list instead would have moved them into `outside_coordinates_count`,
             // whose name says they are priced ELSEWHERE, and left no record of who must now be
             // invoiced by hand. See BulkInvoiceRunOutcome::Sponsored.
-            if (($schemes['byStudent'][$enrollment->studentId] ?? null) === ScholarshipKind::Sponsored) {
+            if ($schemes->isSponsored($enrollment, $cohortSchemes['byStudent'])) {
                 $this->attempt($run, $enrollment, fn () => $this->record($run, $enrollment, BulkInvoiceRunOutcome::Sponsored));
 
                 continue;
@@ -344,145 +351,6 @@ class ProcessBulkInvoiceRun implements ShouldQueue
             unplaceableSize: count($unplaceable),
             billable: $enrollments->countBillableForSchool($this->schoolId),
         );
-    }
-
-    /**
-     * WHICH SCHEME EACH SCHOLARSHIP-HOLDING COHORT MEMBER IS ON — and the run-level refusal if any of
-     * those schemes is not configured.
-     *
-     * TWO SEPARATE REFUSALS, because they are two different faults with two different fixes and one
-     * message covering both would tell an operator to do the wrong thing:
-     *
-     *   UNCONFIGURED — the scholarship exists in this School and its `kind` is NULL. Somebody has to
-     *                  say whether it is a discount scheme or a sponsored one. Named by NAME, which
-     *                  is the only handle an operator has on it in the setup screen.
-     *
-     *   UNRESOLVABLE — `students.scholarship_id` names a row this School cannot read: it is gone, or
-     *                  it belongs to another School. THIS IS SCHEMA-REACHABLE, not a paranoid branch:
-     *                  the FK is a plain `scholarship_id` REFERENCES `scholarships (id)` and is NOT
-     *                  composite with `school_id`, so nothing at the engine stops School A assigning
-     *                  School B a scholarship. Named by ID, because there is no name to print — and
-     *                  printing another School's scholarship name here would be a cross-School leak
-     *                  through an error message.
-     *
-     * WHY THIS ONE IS NOT A SILENT SKIP, which is what it would have been if it were left out. A
-     * scholarship that does not resolve reads, to every filter below, exactly like a student holding
-     * no scholarship at all — so a sponsored C2C student whose scholarship row belongs to the wrong
-     * School would be BILLED THE STANDARD SCHEDULE, silently, by the very method written to stop
-     * that. The unconfigured refusal would not fire, because there is nothing to find a NULL `kind`
-     * on. It is the same fall-through this whole change exists to close, arriving through a hole in
-     * the lookup rather than through a hole in the data.
-     *
-     * ISOLATION IS THE ARGUMENT, NOT THE AMBIENT CONTEXT. Both reads name `$this->schoolId`
-     * explicitly. Under `SchoolAware` the ambient School is the same one, so `SchoolScope` agrees and
-     * the predicate is redundant — but the run's School is the job's declared argument, and a read
-     * that took it from ambient context would be trusting the very thing SchoolAware exists to set
-     * (the same decision, for the same reason, as {@see record()}).
-     *
-     * IT DOES NOT TOUCH `students.scholarship_id`. Nothing here writes; the assignment is read as it
-     * stands.
-     *
-     * @param  list<BillableEnrollment>  $cohort
-     * @return array{byStudent: array<int, ScholarshipKind>, refusal: string|null}
-     */
-    private function schemesForCohort(array $cohort, BillableEnrollmentProvider $enrollments): array
-    {
-        $studentIds = array_values(array_unique(array_map(
-            fn (BillableEnrollment $enrollment) => $enrollment->studentId,
-            $cohort,
-        )));
-
-        if ($studentIds === []) {
-            return ['byStudent' => [], 'refusal' => null];
-        }
-
-        // THROUGH THE PORT, NOT A QUERY HERE. The cohort read includes SOFT-DELETED students by a
-        // deliberate ruling, and `Student` uses `SoftDeletes` — so the obvious `Student::whereIn()`
-        // in this class returns nothing for exactly those students and reads them as holding no
-        // scholarship. A trashed sponsored student would then be billed the standard schedule by
-        // this method. The port matches the cohort's own soft-delete rule; see its docblock.
-        $held = $enrollments->scholarshipIdsFor($studentIds, $this->schoolId);
-
-        if ($held === []) {
-            return ['byStudent' => [], 'refusal' => null];
-        }
-
-        $scholarships = Scholarship::query()
-            ->where('school_id', $this->schoolId)
-            ->whereIn('id', array_values(array_unique($held)))
-            ->get()
-            ->keyBy('id');
-
-        $byStudent = [];
-        $unconfigured = [];
-        $unresolvable = [];
-
-        foreach ($held as $studentId => $scholarshipId) {
-            $scholarship = $scholarships->get($scholarshipId);
-
-            if (! $scholarship instanceof Scholarship) {
-                $unresolvable[$scholarshipId] = true;
-
-                continue;
-            }
-
-            if ($scholarship->kind === null) {
-                // Keyed by NAME so one scholarship held by forty students is named once.
-                $unconfigured[$scholarship->name] = true;
-
-                continue;
-            }
-
-            $byStudent[(int) $studentId] = $scholarship->kind;
-        }
-
-        return [
-            'byStudent' => $byStudent,
-            'refusal' => $this->scholarshipRefusal(array_keys($unconfigured), array_keys($unresolvable)),
-        ];
-    }
-
-    /**
-     * The sentence a refused run carries, or null when there is nothing to refuse.
-     *
-     * IT SAYS WHAT WAS NOT DONE, which the fee-schedule refusal beside it also does: an operator
-     * reading `failed` needs to know whether anything was billed before they re-run. Nothing was —
-     * this is settled before the first row — and saying so is what makes re-running after the fix
-     * obviously safe rather than merely safe.
-     *
-     * @param  list<string>  $unconfigured
-     * @param  list<int>  $unresolvable
-     */
-    private function scholarshipRefusal(array $unconfigured, array $unresolvable): ?string
-    {
-        if ($unconfigured === [] && $unresolvable === []) {
-            return null;
-        }
-
-        $parts = [];
-
-        if ($unconfigured !== []) {
-            sort($unconfigured);
-
-            $parts[] = 'these scholarships do not say which scheme they are: '.implode(', ', $unconfigured)
-                .'. Set each one to a discount scholarship (billed here, at the standard fee schedule) '
-                .'or a sponsored scholarship (billed by hand, and excluded from this run)';
-        }
-
-        if ($unresolvable !== []) {
-            sort($unresolvable);
-
-            $parts[] = 'these scholarship records could not be read in this school, so the students '
-                .'holding them cannot be classified: '.implode(', ', array_map(
-                    fn (int $id) => '#'.$id,
-                    $unresolvable,
-                )).'. Each one has been deleted or belongs to another school';
-        }
-
-        return 'This run was stopped before it billed anyone, and '.implode('; also, ', $parts).'. '
-            .'Nothing was invoiced and no student was charged. The run refuses rather than billing '
-            .'the standard fee schedule, because a sponsored student billed by mistake looks exactly '
-            .'like a successful run until their parent opens a full-price invoice.';
     }
 
     /**
@@ -599,7 +467,7 @@ class ProcessBulkInvoiceRun implements ShouldQueue
      * only, each with its policy already loaded.
      *
      * ISOLATION IS THE ARGUMENT, not the ambient context — `$this->schoolId` is stated, the same
-     * decision and the same reason as {@see record()} and {@see schemesForCohort()}. The eager-loaded
+     * decision and the same reason as {@see record()} and {@see CohortScholarshipSchemes}. The eager-loaded
      * policy is reached under `DiscountPolicy`'s own `SchoolScope`, which under `SchoolAware` is this
      * School; the table's composite FK means it could not be another School's row in any case.
      *

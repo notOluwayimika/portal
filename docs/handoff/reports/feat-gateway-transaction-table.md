@@ -1,6 +1,8 @@
 # Implementation report — `feat/gateway-transaction-table`
 
-> **Revised after review, 2026-08-27.** The first version of this branch omitted the four
+> **Revised twice after review, 2026-08-27.** Round two added the retention decision below.
+>
+> **Round one.** The first version of this branch omitted the four
 > boundary §5 / §8.2 / §14 settlement requirements — the gateway fee, the settlement reference,
 > the settlement date and the raw webhook payloads — and did not mention the omission. I was
 > working from the advisory only and did not have the boundary document; that explains it and does
@@ -14,13 +16,14 @@
 
 ## Headline
 
-Done, with four design deviations named below (the fourth is a correction of my own first version). Step 2 of the payments advisory §6 — the gateway
+Done, with five design deviations named below (the fourth is a correction of my own first version;
+the fifth is the retention decision). Step 2 of the payments advisory §6 — the gateway
 transaction table, its status enum and its migration — is implemented, shape-verified from
-`information_schema`, and bite-proven with five watched reds.
+`information_schema`, and bite-proven with twelve watched reds.
 
 Base: `origin/staging` @ `6f54a18a`. Branch: `feat/gateway-transaction-table`. Shape: five new
-files (one enum, two models, one migration, one test file) plus this report. Two commits — the
-second is the settlement data and the guard correction it forced.
+files (one enum, two models, one migration, one test file) plus this report. Three commits — the
+second is the settlement data and the guard correction it forced; the third is retention.
 
 ## Deviations from the brief
 
@@ -87,6 +90,32 @@ the column at all.
 **The general rule, stated so it can be checked:** *a guard that freezes a row must be checked
 against every fact that arrives later than the state it freezes on.* I got this wrong once here.
 
+**AND THIS IS THE ACTUAL ARGUMENT AGAINST DEFERRING THE §8.2 COLUMNS — stronger than the contract
+citation.** The usual case for deferring a column with no writer is that the cost of waiting is a
+data gap you can fill later. Here the columns' ABSENCE WAS HIDING A GUARD BUG. Absolute terminality
+on `success` was undetectable while nothing existed to write after success; the suite would have
+stayed green for ever, and the defect would have surfaced at the first live payout, on a production
+table. Adding the columns is what made the guard wrong in a way a test could see. A missing column
+is not only missing data — it can be the thing that makes an adjacent defect unobservable.
+
+**Round two · RETENTION, decided rather than defaulted.** The payloads carry payer PII — email,
+often a name, card BIN and last four, sometimes an IP — in an append-only table. Silence there is not
+neutral: it makes indefinite retention of NDPA-relevant data the schema's default, arrived at by
+omission, and append-only means retrofitting any purge capability later requires dropping guards on a
+live table holding exactly that data.
+
+The shipped shape: **the full payload is kept, and `redacted_at` is the one door out**, on day one.
+Full retention because a live dispute is answered by what the provider actually sent, and §7's "the
+payer succeeded and our handler threw" is diagnosed from precisely the fields a write-time redaction
+would discard. The events update guard now admits exactly one UPDATE per row — a redaction, once,
+changing the payload and nothing else — refuses a second redaction, refuses every non-redaction
+UPDATE, and refuses a row born pre-redacted.
+
+**What is still owed, and it is not mine:** there is no schedule, no command and no stated period.
+This ships the ABILITY, so the policy becomes a code change against a schema that already permits it
+rather than a migration against live money data. **The policy is a decision for the data owner** and
+should be given an owner and a date alongside the §2 and §5 gaps.
+
 **5 · The table carries no `student_id`,** though every sibling `finance_` table does. It is
 derivable from `invoice_id` by one join and no consumer of this table has a read that cannot afford
 that join, so a denormalised copy would be a second place for one fact to live. `school_id` is
@@ -101,6 +130,25 @@ That is the same reasoning that kept `approved` out of `OpeningBalanceBatchStatu
 now says so, and says what would change the decision: if initiation ever becomes two steps — a row
 written before the provider has accepted the checkout — the fifth case is owed, and that is a
 migration plus a trigger change.
+
+## `payment_id` — checked, and it was already covered
+
+Verified against the guard rather than from memory: `payment_id` IS in the write-once list
+(`OLD.payment_id IS NOT NULL AND NOT (NEW.payment_id <=> OLD.payment_id)`), so value → NULL and
+value → other value are both refused. Two things were nonetheless wrong and are fixed:
+
+- **The docblock called the rule "every fact learned FROM THE PROVIDER".** `payment_id` is ours, so a
+  reader would reasonably take it as excluded — the rule is now "every LEARNED fact", with a
+  paragraph saying explicitly that `payment_id` is in the list, is not provider-reported, and needs
+  the protection more than the others.
+- **Its only arm sat on an already-settled row**, where the terminal-status clause is also in play,
+  so it did not prove the write-once clause acting alone. There is now an isolated test on a
+  NON-settled row: set `payment_id`, then watch value → NULL and value → other both refused.
+
+Why it matters, in the report because it is the load-bearing bit of step 4: `UNIQUE (payment_id)`
+stops two ROWS naming one payment and says nothing about ONE row going value → NULL → different
+value. The compare-and-swap rests on `payment_id IS NULL` being a **one-way door**, and the UNIQUE
+does not make it one. Mutation 12 below measures exactly that.
 
 ## The discrepancy-report interaction, decided now
 
@@ -157,7 +205,7 @@ bites at step 4.
 | `app/Finance/Enums/GatewayTransactionStatus.php` | 72 | `pending` · `success` · `failed` · `abandoned`. A reader of the trigger's domain, not a second copy of it. |
 | `app/Finance/Models/GatewayTransaction.php` | — | `AddUuid` + `BelongsToSchool`, `MoneyCast` on `amount` **and `fee`**, enum cast on `status`, `invoice()` / `payment()` / `events()`. |
 | `app/Finance/Models/GatewayTransactionEvent.php` | — | The raw delivery. Append-only at the database; `payload` cast to array. |
-| `tests/Feature/Finance/GatewayTransactionSchemaTest.php` | — | 19 tests, 91 assertions. Every write is raw `DB::table`, never the model — the guards under test are the database's. |
+| `tests/Feature/Finance/GatewayTransactionSchemaTest.php` | — | 22 tests, 106 assertions. Every write is raw `DB::table`, never the model — the guards under test are the database's. |
 
 Re-derive the line counts from the tree rather than from this table; they moved with the second
 commit and a carried number is how a stale fact becomes a confident assertion.
@@ -189,7 +237,7 @@ Raw output, in the order run. Test DB is `portal_testing` throughout; the produc
 
 ```
 $ DB_DATABASE=portal_testing ./vendor/bin/pest tests/Feature/Finance/GatewayTransactionSchemaTest.php
-{"tool":"pest","result":"passed","tests":19,"passed":19,"assertions":91,"duration_ms":13164}
+{"tool":"pest","result":"passed","tests":22,"passed":22,"assertions":106,"duration_ms":13912}
 ```
 
 **The new file plus every sibling that reasons about this schema** — schema conventions (which
@@ -203,7 +251,7 @@ $ DB_DATABASE=portal_testing ./vendor/bin/pest \
     tests/Feature/Finance/CurrencyShapeConstraintTest.php \
     tests/Feature/Finance/PaymentOriginGatewayTest.php \
     tests/Feature/Finance/CheckConstraintsAsTriggersTest.php
-{"tool":"pest","result":"passed","tests":48,"passed":48,"assertions":278,"duration_ms":16286}
+{"tool":"pest","result":"passed","tests":51,"passed":51,"assertions":293,"duration_ms":17832}
 ```
 
 **Arch group** (the boundary rules that decide where these files may live):
@@ -243,7 +291,7 @@ unrelated file was swept in by formatting.
 
 ```
 $ DB_DATABASE=portal_testing ./vendor/bin/pest --log-junit junit.xml
-{"result":"failed","tests":2390,"passed":2373,"failed":6,"errors":1,"skipped":10,"risky":4}
+{"result":"failed","tests":2393,"passed":2376,"failed":6,"errors":1,"skipped":10,"risky":4}
 PEST_EXIT=2
 
 $ php bin/ci-test-ratchet.php junit.xml
@@ -257,6 +305,79 @@ name — four `ActivityLogApiTest`, two `GuardianProfileTest`, one `Authenticati
 rate limited`. I compared the sets rather than the counts, because a count cannot tell "these seven"
 from "some other seven" and the swap is the case that slips through. None is in Finance and none is
 in a file this branch touches.
+
+### THE `down()` AUDIT CAUGHT A REAL DEFECT — which is the point of running it
+
+The rollback FAILED the first time, and no test in the suite could have found it:
+
+```
+ 2026_08_27_100000_create_finance_gateway_transactions .. 11.22ms FAIL
+
+  Undefined constant Illuminate\Database\Migrations\Migration@anonymous::EVENTS_NO_UPDATE
+  at database/migrations/…:309
+```
+
+The retention work renamed `EVENTS_NO_UPDATE` to `EVENTS_UPDATE_GUARD`. The declaration moved and the
+new drops were added, but the stale `DROP TRIGGER … EVENTS_NO_UPDATE` line survived in `down()`.
+
+**Why the suite is structurally blind to it:** `RefreshDatabase` uses `migrate:fresh`, which DROPS
+tables. It never calls `down()`. So 2393 green tests say nothing whatsoever about whether this
+migration can be rolled back — the only things that exercise it are `bin/quality-clean-db`'s
+rollback/re-up leg and a deliberate manual audit.
+
+**And it failed in the worst available way: half-done.** Three of the six triggers were dropped
+before the fatal, the migration stayed recorded as `Ran`, and `migrate` then said "Nothing to
+migrate" — leaving a schema that is neither the migrated state nor the rolled-back one, with no
+command that would repair it. On a machine running `bin/quality-clean-db` before a release, that is
+where the release stops.
+
+Fixed (the stale line deleted), and the audit re-run from a known state rather than from the
+half-rolled-back one the failure left behind:
+
+```
+gateway triggers after fresh=6
+ 2026_08_27_100000_create_finance_gateway_transactions .. 54.35ms DONE
+parent=gone events=gone gateway_triggers=0 payments_origin_intact=1
+ 2026_08_27_100000_create_finance_gateway_transactions .. 244.86ms DONE
+gateway triggers after re-up=6
+```
+
+Six triggers, rollback, both tables and all six gone with the `finance_payments` origin pairing
+untouched, re-up, six again.
+
+**The general lesson, since it is the second time this shape has bitten on this branch:** a rename
+that a compiler cannot check — a class constant referenced in a method the tests never call — is
+invisible to every gate this project has except the one that runs the method. `grep` for the old
+name after any rename in a migration.
+
+### One run in this session was VOID, and it is recorded rather than quietly re-run
+
+I started a full suite in the background and then ran a five-file subset against the SAME
+`portal_testing` database while it was still going. The subset produced three errors — two
+`1213 Deadlock ... update roles set name = ...` and one `There is no role named super_admin` — and
+the background run's ratchet then reported **257 new failures** across files this branch does not
+touch.
+
+None of it was a regression. Both runs were `migrate:fresh`-ing and seeding the same schema
+underneath each other. The tell is the shape: 257 reds spread over unrelated suites, with the
+failures landing in role seeding rather than in anything this change touches.
+
+A SECOND, WORSE INSTRUMENT FAILURE IN THE SAME SESSION, recorded because it produced a false
+statement of fact rather than a false number. I backgrounded the suite behind a shell loop polling
+`pgrep -f "vendor/bin/pest"` — and each waiter's own command line CONTAINS that string, so every
+waiter matched itself and blocked for ever, including the one whose job was to start the suite. It
+never started. I reported "the suite is still running" twice on the strength of it. Six stuck shells,
+killed; the run repeated directly.
+
+That is the wrapper-exit-code family again: **a measurement that mis-measures itself manufactures a
+wrong conclusion with nobody in the room to catch it.** A self-matching `pgrep` is the same defect as
+a piped exit code, and both were in this session.
+
+It is written down because the standing rule cuts both ways — *a red is not a regression until you
+have seen the same code green somewhere*, and equally, **a green or a red from a poisoned
+environment is not evidence at all**. The honest move is to void the run and repeat it in
+isolation, which is what the numbers above are: one suite, nothing else on the database. Retrying
+until green and reporting only the green would be indistinguishable from fixing something.
 
 ### The `down()` audit — rollback depth re-derived, not assumed
 
@@ -387,6 +508,35 @@ failed 18 / 19
  - it_the_fee_is_both_halves_or_neither__never_negative__and_always_in_th
 ```
 
+**10 · The already-redacted arm removed** from the events update guard:
+
+```
+failed 21 / 22
+ - it_a_payload_may_be_redacted_EXACTLY_ONCE__and_a_raw_row_cannot_be_edite
+```
+
+**11 · The "a redaction may change the payload and nothing else" arm gutted:**
+
+```
+failed 21 / 22
+ - it_a_redaction_may_change_the_payload_and_nothing_else__and_no_row_is_bo
+```
+
+Without that arm, `redacted_at` is a general-purpose unlock on an append-only table — set it and
+rewrite the delivery's source, event, school or arrival time.
+
+**12 · `payment_id` dropped from the write-once list** — the measurement behind the claim that
+`UNIQUE (payment_id)` does not close the one-way door:
+
+```
+failed 20 / 22
+ - it_a_settled_attempt_is_final_FOR_STATUS_—_the_replayed_webhook_cannot_r
+ - it_payment__id_is_a_one_way_door_—_the_predicate_step_4_s_compare_and_sw
+```
+
+Two arms, and the UNIQUE was present throughout both. It stops two rows naming one payment; it does
+nothing about one row unlinking and relinking.
+
 **Restored after each**, and the file verified byte-identical to the pre-mutation copy before the
 final green run (`diff -q` → clean). The greens in the Proof section above were produced by the
 restored file, not by a file I had stopped mutating and hoped was right.
@@ -463,6 +613,10 @@ Under the privacy rule — structure and counts only.
 - **`origin = 'gateway'` is refused on production today** (advisory §5). Live is behind
   `2026_08_25_100000`. Severity: **stop**, as a milestone risk with an owner and a date — named, not
   mine to fix.
+- **`pgrep -f <pattern>` matches the polling shell itself** when the pattern appears in its own
+  command line, so a wait loop built that way never terminates. It cost this session hours and two
+  false "still running" reports. Anywhere a script waits on a process by name, it needs `pgrep -f`
+  with an exclusion, a pid file, or `wait`. Severity: **ticket**.
 - **A piped `pest` invocation masks its exit code.** `pest … 2>&1 | tail -20` exits 0 even when the
   run fails; only the JSON body says otherwise. I hit this while running the mutations and read the
   body rather than the code. Anywhere a script branches on `$?` after a pipe, that branch is

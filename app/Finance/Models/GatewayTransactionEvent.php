@@ -17,6 +17,13 @@ use Illuminate\Support\Carbon;
  * dispute six months from now is answered by what the provider actually sent, not by what this
  * system concluded from it.
  *
+ * RETENTION IS A DECISION, NOT AN OMISSION. The payload carries payer PII — email, often a name, the
+ * card BIN and last four, sometimes an IP — and an append-only table cannot be purged, so the
+ * capability to redact has to exist before there is anything to purge. `redacted_at` is that
+ * capability and the ONE door through the append-only guard: a raw row cannot be edited, a redacted
+ * row cannot be edited again, and a row cannot be inserted pre-redacted. NULL means the payload is
+ * exactly what arrived. Nothing redacts anything yet — the schedule and the period are still owed.
+ *
  * IT RECORDS REJECTED DELIVERIES TOO. Nothing here asserts the payload was trusted or its signature
  * verified — a delivery that failed verification is exactly the one an investigation wants to read.
  *
@@ -31,6 +38,7 @@ use Illuminate\Support\Carbon;
  * @property string $source
  * @property string|null $event
  * @property array<string, mixed> $payload
+ * @property Carbon|null $redacted_at
  * @property Carbon $created_at
  * @property Carbon $updated_at
  * @property-read GatewayTransaction|null $gatewayTransaction
@@ -51,6 +59,7 @@ class GatewayTransactionEvent extends Model
 
     protected $casts = [
         'payload' => 'array',
+        'redacted_at' => 'datetime',
     ];
 
     /** @return BelongsTo<GatewayTransaction, $this> */

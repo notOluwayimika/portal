@@ -201,10 +201,17 @@ it('the table carries the columns, indexes, foreign keys and CHECK the migration
     ))->pluck('name')->all();
 
     expect($eventTriggers)->toContain(
-        'finance_gateway_transaction_events_no_update',
+        'finance_gateway_transaction_events_insert_guard',
+        'finance_gateway_transaction_events_update_guard',
         'finance_gateway_transaction_events_no_delete',
-        'finance_gateway_transaction_events_source_guard',
-    );
+    )
+        // The bare append-only names are GONE, not lingering alongside the guards that replaced
+        // them — the credit-note relocation idiom. Two objects carrying two halves of one rule is
+        // how the halves come to disagree.
+        ->and($eventTriggers)->not->toContain('finance_gateway_transaction_events_no_update')
+        ->and($eventTriggers)->not->toContain('finance_gateway_transaction_events_source_guard');
+
+    expect(Schema::hasColumn(GTX_EVENTS, 'redacted_at'))->toBeTrue();
 
     // The payload is JSON, not TEXT. A TEXT column takes a truncated body silently; JSON refuses it
     // at the write, which is the difference between evidence and a string that looks like evidence.
@@ -455,6 +462,29 @@ it('a fact reported by the provider is WRITE-ONCE — NULL to a value, never a v
     }
 });
 
+it('payment_id is a one-way door — the predicate step 4\'s compare-and-swap rests on', function () {
+    // ISOLATED FROM THE SETTLED-ROW TEST ON PURPOSE. The other arm that touches payment_id sits on a
+    // row already in `success`, where the terminal-status clause is also in play; this one runs on a
+    // row that is NOT settled, so the write-once clause is the only thing that can produce the
+    // refusal. A guard is proven where it acts alone.
+    $ctx = gtxSchool();
+    $id = gtxInsert($ctx);
+
+    DB::table(GTX_TABLE)->where('id', $id)->update(['payment_id' => $ctx['payment']]);
+
+    // UNIQUE (payment_id) stops two ROWS naming one payment. It says nothing about ONE row going
+    // value → NULL → a different value — and step 4's idempotency is a compare-and-swap on
+    // `payment_id IS NULL`, so if that predicate can be reopened a replayed delivery unlinks,
+    // relinks and settles twice. This is the arm that closes it.
+    gtxExpectCode(1644, fn () => DB::table(GTX_TABLE)->where('id', $id)->update(['payment_id' => null]));
+
+    $other = gtxSchool();
+    gtxExpectCode(1644, fn () => DB::table(GTX_TABLE)->where('id', $id)
+        ->update(['payment_id' => $other['payment']]));
+
+    expect((int) DB::table(GTX_TABLE)->where('id', $id)->value('payment_id'))->toBe($ctx['payment']);
+});
+
 it('the fee is both halves or neither, never negative, and always in the amount\'s currency', function () {
     $ctx = gtxSchool();
 
@@ -517,7 +547,8 @@ function gtxEvent(array $ctx, int $transactionId, array $overrides = []): int
         'gateway_transaction_id' => $transactionId,
         'source' => 'webhook',
         'event' => 'charge.success',
-        'payload' => json_encode(['data' => ['status' => 'success']]),
+        'payload' => json_encode(['data' => ['status' => 'success', 'customer' => ['email' => 'payer@example.test']]]),
+        'redacted_at' => null,
         'created_at' => now(),
         'updated_at' => now(),
     ], $overrides));
@@ -548,6 +579,62 @@ it('a stored delivery can never be edited or deleted — it is evidence, not a w
         ->update(['payload' => json_encode(['data' => ['status' => 'failed']])]));
     gtxExpectCode(1644, fn () => DB::table(GTX_EVENTS)->where('id', $event)->update(['event' => 'rewritten']));
     gtxExpectCode(1644, fn () => DB::table(GTX_EVENTS)->where('id', $event)->delete());
+});
+
+// ── Retention: the one door through the append-only guard ─────────────────────────────────────────
+//
+// The payload carries payer PII and this table cannot be purged, so the ability to redact has to
+// exist before there is anything to purge — retrofitting it later means dropping guards on a live
+// table holding that data. These arms are what make "exactly one door" a tested claim rather than a
+// sentence in a docblock.
+
+it('a payload may be redacted EXACTLY ONCE, and a raw row cannot be edited any other way', function () {
+    $ctx = gtxSchool();
+    $id = gtxInsert($ctx);
+    $event = gtxEvent($ctx, $id);
+
+    $redacted = json_encode(['data' => ['status' => 'success', 'customer' => ['email' => null]]]);
+
+    // The redaction — the ONE update this table admits.
+    DB::table(GTX_EVENTS)->where('id', $event)->update([
+        'payload' => $redacted, 'redacted_at' => now(), 'updated_at' => now(),
+    ]);
+
+    $row = DB::table(GTX_EVENTS)->where('id', $event)->first();
+    expect($row->redacted_at)->not->toBeNull()
+        ->and(json_decode($row->payload, true)['data']['customer']['email'])->toBeNull();
+
+    // A SECOND redaction is refused, and refused for BEING a second one rather than for whatever
+    // column it touched — which is why the already-redacted arm is first in the guard.
+    gtxExpectCode(1644, fn () => DB::table(GTX_EVENTS)->where('id', $event)->update([
+        'payload' => json_encode(['data' => []]), 'redacted_at' => now(),
+    ]));
+
+    // And the row is otherwise still frozen: a redacted row is not an editable row.
+    gtxExpectCode(1644, fn () => DB::table(GTX_EVENTS)->where('id', $event)->update(['event' => 'rewritten']));
+});
+
+it('a redaction may change the payload and nothing else, and no row is born redacted', function () {
+    $a = gtxSchool();
+    $b = gtxSchool();
+    $id = gtxInsert($a);
+    $event = gtxEvent($a, $id);
+
+    // Redaction is not a licence to rewrite the delivery's identity. Without these arms, `redacted_at`
+    // would be a general-purpose unlock on an append-only table.
+    foreach ([
+        ['event' => 'transfer.success'],
+        ['source' => 'verify'],
+        ['school_id' => $b['school']],
+        ['created_at' => now()->subYear()],
+    ] as $smuggled) {
+        gtxExpectCode(1644, fn () => DB::table(GTX_EVENTS)->where('id', $event)
+            ->update(array_merge(['redacted_at' => now()], $smuggled)));
+    }
+
+    // A row cannot arrive already redacted — that would be a write-time redaction wearing the
+    // retention path's clothes, and it would make `redacted_at` stop meaning "this was purged".
+    gtxExpectCode(1644, fn () => gtxEvent($a, $id, ['redacted_at' => now()]));
 });
 
 it('a delivery names a known source and cannot be filed against another school\'s transaction', function () {

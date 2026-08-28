@@ -107,8 +107,10 @@ use Illuminate\Support\Facades\Schema;
  *                      rows are the entire input to the discrepancy report; deleting them is
  *                      deleting the evidence of the thing being reconciled.
  *
- *   The events table carries `_no_update`, `_no_delete` and `_source_guard` — append-only, because a
- *   raw payload that can be edited is not evidence.
+ *   The events table carries `_insert_guard`, `_update_guard` and `_no_delete` — append-only with
+ *   exactly ONE door, a single redaction per row, because a raw payload that can be freely edited is
+ *   not evidence and a payload that can NEVER be purged is indefinite retention of payer PII decided
+ *   by omission. See createEventsTable()'s RETENTION paragraph.
  *
  * ── THE SETTLEMENT DATA IS HERE BECAUSE IT CANNOT BE CAPTURED LATER (boundary §5, §8.2, §14) ──────
  *
@@ -150,11 +152,11 @@ return new class extends Migration
 
     private const EVENTS_TABLE = 'finance_gateway_transaction_events';
 
-    private const EVENTS_NO_UPDATE = 'finance_gateway_transaction_events_no_update';
+    private const EVENTS_UPDATE_GUARD = 'finance_gateway_transaction_events_update_guard';
 
     private const EVENTS_NO_DELETE = 'finance_gateway_transaction_events_no_delete';
 
-    private const EVENTS_SOURCE_GUARD = 'finance_gateway_transaction_events_source_guard';
+    private const EVENTS_INSERT_GUARD = 'finance_gateway_transaction_events_insert_guard';
 
     public function up(): void
     {
@@ -301,9 +303,9 @@ return new class extends Migration
      */
     public function down(): void
     {
-        DB::unprepared('DROP TRIGGER IF EXISTS '.self::EVENTS_SOURCE_GUARD);
+        DB::unprepared('DROP TRIGGER IF EXISTS '.self::EVENTS_INSERT_GUARD);
+        DB::unprepared('DROP TRIGGER IF EXISTS '.self::EVENTS_UPDATE_GUARD);
         DB::unprepared('DROP TRIGGER IF EXISTS '.self::EVENTS_NO_DELETE);
-        DB::unprepared('DROP TRIGGER IF EXISTS '.self::EVENTS_NO_UPDATE);
         DB::unprepared('DROP TRIGGER IF EXISTS '.self::NO_DELETE);
         DB::unprepared('DROP TRIGGER IF EXISTS '.self::UPDATE_GUARD);
         DB::unprepared('DROP TRIGGER IF EXISTS '.self::INSERT_GUARD);
@@ -408,9 +410,18 @@ return new class extends Migration
      *
      *   · `success` is terminal FOR STATUS. A settled attempt may not become failed, abandoned or
      *     pending. This is the arm that makes a duplicate delivery harmless.
-     *   · Every fact learned FROM THE PROVIDER is write-once: once non-NULL, `provider_reference`,
-     *     `paid_at`, `payment_id`, `failure_reason`, the fee pair, `settlement_reference` and
-     *     `settled_at` may never be rewritten. NULL → value is the only transition each of them has.
+     *   · Every LEARNED FACT is write-once: once non-NULL, `provider_reference`, `paid_at`,
+     *     `payment_id`, `failure_reason`, the fee pair, `settlement_reference` and `settled_at` may
+     *     never be rewritten. NULL → value is the only transition each of them has.
+     *
+     *     `payment_id` IS IN THAT LIST AND IS NOT PROVIDER-REPORTED — it is ours, and a reader who
+     *     takes "provider-reported" as the rule's scope will wrongly assume it is excluded. It needs
+     *     the protection MORE than the others, for a sharper reason: `UNIQUE (payment_id)` stops two
+     *     ROWS naming one payment and says nothing about one row going value → NULL → a different
+     *     value. Step 4's idempotency is a compare-and-swap on `payment_id IS NULL`, so that
+     *     predicate has to be a ONE-WAY DOOR or a replayed delivery could unlink and relink and the
+     *     compare-and-swap would hand out a second settlement. The write-once arm is what closes it;
+     *     the UNIQUE alone does not, and `payment_id_is_a_one_way_door` is the test that pins it.
      *   · Identity and the amount are immutable outright, from insert.
      *
      * NULL → VALUE IS THE WHOLE DIFFERENCE, and it is what makes a NULL in these columns MEAN
@@ -457,7 +468,7 @@ return new class extends Migration
                OR (OLD.settlement_reference IS NOT NULL AND NOT (NEW.settlement_reference <=> OLD.settlement_reference))
                OR (OLD.settled_at           IS NOT NULL AND NOT (NEW.settled_at           <=> OLD.settled_at)) THEN
                 SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT =
-                    'finance_gateway_transactions: a fact reported by the provider is written once and never rewritten.';
+                    'finance_gateway_transactions: a fact learned about this attempt is written once, never rewritten.';
             END IF;
             SQL;
     }
@@ -480,6 +491,28 @@ return new class extends Migration
      * IT RECORDS REJECTED DELIVERIES TOO — that is what `source` is for and why nothing here asserts
      * the payload was trusted. A delivery whose signature failed verification is exactly the one an
      * investigation wants to read.
+     *
+     * ── RETENTION, DECIDED HERE RATHER THAN BY OMISSION ─────────────────────────────────────────
+     *
+     * A payload carries PAYER PII: the customer's email, often a name, the card BIN and last four,
+     * sometimes an IP. Putting that in an append-only table and saying nothing about retention is
+     * how indefinite retention of NDPA-relevant data becomes a schema's default — a decision nobody
+     * took, arrived at by silence.
+     *
+     * And append-only makes it irreversible in the worst way: retrofitting ANY retention capability
+     * later means dropping guards on a live table holding that data. The capability therefore has to
+     * exist BEFORE there is anything to purge, or it never meaningfully exists at all.
+     *
+     * SO THE FULL PAYLOAD IS KEPT — a live dispute is answered by what the provider actually sent,
+     * and §7's "the payer succeeded and our handler threw" is diagnosed from exactly the fields a
+     * write-time redaction would have discarded — AND `redacted_at` is the one door out. The update
+     * guard admits precisely one UPDATE per row: a redaction, once, replacing the payload and
+     * nothing else. A raw row cannot be edited, a redacted row cannot be edited again, and a row
+     * cannot be inserted pre-redacted.
+     *
+     * WHAT IS STILL OWED, named so it is not mistaken for done: there is no schedule, no command and
+     * no stated period. This ships the ABILITY, so the policy becomes a code change against a schema
+     * that already permits it. The policy itself is a decision for the data owner.
      *
      * THE GAP THIS DOES NOT CLOSE, named rather than left to be discovered: a webhook whose
      * reference matches NO transaction has nowhere to go, because every row here hangs off a parent
@@ -507,7 +540,27 @@ return new class extends Migration
             $table->string('event')->nullable();
 
             // THE BODY, VERBATIM. Never parsed here, never trusted here — stored.
+            //
+            // IT CARRIES PAYER PII. A Paystack delivery routinely contains the customer's email,
+            // often a name, the card BIN and last four, and sometimes an IP. That is why the column
+            // below exists: see the RETENTION paragraph in createEventsTable()'s docblock.
             $table->json('payload');
+
+            // WHEN THIS ROW'S PAYLOAD WAS REDACTED, and the reason this migration ships a redaction
+            // path on day one rather than the day someone asks for one.
+            //
+            // The table is append-only. On an append-only table, "we will add retention later" means
+            // dropping guards on a live table holding payer PII — so the capability has to exist
+            // BEFORE there is anything to purge, or it effectively never exists. This column is that
+            // capability, and it is deliberately the ONLY door: the update guard refuses every
+            // UPDATE except a redaction, refuses a second redaction, and refuses a row born
+            // pre-redacted. NULL means the payload is exactly what arrived.
+            //
+            // NOTHING REDACTS ANYTHING YET, and that is correct for this change — no schedule, no
+            // command, no policy on how long is long enough. What ships here is the ABILITY, so that
+            // decision is a code change against a schema that already permits it rather than a
+            // migration against production money data. The policy itself is still owed.
+            $table->timestamp('redacted_at')->nullable();
 
             $table->timestamps();
 
@@ -518,9 +571,29 @@ return new class extends Migration
             $table->index(['gateway_transaction_id', 'id'], 'finance_gateway_transaction_events_txn_index');
         });
 
-        $this->installTrigger(self::EVENTS_NO_UPDATE, 'UPDATE', <<<'SQL'
-            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT =
-                'finance_gateway_transaction_events is a raw record of what arrived: UPDATE is denied.';
+        // APPEND-ONLY WITH EXACTLY ONE DOOR — see the RETENTION paragraph above. The order of the
+        // arms is the rule: already-redacted is refused first (so a second redaction is told the
+        // true reason), then any UPDATE that is not a redaction, then the columns a redaction may
+        // not touch. `updated_at` moves and `created_at` does not — when the row arrived is part of
+        // the evidence; when it was redacted is `redacted_at`.
+        $this->installTrigger(self::EVENTS_UPDATE_GUARD, 'UPDATE', <<<'SQL'
+            IF OLD.redacted_at IS NOT NULL THEN
+                SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT =
+                    'finance_gateway_transaction_events: this delivery is already redacted; redaction happens once.';
+            END IF;
+            IF NEW.redacted_at IS NULL THEN
+                SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT =
+                    'finance_gateway_transaction_events is a raw record: UPDATE is denied except a redaction.';
+            END IF;
+            IF NEW.school_id <> OLD.school_id
+                OR NEW.gateway_transaction_id <> OLD.gateway_transaction_id
+                OR NEW.uuid <> OLD.uuid
+                OR NOT (NEW.source <=> OLD.source)
+                OR NOT (NEW.event <=> OLD.event)
+                OR NOT (NEW.created_at <=> OLD.created_at) THEN
+                SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT =
+                    'finance_gateway_transaction_events: a redaction may change the payload and nothing else.';
+            END IF;
             SQL, self::EVENTS_TABLE);
 
         $this->installTrigger(self::EVENTS_NO_DELETE, 'DELETE', <<<'SQL'
@@ -528,11 +601,15 @@ return new class extends Migration
                 'finance_gateway_transaction_events is retained for audit: DELETE is denied.';
             SQL, self::EVENTS_TABLE);
 
-        $this->installTrigger(self::EVENTS_SOURCE_GUARD, 'INSERT', <<<'SQL'
+        $this->installTrigger(self::EVENTS_INSERT_GUARD, 'INSERT', <<<'SQL'
             IF NOT COALESCE(NEW.source COLLATE utf8mb4_bin = 'webhook'
                          OR NEW.source COLLATE utf8mb4_bin = 'verify', 0) THEN
                 SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT =
                     'finance_gateway_transaction_events.source must be webhook or verify.';
+            END IF;
+            IF NEW.redacted_at IS NOT NULL THEN
+                SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT =
+                    'finance_gateway_transaction_events: a delivery is stored as it arrived; it cannot be born redacted.';
             END IF;
             SQL, self::EVENTS_TABLE);
     }
@@ -655,7 +732,7 @@ return new class extends Migration
         ))->pluck('name')->all();
 
         $missingEventColumns = array_diff(
-            ['id', 'uuid', 'school_id', 'gateway_transaction_id', 'source', 'event', 'payload', 'created_at', 'updated_at'],
+            ['id', 'uuid', 'school_id', 'gateway_transaction_id', 'source', 'event', 'payload', 'redacted_at', 'created_at', 'updated_at'],
             $eventColumns,
         );
 

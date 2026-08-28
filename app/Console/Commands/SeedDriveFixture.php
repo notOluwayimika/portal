@@ -104,8 +104,37 @@ class SeedDriveFixture extends Command
         // whole design rests on ApproveDiscountPolicyChange being the catalog's single writer, so a
         // fixture writing these rows directly would drive a screen whose central claim it had just
         // falsified. See DriveFinanceStates::ensureAwardPolicies().
-        ActiveSchool::runFor($cast->schoolAId, fn () => $states->ensureAwardPolicies($cast->schoolAId));
-        ActiveSchool::runFor($cast->schoolBId, fn () => $states->ensureAwardPolicies($cast->schoolBId, $cast->schoolBMaker));
+        $awardPolicies = [
+            $cast->schoolAId => ActiveSchool::runFor($cast->schoolAId, fn () => $states->ensureAwardPolicies($cast->schoolAId)),
+            $cast->schoolBId => ActiveSchool::runFor($cast->schoolBId, fn () => $states->ensureAwardPolicies($cast->schoolBId, $cast->schoolBMaker)),
+        ];
+
+        /*
+         * TWO STANDING AWARDS PER SCHOOL, ON PLACED STUDENTS — the state a bulk run has to find before
+         * a discount can reach an invoice.
+         *
+         * WITHOUT THEM THE MONEY IS UNDRIVABLE FROM A BARE SEED. Every award in this fixture used to be
+         * made by a human uploading a sheet, which is right for driving the IMPORT and useless for
+         * driving the RUN: the arithmetic drive would begin with a manual step and nobody could
+         * reproduce its numbers. The award-import drive's own four holders stay unplaced and unawarded,
+         * so its first upload can still report `awarded` — see DriveCastSeeder::seedCohortAwardHolders().
+         *
+         * PAIRED BY POSITION, and that is what makes A and B mean different BASES: element 0 of both
+         * lists is the discountable-base side and element 1 is the whole-bill side. A set on either
+         * side would let the two collapse onto one base and the drive would be reading one number
+         * twice.
+         *
+         * THE ACTOR IS EACH SCHOOL'S OWN BURSAR, because AwardStudentDiscount asserts
+         * `finance.discount-award.manage` against the actor IN THE ACTIVE SCHOOL — School A's maker
+         * holds nothing in School B, and passing them would meet the gate rather than the fixture.
+         */
+        foreach ([$cast->schoolAId => $cast->maker, $cast->schoolBId => $cast->schoolBMaker] as $schoolId => $actor) {
+            ActiveSchool::runFor($schoolId, function () use ($states, $cast, $awardPolicies, $schoolId, $actor) {
+                foreach ($cast->cohortAwardees[$schoolId] ?? [] as $index => $studentId) {
+                    $states->awardDiscount($studentId, $awardPolicies[$schoolId][$index], $actor);
+                }
+            });
+        }
 
         // ONE ACTIVE FEE SCHEDULE PER SCHOOL, at the coordinates the cast placed its cohort at (U6).
         // Without it EVERY bulk-run preview answers "No active fee schedule exists at these
@@ -275,10 +304,12 @@ class SeedDriveFixture extends Command
          *    sponsored or unconfigured one is refused with a different sentence each. Zero in the
          *    discount column means no row of any sheet can ever be awarded; zero in the other means the
          *    scholarship refusals cannot be shown at all.
-         *  - `Discount awards` is expected to be ZERO on a fresh fixture and is printed anyway, exactly
-         *    as `Guardians` is and for the same reason: it is the denominator the re-upload check is
-         *    measured against, so "no second award row after a second upload" is checked rather than
-         *    asserted. Do not read that zero as an abort.
+         *  - `Discount awards` is School-WIDE and counts holders nobody has placed. It was zero on a
+         *    fresh fixture until the money drive seeded two standing awards on placed students; it is
+         *    still the denominator the import drive's re-upload check is measured against ("no second
+         *    award row after a second upload"), and that check now starts from two rather than nought.
+         *    The import drive's own four holders remain unawarded, which is what keeps its first upload
+         *    able to report `awarded` — the two sets of holders are deliberately different students.
          *
          * The award columns come through DriveFinanceStates for the boundary-lint reason the accounts
          * column gives; the two holder columns read `students`, a core table, so they are counted here.
@@ -309,16 +340,68 @@ class SeedDriveFixture extends Command
 
         $unplaceable = fn (int $schoolId): int => count($port->listUnplaceableForSchool($schoolId));
 
+        /*
+         * U6's TWO NEW COLUMNS, added 2026-08-28 by the money drive, and NEITHER is derivable from a
+         * column beside it — which is the test this file applies before a column is added.
+         *
+         * `Awarded in cohort` is not `Discount awards`: that one is School-wide and counts the award
+         * import's four holders, who are deliberately UNPLACED and can never be billed. A School can
+         * therefore show awards and bill none of them, which is a run whose every invoice is full price
+         * — the arithmetic drive reading one number with nothing to compare it to.
+         *
+         * `Sponsored in cohort` is not `On another scholarship` (table 3): that one counts sponsored AND
+         * unconfigured holders anywhere in the School, while the run's exclusion arm fires only for a
+         * SPONSORED student who is actually AT the coordinates. Zero here and the run reports no
+         * exclusions, which is the one outcome that must not be confused with "billed at zero".
+         *
+         * Both read the cohort through the PORT rather than a join written here, so they count exactly
+         * the population the run bills — a second expression of "billable" is the drift the three
+         * columns beside them were added to avoid.
+         */
+        $cohortStudentIds = fn (int $schoolId): array => array_map(
+            fn ($enrollment) => $enrollment->studentId,
+            $port->listForCohort(
+                $schoolId, $cast->coordinates[$schoolId]['term_id'], $cast->coordinates[$schoolId]['class_level_id'],
+            ),
+        );
+
+        $awardedInCohort = fn (int $schoolId): int => ActiveSchool::runFor(
+            $schoolId, fn () => $states->awardedAmong($cohortStudentIds($schoolId)),
+        );
+
+        $sponsoredInCohort = function (int $schoolId) use ($cohortStudentIds): int {
+            $ids = $cohortStudentIds($schoolId);
+
+            return $ids === [] ? 0 : (int) DB::table('students')
+                ->join('scholarships', 'scholarships.id', '=', 'students.scholarship_id')
+                ->whereIn('students.id', $ids)
+                ->where('scholarships.kind', ScholarshipKind::Sponsored->value)
+                ->count();
+        };
+
         $this->info('Authoring slot per school — the fee-schedules screen selects a term, a class level and an account; the discount-policies screen amends and retires a policy; the receipt screen (U11) renders ONE payment and refuses for a migrated one; the bulk-run screen (U6) prices a COHORT from an ACTIVE schedule and reports the unplaceable; the decisions surface (U13/U14) reads back what a checker has already settled:');
         $this->table(
-            ['School', 'Academic sessions', 'Terms', 'Class levels', 'Bank accounts', 'Discount policies', 'Payments (portal)', 'Payments (migrated)', 'Payments w/ remainder', 'Open invoices', 'Active schedules', 'Cohort at slot', 'Unplaceable', 'Decided credit notes', 'Decided voids'],
+            ['School', 'Academic sessions', 'Terms', 'Class levels', 'Bank accounts', 'Discount policies', 'Payments (portal)', 'Payments (migrated)', 'Payments w/ remainder', 'Open invoices', 'Active schedules', 'Cohort at slot', 'Awarded in cohort', 'Sponsored in cohort', 'Unplaceable', 'Decided credit notes', 'Decided voids'],
             [
-                ['A (school#'.$cast->schoolAId.')', $count('academic_sessions', $cast->schoolAId), $count('terms', $cast->schoolAId), $count('class_levels', $cast->schoolAId), $accounts($cast->schoolAId), $policies($cast->schoolAId), $payments($cast->schoolAId, 'portal'), $payments($cast->schoolAId, 'migrated'), $remainders($cast->schoolAId), $openInvoices($cast->schoolAId), $schedules($cast->schoolAId), $cohort($cast->schoolAId), $unplaceable($cast->schoolAId), $decidedNotes($cast->schoolAId), $decidedVoids($cast->schoolAId)],
-                ['B (school#'.$cast->schoolBId.')', $count('academic_sessions', $cast->schoolBId), $count('terms', $cast->schoolBId), $count('class_levels', $cast->schoolBId), $accounts($cast->schoolBId), $policies($cast->schoolBId), $payments($cast->schoolBId, 'portal'), $payments($cast->schoolBId, 'migrated'), $remainders($cast->schoolBId), $openInvoices($cast->schoolBId), $schedules($cast->schoolBId), $cohort($cast->schoolBId), $unplaceable($cast->schoolBId), $decidedNotes($cast->schoolBId), $decidedVoids($cast->schoolBId)],
+                ['A (school#'.$cast->schoolAId.')', $count('academic_sessions', $cast->schoolAId), $count('terms', $cast->schoolAId), $count('class_levels', $cast->schoolAId), $accounts($cast->schoolAId), $policies($cast->schoolAId), $payments($cast->schoolAId, 'portal'), $payments($cast->schoolAId, 'migrated'), $remainders($cast->schoolAId), $openInvoices($cast->schoolAId), $schedules($cast->schoolAId), $cohort($cast->schoolAId), $awardedInCohort($cast->schoolAId), $sponsoredInCohort($cast->schoolAId), $unplaceable($cast->schoolAId), $decidedNotes($cast->schoolAId), $decidedVoids($cast->schoolAId)],
+                ['B (school#'.$cast->schoolBId.')', $count('academic_sessions', $cast->schoolBId), $count('terms', $cast->schoolBId), $count('class_levels', $cast->schoolBId), $accounts($cast->schoolBId), $policies($cast->schoolBId), $payments($cast->schoolBId, 'portal'), $payments($cast->schoolBId, 'migrated'), $remainders($cast->schoolBId), $openInvoices($cast->schoolBId), $schedules($cast->schoolBId), $cohort($cast->schoolBId), $awardedInCohort($cast->schoolBId), $sponsoredInCohort($cast->schoolBId), $unplaceable($cast->schoolBId), $decidedNotes($cast->schoolBId), $decidedVoids($cast->schoolBId)],
             ],
         );
 
         $this->info('Bulk invoice runs: /finance/bulk-invoice-runs — the cohort above sits at (term, JSS 1); JSS 2 has an empty one on purpose.');
+
+        // THE MANDATORY LINES OF THE PRICE LIST, printed for the reason the admission numbers and the
+        // award pairs are: they are the INPUTS to every total a money drive checks by hand, and an
+        // arithmetic claim that does not state what it was computed from is not checkable. Filtered to
+        // MANDATORY because that is what a run bills — the optional bus line is on the schedule and can
+        // never reach an invoice a run raises, so printing it here would invite it into the sum.
+        //
+        // READ THE `discountable` FLAGS AS A SET, not one at a time: with every mandatory line
+        // discountable the two discount BASES denote the same money and no run can tell them apart.
+        foreach ([['A', $cast->schoolAId], ['B', $cast->schoolBId]] as [$label, $schoolId]) {
+            $lines = ActiveSchool::runFor($schoolId, fn () => $states->billableScheduleLines($schoolId));
+            $this->line("  School {$label} (school#{$schoolId}) billable schedule lines: ".implode(' · ', $lines));
+        }
         // STUDENTS AND GUARDIANS, added for the guardian-create drive and counted for the
         // same reason as every column beside them. That screen links a new guardian to
         // children BY ADMISSION NUMBER, so a zero in the Students column means the drive

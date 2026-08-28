@@ -3,6 +3,7 @@
 use App\Finance\Http\Controllers\BankAccountController;
 use App\Finance\Http\Controllers\BulkInvoiceRunController;
 use App\Finance\Http\Controllers\CreditNoteController;
+use App\Finance\Http\Controllers\DiscountAwardImportController;
 use App\Finance\Http\Controllers\DiscountPolicyChangeController;
 use App\Finance\Http\Controllers\DiscountPolicyController;
 use App\Finance\Http\Controllers\FeeScheduleChangeController;
@@ -210,6 +211,45 @@ Route::post('/v1/finance/discount-policy-changes/{change:uuid}/approve', [Discou
     ->middleware('permission:finance.discount-policy.change.approve');
 Route::post('/v1/finance/discount-policy-changes/{change:uuid}/reject', [DiscountPolicyChangeController::class, 'reject'])
     ->middleware('permission:finance.discount-policy.change.reject');
+
+/*
+ * THE BSS DISCOUNT-AWARD IMPORT — Brookstone's accounts team holds the scholarship list outside the
+ * system, as a spreadsheet pairing each student with the percentage they were awarded, and these
+ * four routes are how it comes in: template out, list in, status back, report down.
+ *
+ * ALL FOUR CARRY `finance.discount-award.manage`, NEWLY COINED, and the coining is the decision.
+ * `finance.access` is the door onto the finance pages; `finance.invoice.reduction.apply` is one
+ * reduction on one invoice a bursar is looking at. An award is a STANDING price for a named child,
+ * every term, until someone changes it — neither of those is that authority, and borrowing either
+ * would give it to every seat that already holds them. The reads carry the same ability as the write
+ * for the reason the opening-balance maker's five routes do: the person who uploads the list is the
+ * person who reads back what happened to it.
+ *
+ * THE ROUTE GATE IS NOT THE ONLY GATE, AND THAT IS DELIBERATE. `AwardStudentDiscount` asserts the
+ * same ability against the uploader on EVERY ROW, inside the queued job, with no middleware within
+ * reach. Eleven guardian routes were once unguarded in this codebase because the check lived where
+ * the caller composed it rather than where the action was; a second caller reaching that Action —
+ * another controller, a command, a future screen — meets the gate regardless of what its route says.
+ * The two arms that prove each half separately are in DiscountAwardImportTest.
+ *
+ * ORDER IS LOAD-BEARING. `import/template` is declared BEFORE `{uuid}` because Laravel matches in
+ * declaration order and would otherwise bind the literal string "import" as an import uuid — the
+ * same trap the opening-balance block below records, and the same fix.
+ *
+ * IT IS NOT MAKER-CHECKER, and the reasoning is beside the gate in AwardStudentDiscount rather than
+ * only here: Brookstone's approval is on the VALUE — which percentages, off which part of the bill —
+ * and that is the discount-policy change flow above, with the ED as checker. This says only WHICH
+ * approved policy a student sits on. A second chain would ask the ED to re-sign their own decision
+ * once per child.
+ */
+Route::get('/v1/finance/discount-award-imports/template', [DiscountAwardImportController::class, 'template'])
+    ->middleware('permission:finance.discount-award.manage');
+Route::post('/v1/finance/discount-award-imports', [DiscountAwardImportController::class, 'store'])
+    ->middleware('permission:finance.discount-award.manage');
+Route::get('/v1/finance/discount-award-imports/{uuid}', [DiscountAwardImportController::class, 'show'])
+    ->middleware('permission:finance.discount-award.manage');
+Route::get('/v1/finance/discount-award-imports/{uuid}/report', [DiscountAwardImportController::class, 'report'])
+    ->middleware('permission:finance.discount-award.manage');
 
 /*
  * Opening-balance cutover — the read feed (§9 step 5a) and, as of §9 step 5b-ii, THE DECISION.

@@ -2,6 +2,7 @@
 
 namespace App\Finance\Actions;
 
+use App\Enums\Permission;
 use App\Enums\ScholarshipKind;
 use App\Exceptions\BusinessRuleException;
 use App\Finance\Contracts\BillableEnrollmentProvider;
@@ -13,6 +14,8 @@ use App\Finance\Models\StudentDiscountAward;
 use App\Models\Scholarship;
 use App\Models\User;
 use App\Support\ActiveSchool;
+use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Spatie\Activitylog\Traits\LogsActivity;
 
@@ -77,6 +80,45 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * the cross-School row outright, so the only reachable meaning of "absent" at the point of insert is
  * "holds no scholarship here".
  *
+ * ── WHO MAY AWARD, AND WHY THE CHECK IS HERE RATHER THAN ONLY ON THE ROUTE ───────────────────────
+ *
+ * This Action had NO authorization of any kind until the BSS award import gave it its first caller
+ * from a request (docs/handoff/tickets/award-student-discount-has-no-caller-and-therefore-no-gate.md).
+ * Every refusal below answers "is this award coherent"; none of them answered "is this person allowed
+ * to make it", and an action that sets what a named family pays every term must answer both.
+ *
+ * THE ROUTE'S `permission:` MIDDLEWARE IS NOT ENOUGH, and this repo has already paid for believing it
+ * was: eleven guardian routes were unguarded because the check lived where the CALLER composed it
+ * rather than where the ACTION was. A route gate protects one door. A second door — another
+ * controller, a console command, a job, a future screen — reaches this method with no check at all,
+ * and nothing fails when it does. So the ability is asserted HERE, and the route asserts it too;
+ * neither is redundant with the other, because they fail in different directions.
+ *
+ * `Permission::FINANCE_DISCOUNT_AWARD_MANAGE`, coined for this and not borrowed. `finance.access` is
+ * the door onto the finance pages and `finance.invoice.reduction.apply` is a one-off line on one
+ * invoice; a standing award is neither. The enum case carries the full argument.
+ *
+ * IT IS A PERMISSION AND NOT A SECOND APPROVAL CHAIN — write that down, because the next reader will
+ * otherwise add one. Brookstone's approval is on the VALUE: which percentages, off which part of the
+ * bill, may exist at all. That is `finance.discount-policy.change.*`, already built, with the ED as
+ * checker and `ApproveDiscountPolicyChange` as the catalog's single writer. This Action only says
+ * WHICH already-approved policy a student sits on, so there is nothing here left to approve, and
+ * `requires_approval` on the policy is false by decision. A maker-checker triple would ask the ED to
+ * re-sign their own decision once per child.
+ *
+ * ── THE ACTOR IS REQUIRED, AND THAT IS A CHANGE ──────────────────────────────────────────────────
+ *
+ * `$actorId` was `?int … = null`, documented as "nullable so a console caller works". There is no
+ * console caller and there never was — building the nullable path ahead of a consumer produced an
+ * unnamed path through the very method that decides a child's price, and a gate with an unnamed path
+ * through it fails open. So the actor is required, the gate reads it, and `AuthorizationException`
+ * (403 on `api/*`, per bootstrap/app.php) is thrown rather than `BusinessRuleException` (422): a
+ * refusal to act is not a statement about the award's coherence.
+ *
+ * ONE READ, NOT TWO. The `User` the gate resolves is the one {@see self::log()} attributes to, so the
+ * identity that was authorised and the identity in the audit trail are the same row by construction
+ * rather than by two lookups that could disagree.
+ *
  * ── ONE AWARD PER STUDENT ────────────────────────────────────────────────────────────────────────
  *
  * `finance_student_discount_awards_student_unique` is the authority. The pre-check below is a
@@ -99,12 +141,25 @@ final class AwardStudentDiscount
      *                          this path yet (there is no request and no screen until the next
      *                          commit), and `finance_student_discount_awards` stores ids.
      * @param  int  $policyId  `finance_discount_policies.id`.
-     * @param  ?int  $actorId  who is making the award — attribution only, never an execution
-     *                         identity (Constitution 13). Nullable so a console caller works.
+     * @param  int  $actorId  who is making the award. TWO ROLES, and they are not the same thing:
+     *                        it is the identity the GATE below checks, and it is the audit
+     *                        attribution. It is never an execution identity — the School context is
+     *                        `ActiveSchool`'s and is read before this, not derived from the actor
+     *                        (Constitution 13). Required: see the class docblock.
      *
      * @throws BusinessRuleException
+     * @throws AuthorizationException
+     * @throws QueryException the unique index is the authority, not the pre-check below. Two racers
+     *                        read a snapshot in which no award exists and the second insert raises
+     *                        1062 — which `bootstrap/app.php` maps to 409, and which the BSS award
+     *                        import catches ahead of its generic arm so a QueryException's message
+     *                        (bindings interpolated into the SQL) never reaches a downloadable
+     *                        report. DECLARED because Larastan reads this list to decide whether
+     *                        such a catch is dead: an incomplete @throws made the import's catch
+     *                        look unreachable while the race it guards is exactly what the class
+     *                        docblock says the pre-check cannot hold.
      */
-    public function handle(int $studentId, int $policyId, ?int $actorId = null): StudentDiscountAward
+    public function handle(int $studentId, int $policyId, int $actorId): StudentDiscountAward
     {
         // Constitution 13: context is explicit or absent, never inferred. A financial write with no
         // School context fails closed rather than adopting whatever row it happens to read.
@@ -113,6 +168,12 @@ final class AwardStudentDiscount
         if ($schoolId === null) {
             throw new BusinessRuleException('No active School context: a discount award cannot be made.');
         }
+
+        // AUTHORIZATION FIRST, before anything is read about the student or the policy. A caller who
+        // may not award must not be able to use the refusals below as an oracle — "policy #41 is
+        // retired" and "student #7 is on a sponsored scholarship" are facts about this School that a
+        // 403 should not hand out.
+        $actor = $this->assertActorMayAward($actorId);
 
         $policy = $this->readPolicy($policyId, $schoolId);
 
@@ -129,18 +190,53 @@ final class AwardStudentDiscount
         // immutability trigger — its migration argues the exemption on exactly this audit existing —
         // so a row that landed while its entry did not would be a fee change with no record and no
         // way to notice, which is the state the exemption was written on the assumption of avoiding.
-        return DB::transaction(function () use ($schoolId, $studentId, $policy, $actorId) {
+        return DB::transaction(function () use ($schoolId, $studentId, $policy, $actor) {
             $award = StudentDiscountAward::create([
                 'school_id' => $schoolId,
                 'student_id' => $studentId,
                 'discount_policy_id' => $policy->id,
-                'created_by_user_id' => $actorId,
+                'created_by_user_id' => $actor->id,
             ]);
 
-            $this->log($award, $policy, $actorId);
+            $this->log($award, $policy, $actor);
 
             return $award;
         });
+    }
+
+    /**
+     * The gate: the named actor must hold `finance.discount-award.manage` in the ACTIVE School.
+     *
+     * READ UNDER THE AMBIENT TEAM CONTEXT, WHICH IS WHY NOTHING IS PASSED IN. spatie's teams are
+     * schools here, and `ActiveSchool::runFor()` sets `setPermissionsTeamId($schoolId)` before the
+     * callback runs (app/Support/ActiveSchool.php); on a request the `tenant` middleware has already
+     * done the same. `$actor` is loaded fresh inside that context, so its `roles` relation resolves
+     * against this School and a grant held in ANOTHER School does not answer here.
+     *
+     * `->can()` AND NOT `Gate::forUser()->authorize()`, for one reason worth stating: `can()` is the
+     * same call the route's `permission:` middleware makes, so the two gates cannot disagree about
+     * what the ability means. Both respect the `super_admin` `Gate::before` bypass — correct here,
+     * because this ability's terminal segment is `manage`, not approve/reject, so ApprovalAbility
+     * does not exclude it (ADR 0040). A platform admin awarding a discount is a supported act; a
+     * platform admin approving their own credit note is not, and that distinction lives in the NAME.
+     *
+     * A MISSING USER IS A REFUSAL, NOT A CRASH. `User::find()` returns null for a deleted or
+     * fabricated id, and the honest answer to "may user #9999 award" is no.
+     *
+     * @throws AuthorizationException
+     */
+    private function assertActorMayAward(int $actorId): User
+    {
+        $actor = User::find($actorId);
+
+        if (! $actor instanceof User || ! $actor->can(Permission::FINANCE_DISCOUNT_AWARD_MANAGE->value)) {
+            throw new AuthorizationException(
+                'Awarding a student discount requires the '.Permission::FINANCE_DISCOUNT_AWARD_MANAGE->value
+                .' permission in this school.'
+            );
+        }
+
+        return $actor;
     }
 
     /**
@@ -173,10 +269,8 @@ final class AwardStudentDiscount
      * failed award: the pattern is `LogRbacChange`, which also logs a governance change and also
      * does not catch.
      */
-    private function log(StudentDiscountAward $award, DiscountPolicy $policy, ?int $actorId): void
+    private function log(StudentDiscountAward $award, DiscountPolicy $policy, User $causer): void
     {
-        $causer = $actorId === null ? null : User::find($actorId);
-
         $logger = activity('finance')
             ->performedOn($award)
             ->event(self::AWARDED)
@@ -191,11 +285,7 @@ final class AwardStudentDiscount
                 ],
             ]);
 
-        if ($causer instanceof User) {
-            $logger->causedBy($causer);
-        }
-
-        $logger->log(self::AWARDED.': '.$policy->name);
+        $logger->causedBy($causer)->log(self::AWARDED.': '.$policy->name);
     }
 
     /**

@@ -1,10 +1,46 @@
 # TICKET — there is no JavaScript test runner, so no frontend logic in this repository is tested
 
-**Status:** open, not implemented. Raised by `feat/u8-invoice-modal-discount-policy` (U8 commit 4),
-which added branching client logic to `resources/js/components/finance/new-invoice-modal.tsx` and had
-nothing to assert it with. Deliberately NOT fixed on that branch: installing a runner is a
-toolchain-and-gate decision (which runner, whether it becomes a `bin/quality` step, whether it is
-ratcheted like `tsc`), not something a feature commit gets to settle on the way past.
+**Status: CLOSED — the runner landed at `66cc22b` (2026-08-23), `test(frontend): the money boundary
+was exempt from the lint on review alone`.** Corrected 2026-08-28 by `feat/bss-import-screen`, which
+found this ticket still reading as open and still being cited as open by docblocks written after the
+runner existed.
+
+`vitest` is installed (`^4.1.11`, devDependency), configured in a dedicated `vitest.config.ts` —
+separate from `vite.config.ts` on purpose, so that running the tests does not drag in the wayfinder
+plugin and regenerate `resources/js/{routes,actions}` underneath the gate that is measuring them —
+exposed as `pnpm run test:js`, and wired into `bin/quality` as its **last** step. Four test files
+exist: `resources/js/lib/format.test.ts`, `resources/js/lib/rollover-batch-status.test.ts`,
+`resources/js/components/finance/money-input.test.ts` and
+`resources/js/pages/admin/finance/discount-policies.test.ts`.
+
+Re-derive rather than carrying these numbers, which is the whole reason the section below insists on
+it: `grep -c '^\s*step "' bin/quality` for the step count (18 at `4b2ae85`), and
+`find resources/js -name '*.test.ts' -o -name '*.test.tsx'` for the files. Note that `bin/quality`'s
+own prose header still calls the vitest step "17" while the `step()` counter makes it 18 — the header
+was written when the script had one fewer step and nothing checks prose against the counter.
+
+**What is NOT closed by this, and is deliberately not re-opened as this ticket.** The runner exists;
+coverage does not. Every property this ticket names as unguarded is still unguarded — `errorLinesFrom`,
+`selectablePolicies`, `patchForKind`, and the invoice-kind reset named at the end — because four test
+files over 63k lines of TS/TSX is a runner with a foothold, not a tested frontend. The environment is
+`node`, so no test here renders a component yet; the config says what to do at the moment one needs to
+(`// @vitest-environment jsdom`, per-file). A new ticket for coverage would be honest; leaving THIS one
+open is not, because it sends the next reader to install a runner that is already installed and already
+running on every push.
+
+**Everything below this line is the original ticket, preserved.** Its analysis of what each gate step
+can and cannot catch remains accurate for the fifteen PHP-side steps and for the four that read
+`resources/js` without executing it; only its central claim — that nothing executes application
+JavaScript — has been overtaken. Where it says `bin/quality` is 15 steps, that was true when written.
+
+---
+
+**Status when raised:** open, not implemented. Raised by `feat/u8-invoice-modal-discount-policy`
+(U8 commit 4), which added branching client logic to
+`resources/js/components/finance/new-invoice-modal.tsx` and had nothing to assert it with.
+Deliberately NOT fixed on that branch: installing a runner is a toolchain-and-gate decision (which
+runner, whether it becomes a `bin/quality` step, whether it is ratcheted like `tsc`), not something a
+feature commit gets to settle on the way past.
 
 ## The fact
 

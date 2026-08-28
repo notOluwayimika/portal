@@ -178,8 +178,26 @@ export interface BulkInvoiceRunPreview {
     schedule: (RunFeeSchedule & { mandatory_item_count: number | null }) | null;
     refusal: string | null;
     cohort_size: number;
-    /** How many of that cohort already carry an active scheduled invoice and would not be re-billed. */
+    /**
+     * How many of that cohort are on a SPONSORED scheme — an outside organisation pays for them,
+     * off platform — so the run records them and does not bill them. Reported rather than silently
+     * netted off `would_bill`: a bursar who reads "520 to bill · 91 sponsored, billed by hand" can
+     * sanity-check the figure, where one who reads only "520" has to trust it.
+     */
+    sponsored: number;
+    /**
+     * How many of that cohort already carry an active scheduled invoice and would not be re-billed.
+     * DISJOINT FROM `sponsored`, in the job's own order: the run settles the scheme first and never
+     * asks the invoice question of a sponsored student.
+     */
     already_billed: number;
+    /**
+     * How many invoices the run would actually raise — cohort minus the two buckets above, computed
+     * SERVER-SIDE from the same predicates the job applies. The confirm button is a sentence about
+     * this number and no other. The screen used to subtract `cohort_size - already_billed` itself,
+     * which overstated by every sponsored student in the cohort.
+     */
+    would_bill: number;
 }
 
 export const bulkInvoiceRuns = {

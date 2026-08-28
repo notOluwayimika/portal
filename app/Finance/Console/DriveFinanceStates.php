@@ -6,6 +6,7 @@ use App\Finance\Actions\ApproveCreditNote;
 use App\Finance\Actions\ApproveDiscountPolicyChange;
 use App\Finance\Actions\ApproveFeeScheduleChange;
 use App\Finance\Actions\ApproveVoidRequest;
+use App\Finance\Actions\AwardStudentDiscount;
 use App\Finance\Actions\CreateFeeSchedule;
 use App\Finance\Actions\GenerateInvoice;
 use App\Finance\Actions\RecordAccountPayment;
@@ -17,12 +18,15 @@ use App\Finance\Actions\SubmitVoidRequest;
 use App\Finance\DTOs\InvoiceLineSpec;
 use App\Finance\Enums\CreditNoteKind;
 use App\Finance\Enums\CreditNoteStatus;
+use App\Finance\Enums\DiscountBase;
 use App\Finance\Enums\DiscountBasis;
 use App\Finance\Enums\DiscountPolicyChangeKind;
+use App\Finance\Enums\DiscountPolicyStatus;
 use App\Finance\Enums\FeeScheduleChangeKind;
 use App\Finance\Enums\FeeScheduleStatus;
 use App\Finance\Enums\InvoiceKind;
 use App\Finance\Enums\VoidRequestStatus;
+use App\Finance\Exports\DiscountAwardImportTemplateExport;
 use App\Finance\Models\BankAccount;
 use App\Finance\Models\CreditNote;
 use App\Finance\Models\DiscountPolicy;
@@ -30,7 +34,9 @@ use App\Finance\Models\FeeItem;
 use App\Finance\Models\FeeSchedule;
 use App\Finance\Models\Invoice;
 use App\Finance\Models\Payment;
+use App\Finance\Models\StudentDiscountAward;
 use App\Finance\Models\VoidRequest;
+use App\Finance\Services\DiscountAwardImporter;
 use App\Models\User;
 use App\Support\Money;
 use App\Support\SchoolDay;
@@ -52,6 +58,32 @@ final class DriveFinanceStates
 
     /** The SECOND account's label — see ensureSecondBankAccount(). */
     private const DRIVE_SECOND_ACCOUNT_LABEL = 'Drive trips account';
+
+    /**
+     * THE TWO (percentage, base) PAIRS THE BSS AWARD IMPORT RESOLVES AGAINST, and the pair is the unit
+     * rather than the percentage: a row of that sheet names a percentage AND what it comes off, and
+     * those are two different amounts of money at the same figure.
+     *
+     * THE PERCENTAGES ARE THE TEMPLATE'S OWN SAMPLE VALUES (50 and 100,
+     * {@see DiscountAwardImportTemplateExport::SAMPLE_ROWS}), so a bursar who
+     * downloads the template and changes only the admission numbers gets two rows that RESOLVE. A
+     * fixture whose percentages disagreed with the sample would make the natural first upload reject
+     * every row, and the drive would be measuring the fixture.
+     *
+     * ONE PAIR ON EACH BASE, which is the minimum that can discriminate. Two policies on one base
+     * would let a resolver that ignores the third column entirely land on a policy for every row and
+     * look correct — the degenerate-fixture failure, in a drive rather than in a suite.
+     *
+     * 75% OF THE WHOLE BILL IS DELIBERATELY ABSENT and is not an omission: it is the fixture's
+     * no-active-policy arm. Every other refusal this screen can show has a seeded subject; that one is
+     * shown by a pair nobody approved, so it has to be a gap rather than a row.
+     *
+     * @var list<array{percent: int, base: DiscountBase, name: string}>
+     */
+    private const DRIVE_AWARD_POLICIES = [
+        ['percent' => 50, 'base' => DiscountBase::Discountable, 'name' => 'BSS scholarship — half of discountable charges'],
+        ['percent' => 100, 'base' => DiscountBase::Total, 'name' => 'BSS scholarship — the whole bill'],
+    ];
 
     /** The seeded schedule's label, in one place: the create and the idempotence check read it. */
     private const DRIVE_SCHEDULE_LABEL = 'Drive term bill v1';
@@ -258,6 +290,41 @@ final class DriveFinanceStates
                 'sort_order' => 1,
                 'bank_account_id' => $accountUuid,
             ],
+            [
+                /*
+                 * MANDATORY **AND** NON-DISCOUNTABLE — the third line, and the ONLY thing on this
+                 * schedule that can tell the two discount bases apart on a bulk-run bill.
+                 *
+                 * WHY THE BUS LINE ABOVE CANNOT DO IT, which is the trap this item was added to close.
+                 * The bus is non-discountable, so a reader checking "is there a false `is_discountable`
+                 * on this schedule?" answers yes and stops. But it is also NOT MANDATORY, and
+                 * {@see FeeScheduleLineMapper::linesFor()} filters `is_mandatory = true` — so no bulk
+                 * run ever puts it on a bill. Before this item, EVERY invoice a run produced held
+                 * exactly one line, Tuition, and that line was discountable: `discountable` and `total`
+                 * therefore denoted the SAME money, and a resolver that ignored the base axis entirely
+                 * would have produced identical totals and passed. The fixture looked like it covered
+                 * the axis and could not.
+                 *
+                 * That is the degenerate-fixture failure one level in from the one the bus line already
+                 * guards: it is not enough for the SCHEDULE to be mixed, the BILLED SUBSET has to be.
+                 *
+                 * WITH IT, the arithmetic separates: a 50%-of-discountable award reduces 250,000 by
+                 * 125,000 and leaves the 30,000 levy untouched, while a 100%-of-total award reduces the
+                 * whole 280,000. Half of the total (140,000) and half of the discountable (125,000) are
+                 * different numbers, so an implementation that read the wrong base is visible on the
+                 * bill rather than invisible.
+                 *
+                 * A LEVY IS THE RIGHT SHAPE for this, not a contrivance: schools charge one, every
+                 * child pays it, and no scholarship discounts it.
+                 */
+                'description' => 'Development levy',
+                'amount_minor' => 3000000,
+                'currency' => Money::DEFAULT_CURRENCY,
+                'is_mandatory' => true,
+                'is_discountable' => false,
+                'sort_order' => 2,
+                'bank_account_id' => $accountUuid,
+            ],
         ]);
 
         $change = app(SubmitFeeScheduleChange::class)->handle(
@@ -295,6 +362,208 @@ final class DriveFinanceStates
     public function discountPolicyCount(int $schoolId): int
     {
         return DiscountPolicy::query()->where('school_id', $schoolId)->count();
+    }
+
+    /**
+     * THE PAIRS THE BSS AWARD IMPORT NEEDS — two active percentage policies per drive school, one on
+     * each base ({@see self::DRIVE_AWARD_POLICIES}).
+     *
+     * VERIFIED ABSENT BEFORE IT WAS ADDED. The fixture seeded exactly ONE discount policy per school
+     * ({@see self::ensureDiscountPolicy()}), so `/finance/discount-award-imports` would have opened on a
+     * catalog holding a single pair. That is not "thin", it is unable to show the screen's subject:
+     * the third column of that sheet is the base axis, and with one base seeded a resolver that ignored
+     * the column entirely would award every row and read as correct. Same class as the empty term
+     * select U1 commit 1 fixed, and invisible for the same reason — no test can run this seeder.
+     *
+     * THROUGH THE REAL SUBMIT-THEN-APPROVE PATH, exactly as {@see self::ensureDiscountPolicy()} is, and
+     * the reason is sharper here than anywhere else in this class: the import's whole design rests on
+     * {@see ApproveDiscountPolicyChange} being the catalog's single writer — a row of that sheet says
+     * WHICH approved figure a child sits on and never invents one. A fixture that wrote these rows
+     * directly would drive a screen whose central claim it had just falsified.
+     *
+     * `$maker` IS A PARAMETER for the same database fact as the two ensure* methods above: School B's
+     * bursar is a different user and maker ≠ checker is a CHECK, not a convention.
+     *
+     * Idempotent by name, like every ensure* here — a second call finds the rows.
+     *
+     * @return list<int> the policy ids, in DRIVE_AWARD_POLICIES order
+     */
+    public function ensureAwardPolicies(int $schoolId, ?User $maker = null): array
+    {
+        $ids = [];
+
+        foreach (self::DRIVE_AWARD_POLICIES as $spec) {
+            $existing = DiscountPolicy::query()
+                ->where('school_id', $schoolId)
+                ->where('name', $spec['name'])
+                ->first();
+
+            if ($existing !== null) {
+                $ids[] = (int) $existing->id;
+
+                continue;
+            }
+
+            $change = app(SubmitDiscountPolicyChange::class)->handle(
+                DiscountPolicyChangeKind::Create,
+                null,
+                [
+                    'name' => $spec['name'],
+                    'description' => 'Brookstone Scholarship Scheme — carried in from the accounts team\'s list.',
+                    'basis' => DiscountBasis::Percent->value,
+                    'percent' => $spec['percent'],
+                    // THE AXIS THE IMPORT DISCRIMINATES ON. Passed explicitly rather than defaulted:
+                    // `SubmitDiscountPolicyChange` reads `$terms['base'] ?? null`, and a null base on a
+                    // percentage policy is exactly the drift its own docblock records having been found
+                    // once — a fixture relying on the default would seed two policies on one base.
+                    'base' => $spec['base']->value,
+                    'requires_approval' => false,
+                ],
+                'BSS scheme for the coming session.',
+                $maker ?? $this->maker,
+            );
+
+            app(ApproveDiscountPolicyChange::class)->handle($change, $this->checker);
+
+            $ids[] = (int) DiscountPolicy::query()
+                ->where('school_id', $schoolId)
+                ->where('name', $spec['name'])
+                ->value('id');
+        }
+
+        return $ids;
+    }
+
+    /**
+     * DISTINCT (percent, base) PAIRS among ACTIVE PERCENTAGE policies — what the award-import screen
+     * actually reads, and a number `Discount policies` beside it cannot produce.
+     *
+     * A catalog of three could be three drafts, three fixed-amount policies, or three rows on ONE pair;
+     * all three render the screen's empty state or its ambiguity refusal while the policies column reads
+     * healthy. This counts the thing the screen groups by, through the same query shape the route uses.
+     *
+     * Reads the SCOPED model, so it must be called inside `ActiveSchool::runFor($schoolId, …)`.
+     */
+    public function awardPairCount(int $schoolId): int
+    {
+        return count($this->awardPairsFor($schoolId));
+    }
+
+    /**
+     * The pairs themselves, in the phrasing the sheet expects — `50% of DISCOUNTABLE CHARGES`.
+     *
+     * SPOKEN THROUGH {@see DiscountAwardImporter::appliesToLabel()}, not through the enum value. A
+     * driver types these into the third column of the file, and `discountable` is not a phrase that
+     * column accepts; printing the enum would hand somebody a value the reader refuses and produce a
+     * refusal that is the fixture's fault. This is the same function the screen's own prop and the
+     * import's own refusal messages read, so all three say one thing.
+     *
+     * Reads the SCOPED model, so it must be called inside `ActiveSchool::runFor($schoolId, …)`.
+     *
+     * @return list<string>
+     */
+    public function awardPairsFor(int $schoolId): array
+    {
+        return DiscountPolicy::query()
+            ->where('school_id', $schoolId)
+            ->where('status', DiscountPolicyStatus::Active->value)
+            ->where('basis', DiscountBasis::Percent->value)
+            ->whereNotNull('percent')
+            ->orderBy('base')
+            ->orderBy('percent')
+            ->get(['percent', 'base'])
+            ->map(fn (DiscountPolicy $policy) => $policy->percent.'% of '.DiscountAwardImporter::appliesToLabel($policy->base))
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Awards written so far. ZERO ON A FRESH FIXTURE AND PRINTED ANYWAY, exactly as `Guardians` is:
+     * it is the denominator the re-upload check is measured against, so "no second award row after a
+     * second upload" can be checked against where it started rather than asserted.
+     */
+    public function discountAwardCount(int $schoolId): int
+    {
+        return StudentDiscountAward::query()->where('school_id', $schoolId)->count();
+    }
+
+    /**
+     * PUT ONE STUDENT ON ONE ALREADY-APPROVED POLICY — the state the money drive bills against.
+     *
+     * VERIFIED ABSENT BEFORE IT WAS ADDED. The award-import drive left `Discount awards` at zero by
+     * design, and every award-bearing state in this fixture was made by a human uploading a sheet. That
+     * is fine for driving the IMPORT and useless for driving the MONEY: a run has to find an award
+     * already sitting on a placed student, from a bare seed, or the arithmetic drive begins with a
+     * manual step and is not reproducible.
+     *
+     * THROUGH THE REAL ACTION, which here is not a formality either — {@see AwardStudentDiscount} is
+     * where the gate lives. It re-checks `finance.discount-award.manage` against the actor on every
+     * call, refuses a student whose scholarship is not a discount scheme, and refuses a second award.
+     * A row write would skip all three and seed a state the application refuses to create.
+     *
+     * IT IS SEPARATE FROM THE IMPORT DRIVE'S HOLDERS ON PURPOSE, and that separation is the whole
+     * reason these students exist. That drive needs holders with NO award (its first upload must be
+     * able to report `awarded`); this one needs holders WITH one. The same student cannot be both, and
+     * a fixture that reused them would make whichever drive ran second measure the first one's
+     * leftovers. See DriveCastSeeder::seedCohortAwardHolders().
+     *
+     * Idempotent: a second call finds the existing award rather than meeting the Action's own refusal.
+     */
+    public function awardDiscount(int $studentId, int $policyId, User $actor): int
+    {
+        $existing = StudentDiscountAward::query()->where('student_id', $studentId)->first();
+
+        if ($existing !== null) {
+            return (int) $existing->id;
+        }
+
+        return (int) app(AwardStudentDiscount::class)->handle($studentId, $policyId, (int) $actor->id)->id;
+    }
+
+    /**
+     * How many of a COHORT hold a discount award — the count that decides whether the reduction arm of
+     * a bulk run can be driven at all.
+     *
+     * NOT DERIVABLE FROM `Discount awards`, which is School-wide and counts holders nobody has placed:
+     * the award-import drive's four holders are deliberately unenrolled, so a School could show four
+     * awards and bill none of them. And not derivable from `Cohort at slot`, which counts everybody at
+     * the coordinates regardless of what they hold. Zero here means every invoice the run raises is
+     * full price and the whole arithmetic drive is reading one number with nothing to compare it to.
+     *
+     * @param  list<int>  $studentIds  the cohort's student ids, resolved by the caller through the port
+     */
+    public function awardedAmong(array $studentIds): int
+    {
+        return $studentIds === [] ? 0 : StudentDiscountAward::query()->whereIn('student_id', $studentIds)->count();
+    }
+
+    /**
+     * The MANDATORY lines of the school's active drive schedule, as `description|amount|discountable`.
+     *
+     * Printed rather than counted, for the reason the admission numbers and the award pairs are: they
+     * are the INPUTS to every total the money drive reports by hand, and a drive that pastes an
+     * arithmetic check has to state what it computed from. Filtered to `is_mandatory` because that is
+     * what {@see FeeScheduleLineMapper::linesFor()} bills — the optional bus line is on the schedule
+     * and can never be on a run's invoice, and printing it here would invite it into the arithmetic.
+     *
+     * @return list<string>
+     */
+    public function billableScheduleLines(int $schoolId): array
+    {
+        return FeeItem::query()
+            ->whereHas('schedule', fn ($q) => $q->where('school_id', $schoolId)->where('label', self::DRIVE_SCHEDULE_LABEL))
+            ->where('is_mandatory', true)
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->get()
+            ->map(fn (FeeItem $item) => sprintf(
+                '%s %s (%s)',
+                $item->description,
+                $item->amount->format(),
+                $item->is_discountable ? 'discountable' : 'NOT discountable',
+            ))
+            ->all();
     }
 
     /** UNPAID — a charge, nothing settled. */
@@ -422,10 +691,18 @@ final class DriveFinanceStates
      */
     public function unallocatedRemainder(string $enrollmentUuid, int $schoolId, bool $intoSecondAccount): void
     {
-        // The mandatory item on the school's active drive schedule — the one with a destination.
+        // The FIRST mandatory item on the school's active drive schedule — the one with a destination.
+        //
+        // `orderBy('sort_order')` IS LOAD-BEARING AS OF THE THIRD FEE ITEM. This read was written when
+        // the schedule had exactly one mandatory line and `value('id')` was therefore unambiguous;
+        // adding the mandatory Development levy made it a bare "whichever row the engine returns
+        // first", which is not a decision anybody made. Ordered, it deterministically takes Tuition,
+        // which is what the line below is describing.
         $feeItemId = (int) FeeItem::query()
             ->whereHas('schedule', fn ($q) => $q->where('school_id', $schoolId)->where('label', self::DRIVE_SCHEDULE_LABEL))
             ->where('is_mandatory', true)
+            ->orderBy('sort_order')
+            ->orderBy('id')
             ->value('id');
 
         $termBill = app(GenerateInvoice::class)->handle(

@@ -187,6 +187,7 @@ enum PermissionGroup: string
                 Permission::FINANCE_OPENING_BALANCE_SUBMIT,
                 Permission::FINANCE_OPENING_BALANCE_APPROVE,
                 Permission::FINANCE_OPENING_BALANCE_REJECT,
+                Permission::FINANCE_DISCOUNT_AWARD_MANAGE,
             ],
             self::RBAC_ADMIN => [
                 Permission::RBAC_MANAGE_USERS,

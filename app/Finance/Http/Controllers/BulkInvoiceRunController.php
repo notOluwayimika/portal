@@ -12,6 +12,7 @@ use App\Finance\Jobs\ProcessBulkInvoiceRun;
 use App\Finance\Models\BulkInvoiceRun;
 use App\Finance\Models\BulkInvoiceRunRow;
 use App\Finance\Models\FeeSchedule;
+use App\Finance\Services\CohortScholarshipSchemes;
 use App\Finance\Services\FeeScheduleLineMapper;
 use App\Finance\Services\FeeScheduleLookup;
 use App\Finance\Services\InvoiceReadModel;
@@ -90,6 +91,7 @@ class BulkInvoiceRunController extends Controller
         private readonly FeeScheduleLookup $schedules,
         private readonly FeeScheduleLineMapper $mapper,
         private readonly InvoiceReadModel $invoices,
+        private readonly CohortScholarshipSchemes $schemes,
     ) {}
 
     /**
@@ -102,9 +104,37 @@ class BulkInvoiceRunController extends Controller
      *                     than an assertion on this screen. DISPLAY, NOT A CHOICE — `active` is the
      *                     only billable status, so a dropdown here would have one option in it.
      *   `cohort_size`     how many billable enrollments sit at these coordinates.
+     *   `sponsored`       how many of THAT cohort are on a sponsored scheme, whom an outside body
+     *                     pays off platform — the run records them and does not bill them.
      *   `already_billed`  how many of THAT cohort already carry an active scheduled invoice, i.e.
      *                     how many the run would record as `already_billed` and not bill again.
+     *   `would_bill`      how many invoices the run would actually raise. Cohort minus the two
+     *                     buckets above.
      *   `refusal`         the sentence the run would fail with, in the job's own words, or null.
+     *
+     * ─────────────────────────────────────────────────────────────────────────────────────────────
+     * `sponsored` AND `would_bill` EXIST BECAUSE THE SCREEN OVERSTATED THE ACT IT WAS ABOUT TO
+     * COMMIT. The 2026-08-28 money drive read "WOULD BE BILLED 5" over a cohort of five holding one
+     * sponsored student; the run billed four. On the drive fixture that is off by one. In school#1
+     * ninety-one students sit on one sponsored scheme, so the same arithmetic overstates by however
+     * many of them a run's cohort contains — a number too small to look broken and too large to be
+     * harmless, on the LAST HUMAN CHECK before hundreds of append-only invoices are raised.
+     *
+     * THE SUBTRACTION IS NOT THE WHOLE FIX. A bursar reading "520 to bill" learns less than one
+     * reading "520 to bill · 91 sponsored, billed by hand": the second says the exclusion happened,
+     * how big it was, and that it was deliberate, which is what lets them sanity-check the figure
+     * instead of trusting it. So the excluded count is REPORTED, not silently netted off.
+     *
+     * `sponsored` IS SETTLED BEFORE `already_billed`, IN THE JOB'S OWN ORDER. The run tests the
+     * scholarship scheme FIRST and writes a `sponsored` row without ever asking the invoice
+     * question, so a sponsored student who already carries an invoice is `sponsored` to the run and
+     * must be `sponsored` and not `already_billed` here. Counting them in both would make
+     * `would_bill` understate by exactly the overlap, which is the same defect pointed the other
+     * way.
+     *
+     * AND `would_bill` IS COMPUTED HERE, NOT ON THE CLIENT. The screen used to subtract
+     * `cohort_size - already_billed` in the render, which is a second place that has to learn about
+     * every new exclusion the job grows. It is the wire that carries the number now.
      *
      * `already_billed` IS N QUERIES OVER THE COHORT, AND THAT IS THE DELIBERATE CHOICE OF THE TWO.
      * {@see InvoiceReadModel::activeScheduledInvoiceIdForEnrollment()} is THE one PHP expression of
@@ -120,8 +150,16 @@ class BulkInvoiceRunController extends Controller
      * THE REFUSAL IS COMPUTED IN THE JOB'S ORDER, so it reports the FIRST thing that would stop the
      * run rather than the most visible one: no active schedule, then the mapper's five (foreign
      * schedule, disagreeing ambient context, non-billable status, no mandatory items, mixed
-     * currency). A preview naming a second-order refusal would send the operator to fix something
-     * that is not yet what is in the way.
+     * currency), then the cohort's own — a scholarship with no `kind`, or one this School cannot
+     * read. A preview naming a second-order refusal would send the operator to fix something that
+     * is not yet what is in the way.
+     *
+     * THE COHORT-LEVEL REFUSAL IS THIRD BECAUSE IT IS THIRD IN THE JOB, and it was missing from
+     * this screen entirely until the sponsored count was added — the same omission, one predicate
+     * over. Without it the preview offered a start button on a run that would fail before billing
+     * anybody, since {@see ProcessBulkInvoiceRun::process()} refuses the WHOLE
+     * run when any cohort scholarship is unconfigured rather than billing the students it is sure
+     * about.
      */
     public function preview(BulkInvoiceRunCoordinatesRequest $request): JsonResponse
     {
@@ -154,9 +192,36 @@ class BulkInvoiceRunController extends Controller
         // published still wants to know the cohort they are about to price.
         $cohort = $this->enrollments->listForCohort($schoolId, $termId, $classLevelId);
 
+        // THE JOB'S OWN SOURCE, NOT A SECOND COPY OF THE RULE. {@see CohortScholarshipSchemes} is
+        // what ProcessBulkInvoiceRun reads to decide who is sponsored and whether the cohort's
+        // scholarships refuse the run; this is the SECOND predicate this preview shares with the
+        // job rather than restates, for the reason recorded above `already_billed`. Re-deriving
+        // "sponsored" here would be that same disagreement waiting to happen, on the figure an
+        // operator uses to sanity-check a run they cannot undo.
+        //
+        // ITS PERFORMANCE ARGUMENT IS THE ONE ALREADY MADE FOR `already_billed`: this is two
+        // queries over one class level's cohort, on an operator's explicit click, and a slow
+        // preview is a cheaper problem than a preview that can be wrong.
+        $schemes = $this->schemes->forCohort($cohort, $schoolId);
+
+        // ONLY IF NOTHING EARLIER REFUSED — the job settles the schedule and the mapper before it
+        // ever reads the cohort, so reporting this one over a missing schedule would name the
+        // second thing in the way.
+        $refusal ??= $schemes['refusal'];
+
+        $sponsored = 0;
         $alreadyBilled = 0;
 
         foreach ($cohort as $enrollment) {
+            // SPONSORED FIRST, and `continue`, because that is the order the run applies: a
+            // sponsored student gets a `sponsored` row and the invoice question is never asked of
+            // them. Counting one student in both buckets would make `would_bill` understate.
+            if ($this->schemes->isSponsored($enrollment, $schemes['byStudent'])) {
+                $sponsored++;
+
+                continue;
+            }
+
             if ($this->invoices->activeScheduledInvoiceIdForEnrollment($enrollment->enrollmentId, $schoolId) !== null) {
                 $alreadyBilled++;
             }
@@ -178,7 +243,11 @@ class BulkInvoiceRunController extends Controller
             ] : null,
             'refusal' => $refusal,
             'cohort_size' => count($cohort),
+            'sponsored' => $sponsored,
             'already_billed' => $alreadyBilled,
+            // THE FIGURE THE CONFIRM BUTTON IS A SENTENCE ABOUT. Derived from the three counts
+            // beside it rather than counted a fourth time, so the four cannot disagree.
+            'would_bill' => count($cohort) - $sponsored - $alreadyBilled,
         ]);
     }
 

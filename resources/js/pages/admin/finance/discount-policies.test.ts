@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { rowSubject } from '@/lib/finance/approval-feeds';
+import { baseLabel, rowSubject } from '@/lib/finance/approval-feeds';
 import type { PendingApproval } from '@/types/finance';
 
 import { amendBase, changeTerms, valueLabel } from './discount-policies';
@@ -187,5 +187,35 @@ describe('baseLabel is the one copy of the two phrases', () => {
         expect(valueLabel(policy({ base: 'total' }))).toBe(
             '50% of the whole bill',
         );
+    });
+
+    /**
+     * THE HALF OF A DOUBLE PIN THAT LIVES ON THIS SIDE OF THE LANGUAGE BOUNDARY.
+     *
+     * These two phrases are no longer only a screen's wording. The BSS discount-award import's
+     * template offers them as the values of its `discount_applies_to` column — the same axis, in the
+     * template's case — so `DiscountAwardImporter::APPLIES_TO_CANONICAL` is
+     * `'DISCOUNTABLE CHARGES'` and `'THE WHOLE BILL'`, and the refusal messages read them into
+     * `'%d%% of %s'`, which is `baseLabel`'s own sentence.
+     *
+     * IT IS TWO PINS AND NOT ONE LINK, DELIBERATELY. A vitest arm could scrape that PHP constant and
+     * assert the two are derived from one another — real linkage, one source of truth. A regex over
+     * another language's source fails in the direction that costs most close to a cutover: a false red
+     * in `bin/quality` on a formatting change nobody made on purpose. So this arm pins the strings
+     * here, tests/Feature/Finance/DiscountAwardImportScreenTest.php pins them there, and a reword reds
+     * exactly one of the two and points at the other.
+     *
+     * WHAT THAT LEAVES OPEN, stated because a weaker form claimed as a strong one is worse than no
+     * form at all: nothing FORCES the two files to change together, so a reword that edited both pins
+     * without editing either renderer would pass. The pins catch the realistic mistake — one surface
+     * reworded, the other forgotten — and not a deliberate coordinated one.
+     *
+     * `baseLabel` DIRECTLY, not through `valueLabel`. The arm above goes through the screen's
+     * renderer, which is right for the ED's reading; this one is about the shared function that four
+     * surfaces now read, so it asks that function.
+     */
+    it('is the same wording the discount-award import template offers', () => {
+        expect(baseLabel('discountable')).toBe('of discountable charges');
+        expect(baseLabel('total')).toBe('of the whole bill');
     });
 });

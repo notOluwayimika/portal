@@ -9,8 +9,9 @@ being a technical question and becomes a milestone one** — at that point it es
 the milestone rather than being chased again, because an unanswered dependency past its date is a
 schedule fact, not a dependency.
 
-Three things. Only the first is a decision; the second needs an owner and a date; the third is
-information about your code that should not wait for my branch to merge.
+Four things. Only the first is a decision; the second needs an owner and a date; the third is
+information about your code that should not wait for my branch to merge; the fourth is a request for
+review time on a branch that is now on the critical path.
 
 ---
 
@@ -56,6 +57,10 @@ upstream of that — the message is the delivery, and the document is only the d
 > opening-balance terminal state — string comparisons under `utf8mb4_unicode_ci` where `'X' = 'x'`.
 > Reachability not established, so I've ticketed rather than claimed it. But it's your code and it's
 > on production. `2026_08_17_100000`'s own docblock already names this failure mode.
+>
+> **And one review ask:** `feat/gateway-transaction-table` is pushed — eight commits, two cold review
+> passes. Flagging it because the discrepancy report can't branch until the table is on `staging`, so
+> it's on my critical path rather than just in the queue. Whenever you have a window.
 
 ---
 
@@ -195,6 +200,28 @@ Full write-up, the scan, and why the scan under-reported its first time:
 `docs/handoff/tickets/finance-trigger-string-comparisons-are-case-insensitive.md`.
 
 ---
+
+## 4 · A review request, because it is now on the critical path rather than in the queue
+
+**`feat/gateway-transaction-table` is pushed** — eight commits, two cold review passes, both worked
+and re-mutated, plus the MySQL 5.7.23 measurements on `docs/mysql-5-7-measured`.
+
+**Why it is being flagged rather than left in the queue:** the §6 step 7 discrepancy report **cannot
+branch until that table is on `staging`.** A branch off `staging` cannot migrate a table that exists
+only on a feature branch, so the report cannot be written, tested, or committed. That was discovered
+by trying it, not predicted — and it converts the report from the "leaf that blocks nothing" it was
+described as into something gated on this review.
+
+So the chain is: **push → your review → merge → the report can start.** Pushing does not unblock it;
+merging does. Whenever you have a window — there is no need to rush the review itself, only to know
+that something is waiting on it.
+
+**And one thing it changes for you**, which is the reason it should not wait for the settlement work
+to land first: it is safer to review and merge BEFORE the settlement migration than after. The
+branch's `down()` was verified by re-deriving the rollback depth from `migrate:status` rather than
+trusting `--step=1`, and `--step=1` counts from the branch's latest migration — so once another
+migration sits on top, a rollback audit that trusts the step count reverts the wrong thing and passes
+having tested nothing. That is a documented bite in this repository, not a hypothetical.
 
 ## If the 31st passes with no answer
 

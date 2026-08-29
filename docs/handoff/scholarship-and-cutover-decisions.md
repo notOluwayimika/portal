@@ -331,37 +331,87 @@ makes the ruling breakable-with-a-red.
 
 ## 12. Fee items become a catalog with templates, not free text
 
-**Direction agreed 29 August.** Today a bursar can type an invoice line as free text. That is how the
-first version had to work, and it is the wrong long-run shape for three reasons that are already
-visible in this document:
+**THE DECISION IS SEGUN'S AND IT IS RECORDED FIRST, SEPARATELY FROM MY DISAGREEMENT, BECAUSE AN
+EARLIER REVISION OF THIS SECTION BLENDED THEM AND THAT IS HOW A DIRECTION QUIETLY BECOMES ITS
+ADVISOR'S OPINION.** Rev 4 of this document recorded "not before cutover" as though it were the
+agreed order. It was not. The order given was *"1. Mandatory Fee Catalog (Templates) First. 2.
+Immediate Survey Check. 3. Step 0 Execution"* — catalog first. The substitution was mine and was not
+flagged when it was made.
 
-1. **A free-text line has no fee item, so it has no `is_discountable`.** It falls to
-   `InvoiceLineSpec::$isDiscountable`, whose default is **`true`** (`app/Finance/DTOs/InvoiceLineSpec.php:74`).
-   A line nobody classified is inside the discount base. §3.3's axis one is settled *per fee schedule*
-   — a free-text line is outside that settlement entirely.
-2. **A free-text line has no destination** in the same sense. S11 made the destination required on
-   charge lines precisely because the catalog already knows each item's account and a human re-picking
-   it invites money landing in the wrong one.
-3. **Two bursars typing the same fee produce two different strings**, so nothing aggregates and every
-   report is a fuzzy match.
+### 12.1 The decision, 29 August
 
-**The order, and it is deliberate:**
+Fee items become a **school-level catalog of templates** that fee schedules draw from, replacing the
+free-text invoice line as the normal way a charge is described.
 
-1. **The mandatory fee catalog (templates) first.** Items exist as catalog rows carrying their own
-   `is_discountable`, `is_mandatory` and destination account, authored through the maker-checker
-   like every other governance act.
-2. **The survey check.** Ask Brookstone what they actually raise mid-term and how often, before
-   deciding how much of the free-text path survives. A catalog that cannot express a real charge
-   sends people straight back to free text.
-3. **Section 0 execution** — the cutover's own configuration, which is what the catalog is for.
+**Sequenced: Section 0 lands first on the existing schema to secure the 5 September cutover; the
+catalog is built immediately after the first bulk run.** Section 0's fee-item entries must be
+structured so they backfill into the catalog without re-entry — see 12.3, which is a condition of
+this decision rather than advice.
 
-**Not before cutover.** Section 0 of the runbook enters the term fee structure by hand into the
-schema as it stands; that path works and is the critical path. This is the shape the *next* term is
-entered with, and the survey happens alongside cutover rather than after it, because the answers
-change what gets built and Brookstone is available now.
+### 12.2 The disagreement, and how it was settled
 
-**Open until the survey returns:** whether free text is removed outright or kept behind an explicit
-"uncatalogued charge" affordance that forces the two fields the catalog would have supplied. Removing
-it outright is cleaner and is the reason to ask rather than assume — a school that cannot bill an
-unforeseen charge on the day will bill it some other way, off the platform, and that is worse than a
-messy line.
+I argued for deferring, on three grounds: Section 0 would otherwise wait on new code in the seven
+days before term; Finding 0 had just been rewritten to warn that four migrations landing in cutover
+week is the shape that goes wrong, and a catalog is a fifth; and the survey has not returned, so the
+catalog's scope is unknown and one that cannot express a real charge sends people back to free text.
+
+The counter-argument is real and was accepted: every mid-term charge raised between September and
+December is a free-text line with no fee item, so `is_discountable` falls to its default of **true**
+(`app/Finance/DTOs/InvoiceLineSpec.php:74`) and the line sits in the discount base unclassified.
+Waiting accrues that cost rather than avoiding it.
+
+Settled on the middle path: bill Term 1 on the current path, build the catalog while mid-term
+charges are still few. **The cost of waiting is a few weeks of free-text lines, not a term.**
+
+### 12.3 What "backfills without re-entry" requires, and why it is a data rule
+
+`finance_fee_items` (`2026_07_26_130001:31-44`) holds `description` as a plain `string`. **There is
+no unique index, no code, no slug.** A catalog backfill will have nothing to group by except that
+string, so two spellings of the same fee become two templates and there is no later repair that does
+not involve a human deciding which rows meant the same thing.
+
+Four rules for Section 0 entry. They cost nothing at typing time and cannot be recovered afterwards:
+
+1. **One spelling per item, everywhere.** Identical string across every class level and both
+   schools — same case, same spacing, no trailing space. `Tuition` and `Tuition Fee` are two
+   catalog items.
+2. **Never encode the class level or term in the description.** `JSS 1 Tuition` makes every level a
+   separate template. The level is already the schedule's own coordinate.
+3. **Same description ⇒ same `is_discountable`, same `is_mandatory`, same destination account.**
+   **Amounts may differ per class level; the flags must not.** A description whose flags disagree
+   across schedules cannot become one template. If two things genuinely differ in flags, they are
+   two items and need two names.
+4. **Type both schools from one agreed sheet**, not from each school's own list.
+
+### 12.4 The check, because a rule without one is wallpaper
+
+Run after entry and before approving anything. Any row returned is a description that will not
+backfill cleanly:
+
+```sql
+SELECT description,
+       COUNT(DISTINCT is_discountable) AS discountable_variants,
+       COUNT(DISTINCT is_mandatory)    AS mandatory_variants,
+       COUNT(*)                        AS rows_with_this_description
+FROM finance_fee_items
+GROUP BY description
+HAVING discountable_variants > 1 OR mandatory_variants > 1;
+```
+
+And, for spelling drift, which no query can judge for you:
+
+```sql
+SELECT DISTINCT description FROM finance_fee_items ORDER BY description;
+```
+
+Read that list for near-duplicates. `Transport` beside `Transport Fee` is the defect.
+
+**Both queries are UNVERIFIED — written from the schema, not run.** There are no fee items on
+production to run them against yet, which is the whole reason this section exists.
+
+### 12.5 Still open until the survey returns
+
+Whether free text is removed outright or kept behind an explicit "uncatalogued charge" affordance
+that forces the two fields the catalog would have supplied. Removing it outright is cleaner and is
+the reason to ask rather than assume — a school that cannot bill an unforeseen charge on the day
+bills it off the platform, and that is worse than a messy line.

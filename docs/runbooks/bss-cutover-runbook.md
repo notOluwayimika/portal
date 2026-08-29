@@ -91,6 +91,24 @@ On the drive fixture that one flag was worth **₦15,000 per child**.
 
 - [ ] Get the discountable / non-discountable split from Brookstone **in writing, before entry
       starts** — not sorted out during it.
+
+**Type from ONE sheet, and spell every item identically.** The fee catalog is being built straight
+after the first bulk run (`docs/handoff/scholarship-and-cutover-decisions.md` §12), and it will be
+backfilled from exactly what is entered here. `finance_fee_items.description` is a plain string with
+**no unique index and no code column**, so that string is the only thing the backfill can group by:
+`Tuition` and `Tuition Fee` become two catalog items and nobody can repair it afterwards without a
+human deciding which rows meant the same thing.
+
+- [ ] One spelling per item across **both schools and every class level** — same case, same spacing.
+- [ ] **No class level or term in the description.** `JSS 1 Tuition` makes every level its own
+      template; the level is already the schedule's coordinate.
+- [ ] Same description ⇒ same `is_discountable`, same `is_mandatory`, same destination account.
+      **Amounts may differ per level; the flags must not.** Two things that genuinely differ in
+      flags are two items and need two names.
+- [ ] After entry, run §12.4's two queries. Any description whose flags disagree, or any pair that
+      reads as the same fee spelled twice, is fixed **before** the schedule is submitted — a fee
+      item may only be written while its schedule is a draft (`2026_07_26_130001`, the parent-state
+      trigger), so after approval this is no longer a quick edit.
 - [ ] Read the ticked boxes back against that list before submitting for approval. Every row, not
       the ones somebody changed.
 - [ ] After approval, re-run the four counts above. Any remaining zero is still a blocker.

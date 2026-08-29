@@ -21,6 +21,9 @@
  *     25%  on discountable  →  −250,000    →  invoice 1,150,000
  *     no award              →       —      →  invoice 1,400,000
  *
+ *     §10  supplementary 150,000, no award applied   → invoice   150,000
+ *     §10  free text 200,000 inside the base, 50%    → invoice 1,000,000
+ *
  * WHAT MAKES THE FIXTURE DISCRIMINATING, stated because a fixture whose degrees of freedom have
  * collapsed passes for the wrong reason while its name stays true:
  *
@@ -35,6 +38,12 @@
  *   - THE 100%-ON-DISCOUNTABLE ARM ASSERTS 400,000, NOT "less than full". This is the case
  *     Brookstone described in words — "the child still pays for the bus" — and a >0 assertion would
  *     hold for any reduction at all.
+ *   - THE §11 ARM PROVES THE AWARD LIVE ON THE SAME STUDENT. An arm that only asserted "no reduction
+ *     on the supplementary" would stay green if awards stopped working entirely, and its name would
+ *     still read true.
+ *   - THE §12 ARM ASSERTS 1,000,000, NOT "less than full". 1,100,000 is what it reads if the
+ *     free-text line sits outside the base, and both are reductions — so a "< 1,600,000" assertion
+ *     cannot tell them apart.
  */
 
 use App\Enums\Permission as PermissionEnum;
@@ -280,10 +289,18 @@ function bdInvoice(Student $student): Invoice
  *
  * $claimed is what the CALLER asserts the base to be. It is the plant: the Action must overwrite it
  * from the cited policy, whichever way it points.
+ *
+ * $extraCharges IS THE ONE WAY PAST THE PARAGRAPH ABOVE, and it exists for exactly one caller: the
+ * §12 arm, which needs a free-text line precisely BECAUSE it collapses into the discountable base.
+ * It defaults to the empty list, so every arm that predates it maps the schedule and nothing else.
+ *
+ * @param  list<InvoiceLineSpec>  $extraCharges  appended AFTER the mapped schedule and BEFORE the
+ *                                               reduction spec, so they sit inside whatever base the
+ *                                               reduction resolves to
  */
-function bdGenerate(array $ctx, Student $student, DiscountPolicy $policy, ?DiscountBase $claimed): Invoice
+function bdGenerate(array $ctx, Student $student, DiscountPolicy $policy, ?DiscountBase $claimed, array $extraCharges = []): Invoice
 {
-    return ActiveSchool::runFor($ctx['school']->id, function () use ($ctx, $student, $policy, $claimed) {
+    return ActiveSchool::runFor($ctx['school']->id, function () use ($ctx, $student, $policy, $claimed, $extraCharges) {
         $schedule = FeeSchedule::query()
             ->where('term_id', $ctx['term']->id)
             ->where('class_level_id', $ctx['level']->id)
@@ -291,6 +308,7 @@ function bdGenerate(array $ctx, Student $student, DiscountPolicy $policy, ?Disco
             ->firstOrFail();
 
         $lines = app(FeeScheduleLineMapper::class)->linesFor($schedule, $ctx['school']->id);
+        $lines = array_merge($lines, $extraCharges);
         $lines[] = new InvoiceLineSpec(
             description: $policy->name,
             amount: null,
@@ -307,6 +325,57 @@ function bdGenerate(array $ctx, Student $student, DiscountPolicy $policy, ?Disco
             ->where('student_id', $student->id)->firstOrFail();
 
         return app(GenerateInvoice::class)->handle((string) $enrollment->uuid, $lines, InvoiceKind::Scheduled);
+    });
+}
+
+/**
+ * The one invoice of $kind raised for $student, with its lines.
+ *
+ * {@see bdInvoice()} asserts exactly ONE invoice per student and so cannot be used by an arm that
+ * raises a term bill AND a mid-term charge for the same child — which is the only shape that can
+ * prove §11, because the award has to be shown LIVE on the same student in the same test.
+ */
+function bdInvoiceOfKind(Student $student, InvoiceKind $kind): Invoice
+{
+    $invoices = Invoice::withoutGlobalScopes()
+        ->where('student_id', $student->id)
+        ->where('kind', $kind->value)
+        ->with('lines')
+        ->get();
+
+    expect($invoices)->toHaveCount(1, "student#{$student->id} should have exactly one {$kind->value} invoice");
+
+    return $invoices->first();
+}
+
+/**
+ * THE MID-TERM CHARGE: one free-text charge line, InvoiceKind::Supplementary, and NO reduction spec
+ * — the ad-hoc writer as the bursar's modal actually calls it (§11).
+ *
+ * NO DISCOUNT SPEC IS APPENDED, and that is the subject rather than a simplification. `GenerateInvoice`
+ * contains zero references to `StudentDiscountAward`: the ruling that a scholarship does not touch a
+ * mid-term charge holds because nothing in this path looks an award up. If it ever does, this helper's
+ * caller reds.
+ *
+ * IT CARRIES A DESTINATION because S11 requires one on every charge line — the free text is in the
+ * DESCRIPTION and the absent `feeItemId`, not in the account the money lands in.
+ */
+function bdSupplementary(array $ctx, Student $student): Invoice
+{
+    return ActiveSchool::runFor($ctx['school']->id, function () use ($ctx, $student) {
+        $enrollment = StudentCurriculum::withoutGlobalScopes()
+            ->where('student_id', $student->id)->firstOrFail();
+
+        return app(GenerateInvoice::class)->handle(
+            (string) $enrollment->uuid,
+            [new InvoiceLineSpec(
+                description: 'Mid-term excursion',
+                amount: Money::fromKobo(150000, 'NGN'),
+                feeItemId: null,
+                bankAccountId: testBankAccountId($ctx['school']->id),
+            )],
+            InvoiceKind::Supplementary,
+        );
     });
 }
 
@@ -1240,4 +1309,91 @@ it('changing an award writes the terms EITHER SIDE, even when the writer is not 
     expect((int) $entry->properties['old']['discount_policy_id'])->toBe($first->id)
         ->and((int) $entry->properties['attributes']['discount_policy_id'])->toBe($second->id)
         ->and((int) $entry->causer_id)->toBe($actor->id);
+});
+
+/*
+|--------------------------------------------------------------------------
+| 10 — the two rules that currently hold by ABSENCE
+|--------------------------------------------------------------------------
+|
+| Neither arm below tests code that was written for it. Both pin behaviour that falls out of what
+| GenerateInvoice does NOT do, and an absence is not a guard: the first would survive somebody
+| wiring awards into the ad-hoc path as a "bug fix", the second would survive the catalog work
+| changing the default silently. They are here so both changes have to be deliberate.
+|
+| WHAT THESE ARMS DO NOT COVER, and it is not hypothetical. Both call GenerateInvoice directly. The
+| ruling in §11 is about what the BURSAR'S MODAL does, and the modal reaches the Action through
+| GenerateInvoiceRequest and InvoiceController. An award lookup added in the CONTROLLER — resolving
+| the student's award and appending a reduction spec before the Action is ever called — would leave
+| both arms below GREEN while contradicting the decision they exist to protect. The Action is the
+| likelier place for such a change and is the one pinned here; the endpoint is not pinned, and saying
+| so is worth more than a second arm that would pin one more layer and imply the rest were covered.
+*/
+
+it('a supplementary invoice for an AWARDED student carries no reduction (decisions §11)', function () {
+    $ctx = bdSchool();
+    bdSchedule($ctx);
+
+    // ONE student, ONE active award, TWO invoices. Splitting this into two tests would destroy it:
+    // "assert no reduction line" passes trivially when the award was never valid, never applicable,
+    // or never created, and such an arm would stay green if awards stopped working entirely while
+    // its name still read true.
+    $awarded = bdStudent($ctx, bdScholarship($ctx));
+    bdAward($ctx, $awarded, bdPolicy($ctx, 50, DiscountBase::Discountable));
+
+    bdRun($ctx);
+
+    // THE AWARD IS LIVE — proven here, on this student, in this test. 1,000,000 + 400,000 − 500,000.
+    $scheduled = bdInvoiceOfKind($awarded, InvoiceKind::Scheduled);
+
+    expect($scheduled->total->toKobo())->toBe(900000)
+        ->and(bdReductions($scheduled))->toHaveCount(1)
+        ->and(bdReductions($scheduled)[0]->amount->toKobo())->toBe(-500000);
+
+    // AND THE MID-TERM CHARGE IGNORES IT. Brookstone, 29 August 2026: a scholarship reduces the
+    // term's school fees; a trip, a replacement item or a service taken up after the term bill went
+    // out is paid in full whatever the award.
+    bdSupplementary($ctx, $awarded);
+    $supplementary = bdInvoiceOfKind($awarded, InvoiceKind::Supplementary);
+
+    // 150,000 IS THE DISCRIMINATING FIGURE, not the empty reduction list. An award leaking into
+    // GenerateInvoice at 50% of the discountable charges would bill 75,000 here, and both
+    // `toBe([])` and a bare `> 0` would survive it.
+    expect($supplementary->total->toKobo())->toBe(150000)
+        ->and($supplementary->lines)->toHaveCount(1)
+        ->and(bdReductions($supplementary))->toBe([]);
+});
+
+it('PINNED, NOT ENDORSED: a free-text charge line lands INSIDE the discount base (decisions §12)', function () {
+    $ctx = bdSchool();
+    bdSchedule($ctx);
+    $student = bdStudent($ctx);
+
+    // `isDiscountable` IS DELIBERATELY NOT PASSED. It falls to InvoiceLineSpec::$isDiscountable,
+    // whose default is TRUE, and resolveDiscountability() leaves a line with no feeItemId alone —
+    // so a line nobody classified is inside the discount base. Passing the argument here would test
+    // this call site instead of the default, which is the thing §12 is about.
+    $freeText = new InvoiceLineSpec(
+        description: 'Mid-term excursion',
+        amount: Money::fromKobo(200000, 'NGN'),
+        feeItemId: null,
+        bankAccountId: testBankAccountId($ctx['school']->id),
+    );
+
+    $invoice = bdGenerate($ctx, $student, bdPolicy($ctx, 50, DiscountBase::Discountable), null, [$freeText]);
+
+    //     Tuition          1,000,000   discountable
+    //     Transport          400,000   NOT discountable
+    //     Free text          200,000   feeItemId null -> default TRUE
+    //     ────────────────────────────────────────────────────────────
+    //     discountable base = 1,200,000    50% -> −600,000
+    //     invoice total     = 1,600,000 − 600,000 = 1,000,000
+    //
+    // 1,100,000 is what this would read if the free-text line were OUTSIDE the base. THIS ARM
+    // RECORDS TODAY'S BEHAVIOUR; it does not bless it. The fee catalog (§12) is expected to change
+    // it — deliberately, with this red in front of whoever changes it — by giving every line an
+    // authored `is_discountable` instead of a default.
+    expect($invoice->total->toKobo())->toBe(1000000)
+        ->and(bdReductions($invoice))->toHaveCount(1)
+        ->and(bdReductions($invoice)[0]->amount->toKobo())->toBe(-600000);
 });

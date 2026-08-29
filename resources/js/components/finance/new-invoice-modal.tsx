@@ -819,16 +819,29 @@ export function NewInvoiceModal({
                                                  * bursar meets a 422 they cannot act on from this
                                                  * screen. The warning stays; only its reason
                                                  * moved.
+                                                 *
+                                                 * THIS BRANCH HAS NEVER BEEN DRIVEN. No school in
+                                                 * the drive fixture has zero bank accounts, so
+                                                 * `accounts.length === 0` is unreachable there and
+                                                 * the sentence below has not been read off a
+                                                 * screen by anybody. It is DERIVED — from the
+                                                 * 2026-08-29 drive's arm 1, where the 422 and the
+                                                 * non-write were both measured, plus the fact that
+                                                 * this branch renders no select at all, so there
+                                                 * is nothing on it the bursar could choose. That
+                                                 * is a sound derivation and it is not a rendering,
+                                                 * and it is the state production ships in:
+                                                 * docs/handoff/tickets/the-drive-fixture-cannot-reach-a-school-with-no-bank-account.md
                                                  */
                                                 <p className="text-xs text-amber-700 dark:text-amber-400">
                                                     This school has no active
-                                                    bank account, so this charge
-                                                    cannot record a destination.
-                                                    Add one on the Bank accounts
-                                                    screen first — an invoice
-                                                    raised without one can never
-                                                    say where its money was
-                                                    meant to go.
+                                                    bank account. Every charge
+                                                    line has to record where its
+                                                    money is going, so this
+                                                    invoice cannot be raised
+                                                    until one exists. Add one on
+                                                    the Bank accounts screen,
+                                                    then come back.
                                                 </p>
                                             ) : (
                                                 <select

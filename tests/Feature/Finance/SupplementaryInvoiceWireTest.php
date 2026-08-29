@@ -79,7 +79,7 @@ function swPost($test, School $school, User $admin, Student $student, array $pay
 {
     return $test->actingAs($admin)->withSession(['school_id' => $school->id])
         ->postJson("/api/v1/finance/students/{$student->uuid}/invoices", array_merge([
-            'lines' => [['description' => $what, 'amount_minor' => $minor, 'kind' => 'charge']],
+            'lines' => [['bank_account_id' => testBankAccountUuid(), 'description' => $what, 'amount_minor' => $minor, 'kind' => 'charge']],
         ], $payload));
 }
 
@@ -89,7 +89,7 @@ function swPostByEnrollment($test, School $school, User $admin, StudentCurriculu
     return $test->actingAs($admin)->withSession(['school_id' => $school->id])
         ->postJson('/api/v1/finance/invoices', array_merge([
             'enrollment_id' => $enrollment->uuid,
-            'lines' => [['description' => 'Tuition', 'amount_minor' => 150000, 'kind' => 'charge']],
+            'lines' => [['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 150000, 'kind' => 'charge']],
         ], $payload));
 }
 

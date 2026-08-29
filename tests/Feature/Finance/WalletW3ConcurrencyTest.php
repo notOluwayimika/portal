@@ -95,7 +95,7 @@ function w3ConcInvoice(School $school, Student $student, int $kobo): Invoice
 
     return app(GenerateInvoice::class)->handle(
         $enrollment->uuid,
-        [new InvoiceLineSpec('Tuition', Money::fromKobo($kobo))],
+        [new InvoiceLineSpec('Tuition', Money::fromKobo($kobo), bankAccountId: testBankAccountId())],
         InvoiceKind::Scheduled,
     );
 }

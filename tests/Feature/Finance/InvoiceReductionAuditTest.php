@@ -85,7 +85,7 @@ it('records the acting user on every invoice line (the audit hole closed)', func
         ->postJson('/api/v1/finance/invoices', [
             'enrollment_id' => $enrollment,
             'lines' => [
-                ['description' => 'Tuition', 'amount_minor' => 100000],
+                ['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000],
                 ['description' => 'Sibling discount', 'amount_minor' => -10000, 'kind' => 'discount', 'discount_policy_id' => $policy->uuid],
             ],
         ])->assertCreated();
@@ -113,7 +113,7 @@ it('refuses a reduction line without finance.invoice.reduction.apply — 403, an
         ->postJson('/api/v1/finance/invoices', [
             'enrollment_id' => $enrollment,
             'lines' => [
-                ['description' => 'Tuition', 'amount_minor' => 100000],
+                ['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000],
                 ['description' => 'Discount', 'amount_minor' => -10000, 'kind' => 'discount', 'discount_policy_id' => $policy->uuid],
             ],
         ])->assertStatus(403);
@@ -135,7 +135,7 @@ it('allows a CHARGE-ONLY invoice from the same generate-only user — scoped, no
     $this->actingAs($user)->withSession(['school_id' => $school->id])
         ->postJson('/api/v1/finance/invoices', [
             'enrollment_id' => $enrollment,
-            'lines' => [['description' => 'Tuition', 'amount_minor' => 100000]],
+            'lines' => [['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000]],
         ])->assertCreated();
 
     expect(DB::table('finance_invoices')->count())->toBe(1);

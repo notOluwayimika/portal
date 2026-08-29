@@ -38,6 +38,7 @@ use App\Finance\Models\StudentDiscountAward;
 use App\Finance\Models\VoidRequest;
 use App\Finance\Services\DiscountAwardImporter;
 use App\Models\User;
+use App\Support\ActiveSchool;
 use App\Support\Money;
 use App\Support\SchoolDay;
 
@@ -681,6 +682,15 @@ final class DriveFinanceStates
      *     beside a readable one is the point: a fixture with only readable destinations would make the
      *     screen look more certain than it is.
      *
+     * `unrecorded` SURVIVES S11 COMMIT 2, and the reason is worth stating because it looks as though
+     * it should not. That commit's trigger requires `finance_invoice_lines.bank_account_id` on every
+     * charge line, so the supplementary line below now carries one — but `unrecorded` is not a claim
+     * about that column. {@see AllocationProposal} still resolves an
+     * invoice's destination through `fee_item_id` (commit 1 left it there on purpose: switching the
+     * read would report every pre-column invoice `unrecorded`), and a free-text line has no fee item.
+     * So the state is still produced by executing a real action, and this fixture writes no row
+     * behind the writers' backs to get it.
+     *
      * `$intoSecondAccount` chooses which account the money lands in, and that is the whole mismatch
      * axis: false → the payment's account equals the fee item's, so the term bill reads `matches`;
      * true → they differ, and the cut brief's ordinary term-one occurrence is on screen. Both are
@@ -698,22 +708,42 @@ final class DriveFinanceStates
         // adding the mandatory Development levy made it a bare "whichever row the engine returns
         // first", which is not a decision anybody made. Ordered, it deterministically takes Tuition,
         // which is what the line below is describing.
-        $feeItemId = (int) FeeItem::query()
+        $feeItem = FeeItem::query()
             ->whereHas('schedule', fn ($q) => $q->where('school_id', $schoolId)->where('label', self::DRIVE_SCHEDULE_LABEL))
             ->where('is_mandatory', true)
             ->orderBy('sort_order')
             ->orderBy('id')
-            ->value('id');
+            ->firstOrFail();
+
+        $feeItemId = (int) $feeItem->id;
 
         $termBill = app(GenerateInvoice::class)->handle(
             $enrollmentUuid,
-            [new InvoiceLineSpec('Tuition', Money::fromKobo(150000), $feeItemId)],
+            // THE ITEM'S OWN ACCOUNT, read off the row rather than named here — exactly what
+            // {@see \App\Finance\Services\FeeScheduleLineMapper::linesFor()} writes for a
+            // schedule-derived line, so this hand-built spec stands for the same thing the bulk run
+            // would have produced. `finance_fee_items.bank_account_id` is NOT NULL, so there is no
+            // absent case. Naming the school's default account here instead would have made the
+            // mismatch axis below a coincidence rather than a property of the catalog.
+            [new InvoiceLineSpec('Tuition', Money::fromKobo(150000), $feeItemId, bankAccountId: (int) $feeItem->bank_account_id)],
             InvoiceKind::Scheduled,
         );
 
         app(GenerateInvoice::class)->handle(
             $enrollmentUuid,
-            [new InvoiceLineSpec('Field trip — coach and entry', Money::fromKobo(100000))],
+            // THE DESTINATION IS RECORDED AND THE LINE STILL RENDERS `unrecorded`, which is the
+            // whole reason this line survives S11 commit 2 unchanged in purpose. The two facts are
+            // about different columns: the trigger requires `bank_account_id` on a charge line, and
+            // {@see \App\Finance\Services\AllocationProposal} resolves an invoice's destination
+            // through `fee_item_id` — which this free-text line does not have and will not get.
+            // Commit 1 left that read on `fee_item_id` deliberately ("switching it now would report
+            // every pre-column invoice `unrecorded`"), so `unrecorded` stays reachable through a
+            // real action and this fixture does not have to plant a row behind the writers' backs.
+            [new InvoiceLineSpec(
+                'Field trip — coach and entry',
+                Money::fromKobo(100000),
+                bankAccountId: $this->ensureBankAccount($schoolId),
+            )],
             InvoiceKind::Supplementary,
         );
 
@@ -820,11 +850,34 @@ final class DriveFinanceStates
             ->count();
     }
 
+    /**
+     * The workhorse behind almost every settlement state below — one scheduled invoice, one
+     * free-text tuition charge.
+     *
+     * IT NAMES A DESTINATION AS OF S11 COMMIT 2, and it has to: `finance_invoice_lines_destination_guard`
+     * refuses a charge line with a NULL `bank_account_id`, so a fixture line without one no longer
+     * reaches the table at all. The account is the school's own drive account — the SAME row
+     * {@see ensureBankAccount()} makes and {@see bankAccountId()} resolves for the payments recorded
+     * against these invoices — because "the tuition money lands in the account the tuition money
+     * lands in" is the ordinary case, and a fixture whose charge and whose payment disagreed would
+     * render every settled invoice under the allocation screen's mismatch banner.
+     *
+     * THE SCHOOL COMES FROM THE AMBIENT CONTEXT, not from the invoice, and it cannot come from the
+     * invoice: the destination must be chosen BEFORE the line is written. Every caller runs inside
+     * `ActiveSchool::runFor($schoolId, …)` (SeedDriveFixture:155, :181), which is the same
+     * precondition {@see bankAccountCount()} already documents for its scoped reads — and
+     * GenerateInvoice refuses outright without a context, so there is no path here that has none.
+     * `getOrFail()` returns the School MODEL, hence `->id`.
+     */
     private function invoice(string $enrollmentUuid, int $kobo): Invoice
     {
         return app(GenerateInvoice::class)->handle(
             $enrollmentUuid,
-            [new InvoiceLineSpec('Tuition', Money::fromKobo($kobo))],
+            [new InvoiceLineSpec(
+                'Tuition',
+                Money::fromKobo($kobo),
+                bankAccountId: $this->ensureBankAccount(ActiveSchool::getOrFail()->id),
+            )],
             InvoiceKind::Scheduled,
         );
     }

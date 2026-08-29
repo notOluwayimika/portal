@@ -54,7 +54,7 @@ function walletSetup(): array
             'curriculum_id' => Curriculum::factory()->create(['school_id' => $school->id])->id,
             'status' => 'active',
         ])->uuid,
-        [new InvoiceLineSpec('Tuition', Money::fromKobo($kobo))],
+        [new InvoiceLineSpec('Tuition', Money::fromKobo($kobo), bankAccountId: testBankAccountId())],
         InvoiceKind::Scheduled,
     );
 

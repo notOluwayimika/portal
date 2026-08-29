@@ -67,7 +67,7 @@ function payAxisSetup(int $invoiceKobo, int $paymentKobo, string $paymentCurrenc
 
     $invoice = ActiveSchool::runFor($school->id, fn () => app(GenerateInvoice::class)->handle(
         $enrollment->uuid,
-        [new InvoiceLineSpec('Tuition', Money::fromKobo($invoiceKobo))],
+        [new InvoiceLineSpec('Tuition', Money::fromKobo($invoiceKobo), bankAccountId: testBankAccountId())],
         InvoiceKind::Scheduled,
     ));
 

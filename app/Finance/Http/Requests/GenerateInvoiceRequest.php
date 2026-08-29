@@ -2,6 +2,7 @@
 
 namespace App\Finance\Http\Requests;
 
+use App\Finance\Actions\GenerateInvoice;
 use App\Finance\DTOs\InvoiceLineSpec;
 use App\Finance\Enums\DiscountPolicyStatus;
 use App\Finance\Enums\FeeScheduleStatus;
@@ -409,6 +410,85 @@ class GenerateInvoiceRequest extends FormRequest
             if ($policy->requires_approval) {
                 $errors[$field][] = 'That discount policy needs approval for each use. Raise it as a credit note rather than an invoice line.';
             }
+        }
+
+        if ($errors !== []) {
+            throw ValidationException::withMessages($errors);
+        }
+    }
+
+    /**
+     * Refuse a CHARGE line that names no destination, as a FIELD error, before anything is written —
+     * S11 commit 2.
+     *
+     * THE TRIGGER IS THE AUTHORITY AND THIS IS NOT IT. `finance_invoice_lines_destination_guard`
+     * (`2026_08_29_120000`) is what makes "a charge line records its destination" true of a job, a
+     * raw insert, a migration or tinker. This method refuses the same thing one layer up for one
+     * reason only: TO SAY WHICH LINE.
+     *
+     * AND THE COST OF NOT HAVING IT IS WORSE HERE THAN IT WAS ON THE REDUCTION PATH — MEASURED, NOT
+     * ASSUMED. The reduction guard's SIGNAL is caught by
+     * {@see GenerateInvoice::isReductionGuardViolation()}, which matches 1644
+     * ONLY on messages containing "discount policy" — deliberately narrow, so it cannot swallow an
+     * unrelated 1644 from some other trigger — and turns it into a 422 carrying the trigger's own
+     * sentence. This guard's sentence does not contain that phrase, so its 1644 is NOT caught, and
+     * per bootstrap/app.php an uncaught 1644 falls through to a generic 500. Commenting the call out
+     * and posting a charge line with no destination was measured at 500, not 422. So without this
+     * method the operator is not merely given an error the form cannot attach to a field, as U8
+     * commit 3 found on the reduction path — they are given a server error.
+     *
+     * THE CATCH IS DELIBERATELY NOT WIDENED to cover this guard. Once this pre-check is in place the
+     * only way to reach that SIGNAL over HTTP is a writer that failed to set the field, which is a
+     * bug and should be loud; translating it into a business-rule 422 would dress a defect as a
+     * refusal the operator caused. {@see self::assertDiscountPoliciesUsable()} above is the shape
+     * this method copies — the same fix for the destination, written before the trigger ships
+     * rather than after.
+     *
+     * NON-CHARGE LINES ARE UNTOUCHED, matching the trigger exactly. A reduction sends money nowhere,
+     * and asking for a destination on one would be inventing the relationship the S11 design
+     * deliberately leaves unmodelled. A rule here that was stricter than the trigger would also be a
+     * rule with no database behind it, which is the wallpaper this project does not accept.
+     *
+     * WHY HERE AND NOT IN rules(). Same reason as the method above, and it is a consequence of
+     * `kind` being a per-line field: whether a destination is required depends on the line's KIND,
+     * which is resolved by {@see self::lineSpecs()} (an absent `kind` means `charge`). Reading the
+     * resolved specs is what makes "charge" mean the same thing here as it does to the trigger. It
+     * is also called from the controller AFTER `assertMayReduce`, so a principal without the
+     * reduction grant still gets its 403 first.
+     *
+     * TWO PASSES, SO TWO ROUND TRIPS IN THE WORST CASE, and that is stated rather than hidden: a
+     * request carrying BOTH an unusable policy on one line and no destination on another surfaces
+     * the policy errors first, and the destination errors only on resubmission. Merging the two
+     * collections would fix that and would also mean this rule's arms and the reduction pre-check's
+     * arms could no longer fail independently. Recorded as the cost of keeping each pre-check
+     * answerable for its own trigger.
+     *
+     * NO EXTRA QUERY. `lineSpecs()` is memoized and has already resolved every uuid → id, so this
+     * reads integers off specs that are in memory.
+     *
+     * @throws ValidationException
+     */
+    public function assertDestinationsChosen(): void
+    {
+        // The ORIGINAL wire keys, not 0..n-1 — same reason and same mechanism as the method above:
+        // lineSpecs() array_values()s its result, so a payload posting `lines` as a keyed object
+        // would otherwise be told about a line index that does not exist on the wire, and an error
+        // the form cannot find is the whole defect this method exists to avoid.
+        $keys = array_keys((array) $this->input('lines', []));
+
+        $errors = [];
+
+        foreach ($this->lineSpecs() as $index => $spec) {
+            if ($spec->isReduction() || $spec->bankAccountId !== null) {
+                continue;
+            }
+
+            // The likeliest mistake the modal can make, and the one it makes by default: an
+            // untouched <select> posts "", ConvertEmptyStringsToNull rewrites it to null before any
+            // rule can see it (documented on the `bank_account_id` rule above), and the spec
+            // therefore arrives here with no destination at all.
+            $errors['lines.'.($keys[$index] ?? $index).'.bank_account_id'][] =
+                'Select the account this charge is destined for. A charge line has to record where its money is going.';
         }
 
         if ($errors !== []) {

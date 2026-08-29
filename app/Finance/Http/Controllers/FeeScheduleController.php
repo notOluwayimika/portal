@@ -197,6 +197,25 @@ class FeeScheduleController extends Controller
                 'currency' => $item->amount->currency,
                 'kind' => 'charge',
                 'fee_item_id' => $item->uuid,
+                // THE DESTINATION, AS A UUID (S11 commit 2), and this key is REQUIRED for the round
+                // trip to survive rather than being a convenience. `finance_invoice_lines_destination_guard`
+                // refuses a charge line with no `bank_account_id`, and GenerateInvoiceRequest refuses it
+                // one layer up as a field error — so a prefill payload without this key posts back as a
+                // 422 on every line, which is precisely the contract FinancePrefillRoundTripTest exists
+                // to catch. Omitting it and letting the form ask would also be wrong on its own terms:
+                // the catalog ALREADY knows where each item's money goes (`finance_fee_items.bank_account_id`
+                // is NOT NULL), so making the bursar re-pick it per line invites a wrong pick that lands
+                // money in the wrong account — the same argument FeeScheduleResource:96-102 makes for the
+                // draft editor.
+                //
+                // The UUID, not the integer id, for the reason the line above already carries: the wire
+                // is uuid-only and `lines.*.bank_account_id` refuses an integer outright.
+                //
+                // `?->` is inert in practice — the column is NOT NULL — and is kept because
+                // `bankAccount` is a BelongsTo through SchoolScope, so PHP's type is nullable. A null
+                // here would post back as "no destination chosen" and be refused, which is the right
+                // failure for a row that somehow named an account this School cannot see.
+                'bank_account_id' => $item->bankAccount?->uuid,
                 // NEITHER FLAG IS VALIDATED BY GenerateInvoiceRequest, and that is not an oversight to be
                 // tidied by deleting them. They are ignored on the way back — extra keys pass validation
                 // and `lineSpecs()` never reads them — and they are here for the FORM, which pre-ticks

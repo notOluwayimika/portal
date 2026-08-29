@@ -73,7 +73,7 @@ function ikGenerate($test, School $school, User $admin, Student $student, string
     return $test->actingAs($admin)->withSession(['school_id' => $school->id])
         ->postJson("/api/v1/finance/students/{$student->uuid}/invoices", [
             'kind' => $kind,
-            'lines' => [['description' => $what, 'amount_minor' => $minor, 'kind' => 'charge']],
+            'lines' => [['bank_account_id' => testBankAccountUuid(), 'description' => $what, 'amount_minor' => $minor, 'kind' => 'charge']],
         ]);
 }
 

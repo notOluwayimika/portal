@@ -63,6 +63,14 @@ class InvoiceController extends Controller
         // authority and the backstop — see the method for what it does and does not cover.
         $request->assertDiscountPoliciesUsable();
 
+        // The DESTINATION, refused as a FIELD error before the Action's transaction (S11 commit 2).
+        // AFTER the policy pre-check rather than before it, and the order is arbitrary in the sense
+        // that neither refusal is more fundamental than the other — what is NOT arbitrary is that
+        // both run before the Action, so nothing is written by a request either one would refuse.
+        // The trigger `finance_invoice_lines_destination_guard` remains the authority and the
+        // backstop; this only names the field.
+        $request->assertDestinationsChosen();
+
         try {
             $invoice = $action->handle(
                 (string) $request->input('enrollment_id'),
@@ -145,6 +153,10 @@ class InvoiceController extends Controller
 
         // Reduction provenance as FIELD errors, still before the Action's transaction (U8 commit 3).
         $request->assertDiscountPoliciesUsable();
+
+        // And the destination (S11 commit 2) — the modal's own route, and the one the per-line
+        // select was built for. See generate() above for why both pre-checks sit here.
+        $request->assertDestinationsChosen();
 
         try {
             $invoice = $action->handle(

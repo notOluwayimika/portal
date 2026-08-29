@@ -1,8 +1,9 @@
 # TICKET — a negated expectation can be narrowed by an argument the gate does not count
 
-**Status:** open. **Zero live offenders in the tree today**, measured — which is why this is worth
-doing now rather than later: the arm ships with no baseline and no exemptions, exactly like the gate
-it extends, and that property expires the first time somebody writes one.
+**Status:** closed on `test/negated-expectation-narrowing-arm`. **Zero live offenders in the tree
+today**, measured before the change and again with the widened rule live — which is why this was
+worth doing now rather than later: the arm ships with no baseline and no exemptions, exactly like the
+gate it extends, and that property expires the first time somebody writes one.
 
 Found 29 August, during S11 commit 2 (`d3227c0`). It is the **third** instance of the
 vacuous-negation family, after `SuperAdminBypassExclusionTest` and `06e9054`'s
@@ -84,7 +85,9 @@ The comma is inside the subject expression. Not an offender.
 
 ## What closes it
 
-One change to `pnem_message_parameter_index()`. Instead of the index of `$message`, record the
+One change to the helper (now `pnem_matcher_thresholds()` — the old name said `$message` index and
+that is no longer what it returns, and a helper whose name is a lie is how the next reader
+mis-widens this). Instead of the index of `$message`, record the
 **threshold**: the lowest index `N` in `[1, M)` whose parameter is optional, or `M` where there is
 none. Flag when `$supplied > threshold`. Verified against all four shapes:
 
@@ -104,6 +107,39 @@ second defect, because it is not the one the gate currently explains: **the asse
 it reads, not merely missing its diagnostic.** Rewrite as `try`/`catch` + `$this->fail()`, which is
 what `tests/Feature/Finance/InvoiceLineDestinationRequiredTest.php:261` now does, with the trap
 recorded in a comment beside it.
+
+## What was done, and what was bite-proved
+
+Shipped on `test/negated-expectation-narrowing-arm`. Beyond the threshold itself, three things the
+change needed that the paragraph above does not:
+
+- **The helper was renamed** (see above). Its return is now
+  `array{message: int, threshold: int, parameter: string}` per matcher.
+- **The offender line prints BOTH positions, the defect's own first**, and labels each offender
+  `MESSAGE DISCARDED` or `NEGATION NARROWED`. The old sentence — "message is argument #N" — is
+  false about exactly the calls this change exists to catch, because for a narrowed negation the
+  offending argument sits at a different position than `$message`.
+- **A second vacuity precondition**, which the existing `count(...) > 0` does not cover: at least one
+  matcher must have a threshold **strictly below** its `$message` index. Without it, a reflection
+  that silently stopped finding optional parameters in that span would collapse every threshold onto
+  `$message`, leaving the gate byte-for-byte the old rule while the test's name claimed the wider
+  one. Bite-proved by forcing `isOptional()` to false: *"reflection found no Pest matcher with an
+  OPTIONAL parameter before its `$message` … Failed asserting that 0 is greater than 0."*
+- **The failure message separates the two defects and gives each its own rewrite**, because they are
+  not the same size: a lost message keeps the assertion, a narrowed negation does not.
+
+All four rows of the threshold table were bite-proved against the live gate, planting each call into
+a real test file and running it:
+
+| planted call | gate |
+| --- | --- |
+| `->not->toThrow(RuntimeException::class, 'a sentence')` | **red** — `NEGATION NARROWED (argument #2 lands in $exceptionMessage; message is argument #3, 2 supplied)` |
+| `->not->toEqualWithDelta(2.0, 0.01)` | **green** — `$delta` is required, correct code, must stay legal |
+| `->not->toEqualWithDelta(2.0, 0.01, 'm')` | **red** — `MESSAGE DISCARDED (argument #3 lands in $message; message is argument #3, 3 supplied)` |
+| the tree as it stands | **green** — 0 offenders |
+
+The `toEqualWithDelta` green is the load-bearing one. A widening that cannot produce it is the naive
+argument-count rule, and it would be reverted by the first person it blocked.
 
 ## The part that is not a rule
 

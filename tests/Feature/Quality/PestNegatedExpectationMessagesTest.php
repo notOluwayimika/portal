@@ -77,6 +77,37 @@
  * that is right by construction over the sample tells you nothing about the next file. So the hole
  * stays open and stays NAMED. An honest hole beats a rule that cannot be wrong.
  *
+ * A THIRD INSTANCE, A DIFFERENT SIZE AGAIN, AND THE REASON THIS GATE FLAGS AT A THRESHOLD RATHER
+ * THAN AT `$message`. S11 (`d3227c0`) wrote a destination-guard arm as
+ * `expect(fn () => …)->not->toThrow(QueryException::class, 'a waiver line with no destination was
+ * refused')`. Two arguments to a matcher whose `$message` sits at index 2, so the rule as first
+ * stated — `supplied > messageIndex` — did not flag it: `2 > 2` is false. The sentence landed in
+ * `?string $exceptionMessage = null`, and the arm therefore asserted "does not throw a QueryException
+ * whose message CONTAINS this sentence" — trivially true, because the real message is the trigger's
+ * own prose. Under a trigger deliberately mutated to refuse every waiver line the arm reported 8 of 8
+ * GREEN. Ticket:
+ * docs/handoff/tickets/a-negated-expectation-can-be-narrowed-by-an-argument-the-gate-does-not-count.md.
+ *
+ * THE THRESHOLD, AND `isOptional()` IS THE WHOLE DISCRIMINATOR. For each matcher: M is the index of
+ * the non-variadic `$message`; N is the lowest index in [1, M) whose parameter `isOptional()`; the
+ * threshold is N ?? M, and a call is a violation when it supplies MORE arguments than the threshold.
+ * An OPTIONAL parameter in that span is one the matcher is meaningful without, so supplying it under
+ * `->not->` can only make the negation WEAKER — it narrows what is being denied. A REQUIRED one is
+ * part of the assertion and narrows nothing. `toEqualWithDelta(mixed $expected, float $delta, string
+ * $message)` is the live counterexample: `$delta` is required, the threshold is 2, and
+ * `->not->toEqualWithDelta($x, 0.01)` stays legal — a naive "more than one argument under `->not->`"
+ * rule would flag it and would be wrong. There is no name list, no type check and nothing tuned to
+ * the matchers that carry this shape today (toThrow, toHaveKey, toHaveProperty), which is what keeps
+ * the widened rule in the same class as the original: derived from the vendor's signatures, zero
+ * exemptions.
+ *
+ * AND THE TWO DEFECTS ARE NOT THE SAME SIZE, so the failure message names which one each offender is.
+ * Past the `$message` index the defect is a LOST MESSAGE — the assertion still holds, the diagnostic
+ * is gone. Past the threshold but short of `$message` the defect is a NARROWED NEGATION — nothing is
+ * lost from the output, the assertion itself got smaller, and the arm goes on passing under exactly
+ * the mutation it was written to catch. That is the same class as the variadic-needle hole named
+ * above, reached by a different route: this one the vendor's signature CAN see.
+ *
  * IT READS SOURCE AS TEXT, and the precedent is already here twice — ApprovalsQueueFeedCoverageTest
  * and NotificationDeepLinkRouteTest — for the same reason each of them gives: the alternative is
  * nothing. It is a TEST rather than a bin/quality step because step 16 runs the suite, so the gate
@@ -87,28 +118,58 @@
 use Pest\Mixins\Expectation;
 
 /**
- * Every matcher Pest declares that takes a `$message`, and at which position.
+ * Every matcher Pest declares that takes a `$message`, with the argument count above which a
+ * `->not->` call on it is a violation.
  *
  * Derived by reflection, never listed here: a hardcoded list would be a second copy of the vendor's
  * signatures and would silently stop matching the day Pest adds a matcher or moves a parameter.
  *
- * @return array<string, int>
+ * NOT NAMED FOR `$message`, because the threshold is no longer that index. `message` is the index of
+ * the non-variadic `$message` parameter; `threshold` is the lowest index in [1, message) whose
+ * parameter is OPTIONAL, or `message` where there is none — see the docblock above for why
+ * `isOptional()` is the whole discriminator. `parameter` names the parameter the first offending
+ * argument lands in, so the failure message can point at the defect's own position instead of at the
+ * message position, which for a narrowed negation is a different argument entirely.
+ *
+ * @return array<string, array{message: int, threshold: int, parameter: string}>
  */
-function pnem_message_parameter_index(): array
+function pnem_matcher_thresholds(): array
 {
-    $index = [];
+    $thresholds = [];
 
     foreach ((new ReflectionClass(Expectation::class))->getMethods() as $method) {
-        foreach ($method->getParameters() as $position => $parameter) {
+        $parameters = $method->getParameters();
+        $message = null;
+
+        foreach ($parameters as $position => $parameter) {
             // A VARIADIC `$message` would not be a message — it would be one of several values the
             // matcher folds together — so the name alone is not the test.
             if ($parameter->getName() === 'message' && ! $parameter->isVariadic()) {
-                $index[$method->getName()] = $position;
+                $message = $position;
             }
         }
+
+        if ($message === null) {
+            continue;   // no `$message` parameter — nothing for `->not->` to discard
+        }
+
+        $threshold = $message;
+
+        for ($i = 1; $i < $message; $i++) {
+            if ($parameters[$i]->isOptional()) {
+                $threshold = $i;
+                break;
+            }
+        }
+
+        $thresholds[$method->getName()] = [
+            'message' => $message,
+            'threshold' => $threshold,
+            'parameter' => '$'.$parameters[$threshold]->getName(),
+        ];
     }
 
-    return $index;
+    return $thresholds;
 }
 
 /** Index of the next token that is neither whitespace nor a comment, or null past the end. */
@@ -126,7 +187,8 @@ function pnem_next(array $tokens, int $from): ?int
 }
 
 /**
- * Every violation in one file: `->not-><matcher>(…)` supplying an argument at the `$message` position.
+ * Every violation in one file: `->not-><matcher>(…)` supplying more arguments than the matcher's
+ * threshold — an argument at the `$message` position, or one narrowing the negation before it.
  *
  * PARSED, NOT MATCHED WITH A REGEX. Counting a call's arguments needs balanced brackets and needs to
  * know which brackets are code, and a regex for that wants more lookaround than one can read. Three
@@ -141,10 +203,10 @@ function pnem_next(array $tokens, int $from): ?int
  *     whose whole value is `[` — which `"[{$name}] …"` produces — is string CONTENT, and counting it
  *     leaves the depth permanently open so the scan runs past the closing parenthesis.
  *
- * @param  array<string, int>  $messageIndex
+ * @param  array<string, array{message: int, threshold: int, parameter: string}>  $thresholds
  * @return list<array{line: int, matcher: string, arguments: int}>
  */
-function pnem_violations(string $path, array $messageIndex): array
+function pnem_violations(string $path, array $thresholds): array
 {
     $tokens = token_get_all((string) file_get_contents($path));
     $count = count($tokens);
@@ -176,7 +238,7 @@ function pnem_violations(string $path, array $messageIndex): array
         }
 
         $matcher = $tokens[$name][1];
-        if (! isset($messageIndex[$matcher])) {
+        if (! isset($thresholds[$matcher])) {
             continue;   // no `$message` parameter — nothing for `->not->` to discard
         }
 
@@ -219,7 +281,7 @@ function pnem_violations(string $path, array $messageIndex): array
 
         $supplied = $hasArgument ? $commas + 1 : 0;
 
-        if ($supplied > $messageIndex[$matcher]) {
+        if ($supplied > $thresholds[$matcher]['threshold']) {
             $violations[] = ['line' => $tokens[$name][2], 'matcher' => $matcher, 'arguments' => $supplied];
         }
     }
@@ -227,15 +289,32 @@ function pnem_violations(string $path, array $messageIndex): array
     return $violations;
 }
 
-it('no test passes a custom failure message to a negated Pest expectation', function () {
-    $messageIndex = pnem_message_parameter_index();
+it('no test passes a custom failure message to a negated Pest expectation, or narrows one', function () {
+    $thresholds = pnem_matcher_thresholds();
     $root = dirname(__DIR__, 2);
 
     // Not vacuous: a reflection that found no message-bearing matcher would make every file clean.
-    expect(count($messageIndex))->toBeGreaterThan(
+    expect(count($thresholds))->toBeGreaterThan(
         0,
         'reflection found no Pest matcher declaring a $message parameter — the rule has no subject '
         .'and this test would pass over any tree at all.',
+    );
+
+    // The SECOND precondition, which the first does not cover. The narrowing half of this rule has a
+    // subject only where some matcher's threshold sits STRICTLY BELOW its $message index. If the
+    // reflection above silently stopped finding optional parameters in that span — a signature moved,
+    // a Pest upgrade, a bug in the loop — every threshold would collapse back onto its $message index,
+    // this gate would be byte-for-byte the OLD message-position-only rule, and nothing would go red
+    // while the test's name went on claiming the wider one. toThrow, toHaveKey and toHaveProperty are
+    // three such matchers today.
+    $narrowable = array_filter($thresholds, fn (array $matcher): bool => $matcher['threshold'] < $matcher['message']);
+
+    expect(count($narrowable))->toBeGreaterThan(
+        0,
+        'reflection found no Pest matcher with an OPTIONAL parameter before its $message, so every '
+        .'threshold equals its $message index and this gate has silently reverted to the narrower '
+        .'rule it replaced — blind to a negation narrowed by an argument that never reaches the '
+        .'$message position, which is the defect this arm was widened to catch.',
     );
 
     $offenders = [];
@@ -250,9 +329,18 @@ it('no test passes a custom failure message to a negated Pest expectation', func
         $scanned++;
         $relative = 'tests'.substr($file->getPathname(), strlen($root));
 
-        foreach (pnem_violations($file->getPathname(), $messageIndex) as $violation) {
-            $offenders[] = "{$relative}:{$violation['line']}  ->not->{$violation['matcher']}"
-                .' (message is argument #'.($messageIndex[$violation['matcher']] + 1)
+        foreach (pnem_violations($file->getPathname(), $thresholds) as $violation) {
+            $matcher = $thresholds[$violation['matcher']];
+
+            // BOTH POSITIONS, and the defect's own first. Printing only the message position was
+            // correct while the threshold WAS that index; for a narrowed negation the offending
+            // argument is at a different position and that sentence would be false about the very
+            // calls this rule exists to catch.
+            $defect = $violation['arguments'] > $matcher['message'] ? 'MESSAGE DISCARDED' : 'NEGATION NARROWED';
+
+            $offenders[] = "{$relative}:{$violation['line']}  ->not->{$violation['matcher']}  {$defect}"
+                .' (argument #'.($matcher['threshold'] + 1).' lands in '.$matcher['parameter']
+                .'; message is argument #'.($matcher['message'] + 1)
                 .", {$violation['arguments']} supplied)";
         }
     }
@@ -267,16 +355,39 @@ it('no test passes a custom failure message to a negated Pest expectation', func
     sort($offenders);
 
     expect($offenders)->toBe([],
-        'A custom failure message is passed to a NEGATED expectation. Pest discards it: `->not->` runs '
-        .'the positive assertion and, when that succeeds, throws its own sentence with every argument '
-        .'shortened-exported into it — so the message is never the failure description and is '
-        .'truncated in the middle. A reader who hits this assertion gets the exported value instead of '
-        ."the sentence you wrote.\n\n"
+        'A negated expectation is carrying an argument it should not. Each offender below is labelled '
+        .'with WHICH of two defects it is, because they are not the same size and they do not have '
+        ."the same fix.\n\n"
+
+        .'MESSAGE DISCARDED — the argument reaches the matcher\'s $message parameter. Pest discards '
+        .'it: `->not->` runs the positive assertion and, when that succeeds, throws its own sentence '
+        .'with every argument shortened-exported into it — so the message is never the failure '
+        .'description and is truncated in the middle. A reader who hits this assertion gets the '
+        .'exported value instead of the sentence you wrote. The ASSERTION still holds; only the '
+        ."diagnostic is gone.\n"
         .'Rewrite as a POSITIVE expectation that carries the message. `expect($x)->not->toBeNull($m)` '
         .'becomes `expect($x)->toBeInstanceOf(Foo::class, $m)` where the type is known, or '
         .'`expect($x !== null)->toBeTrue($m)` where it is not; '
         .'`expect($c)->not->toBeEmpty($m)` becomes `expect(count($c))->toBeGreaterThan(0, $m)`, '
         .'which also puts the 0 in the output. Prefer the rewrite that keeps the most information, not '
         ."the one that is easiest to apply.\n\n"
+
+        .'NEGATION NARROWED — the argument reaches an OPTIONAL parameter BEFORE $message, and this one '
+        .'is WORSE. Nothing is lost from the output; the assertion itself got smaller. '
+        .'`->not->toThrow(X::class, $sentence)` does not deny that an X was thrown — it denies only '
+        .'that an X was thrown whose message CONTAINS $sentence, which is trivially true whenever the '
+        .'real message is anything else. The arm still runs, still passes, and no longer tests what '
+        .'its name says: an S11 arm in this shape scored 8 of 8 green against a trigger deliberately '
+        ."mutated to refuse every row it was checking.\n"
+        .'For toThrow, drop the second argument where the exception class is the whole claim; where a '
+        .'specific message matters, write it as try/catch — call the closure, $this->fail($m) on the '
+        .'line after it for the must-throw direction, or $this->fail($m) inside the catch for the '
+        .'must-not-throw one — so the failure is unconditional and the sentence is yours. '
+        .'For the toHaveKey / toHaveProperty shape, assert POSITIVELY on what you actually mean: '
+        .'`->not->toHaveKey($k, $v)` claims only "no $k, OR a $k whose value is not $v". If you mean '
+        .'the key is absent, drop $v; if you mean the value differs, say so directly with '
+        .'`expect($subject[$k] ?? null)->not->toBe($v)`.'
+        ."\n\n"
+
         .implode("\n", $offenders));
 });

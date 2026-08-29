@@ -451,7 +451,7 @@ export default function BulkInvoiceRunsIndex({
                                 />
                             </div>
 
-                            <div className="flex items-end gap-2 sm:col-span-2">
+                            <div className="flex items-start gap-2 pt-6 sm:col-span-2">
                                 <Button
                                     size="sm"
                                     variant="outline"

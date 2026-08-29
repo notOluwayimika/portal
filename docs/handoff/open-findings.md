@@ -1,4 +1,4 @@
-# Open findings — 24–25 August 2026, revised 27 August
+# Open findings — 24–25 August 2026, revised 29 August
 
 Everything here was found while doing other work and is real. Each carries its evidence so nobody
 has to rediscover it.
@@ -31,6 +31,19 @@ An earlier revision of this list said seven and omitted four. A count in a docum
 rots the moment anyone adds to what it counts; if this list and `ls docs/handoff/tickets/` disagree,
 the directory is right.
 
+**Two more on 29 August**, and the registry now holds **111** files:
+
+- `a-negated-expectation-can-be-narrowed-by-an-argument-the-gate-does-not-count.md` — **CLOSED the
+  same day.** `->not->toThrow(X::class, $sentence)` puts the sentence in `$exceptionMessage`, not
+  `$message`, narrowing the negation instead of describing the failure; an S11 arm in that shape
+  scored 8 of 8 green against a trigger mutated to refuse the rows it named. The gate could not see
+  it — it flagged `supplied > messageIndex` and `toThrow` puts `$message` at index 2. Widened to an
+  `isOptional()`-derived threshold (`4ae7bee`). Third instance of the vacuous-negation family.
+- `the-drive-fixture-cannot-reach-a-school-with-no-bank-account.md` — **open**, and it inverts the
+  usual shape. The other instances were fixtures too EMPTY to drive a screen; this one is too
+  HEALTHY. `accounts.length === 0` in the new-invoice modal has never rendered in a browser, and it
+  is the state production is in.
+
 **`model-log-name-…` is the widest of the eleven and belongs beside finding 2 below.** Sixteen models
 declare `protected static $logName = 'academics'`, six declare `'results'` and one `'setup'`, and
 spatie reads none of them — `getLogNameToUse()` (`vendor/spatie/laravel-activitylog`) reads
@@ -48,45 +61,56 @@ twenty-four look deliberate.
 
 ---
 
-## 0. Staging is 44 commits and six migrations ahead of `main`
+## 0. Staging is 20 commits and four migrations ahead of `main`
 
 **Severity: this is the time-critical one, and it is operational rather than a defect. It is also
 the gate on everything else: nothing in the BSS scholarship chain can happen on production until
 this promotion does.**
 
-Measured 27 August, and it moved from 36 to **44** in the course of a single day's work — the count
-is a snapshot, not a fact. Re-measure before acting:
+**Re-measured 29 August, and the previous revision of this entry was wrong in BOTH directions —
+which is worse than being merely out of date.** It said 44 commits and six migrations and listed the
+six. Five of those six have since shipped to `main`; three that had not yet been written are now
+pending. Anyone planning the promotion off that list would have deployed the wrong set. Re-measure,
+always, and never read the list below as current either:
 
 ```
 git rev-list --count origin/main..origin/staging
 git diff --name-only origin/main origin/staging -- database/migrations
 ```
 
-Six migrations have not run on production:
+`main` is at `2488d35` (PR #321), `staging` at `bf073cc` (PR #328). Four migrations have not run on
+production:
 
 ```
 2026_08_21_110000_finance_allocation_not_over_payment_amount
-2026_08_26_100000_add_kind_to_scholarships_table
-2026_08_26_100001_bulk_invoice_run_rows_admit_sponsored
-2026_08_26_110000_add_base_to_finance_discount_policies
-2026_08_26_120000_create_finance_student_discount_awards
-2026_08_26_130000_add_base_to_finance_discount_policy_changes
+2026_08_29_100000_finance_school_settings_settlement_bank_account
+2026_08_29_110000_finance_invoice_lines_destination_account
+2026_08_29_120000_finance_invoice_lines_require_destination
 ```
 
-Five are the BSS/base-axis work and travel together. The sixth,
-`2026_08_21_110000_finance_allocation_not_over_payment_amount`, is older and has been sitting — a
-constraint that stops an allocation exceeding its payment, unshipped for six days.
+**The three S11 migrations travel together and are ORDERED.** `110000` adds
+`finance_invoice_lines.bank_account_id` as nullable and makes both writers populate it; `120000`
+makes it required on charge lines via `finance_invoice_lines_destination_guard`. Running `120000`
+without `110000` is not a partial deploy, it is a broken one. `100000` is the settlement-account
+column Developer 2 asked for and is independent of the other two.
 
-Term 1 goes `active` on 5 September and the first bulk run follows it. Every one of these has to be
-on production before that, and six migrations arriving in one promotion the week of cutover is the
-shape that goes wrong.
+**`120000` is BEFORE INSERT only, deliberately, and that is what makes it safe to run against
+existing data.** Every line issued before the column existed carries NULL legitimately; an UPDATE arm
+would retro-refuse all of them. Verified in the migration's own docblock and pinned by a test that
+reads the trigger set from `information_schema`.
 
-**Promote in more than one step, and put the allocation constraint in its own.** It is unrelated to
-the discount work and does not deserve to share its blast radius.
+**`2026_08_21_110000_finance_allocation_not_over_payment_amount` is still the odd one out, and it has
+now been sitting for eight days.** A constraint stopping an allocation from exceeding its payment,
+unrelated to the destination work, and it still does not deserve to share that blast radius.
 
-Corrected while measuring this: the current-term fallback fix (`c5fd93e`) and result-view logging
-(`3d9e37f`) are **already on `main`**. They had been carried on this list as pending for two days and
-were not.
+**Promote in more than one step**, and put the allocation constraint in its own.
+
+Term 1 goes `active` on 5 September and the first bulk run follows it.
+
+**And read `the-release-gate-cannot-see-a-pull-request-merge.md` before promoting.** Every merge to
+`main` in this repository's history has been a PR merge, which runs no local hook and reads no
+`.quality-promote-ok` stamp. A green `bin/quality` is the per-push floor; it is not the release
+gate, and the release gate has never run on a release that reached `main`.
 
 ---
 

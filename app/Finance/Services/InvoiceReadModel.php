@@ -114,7 +114,7 @@ final class InvoiceReadModel
      * rather than the rule. The other way in is a FRESHLY CREATED model that acquired allocations
      * inside its own transaction — `GenerateInvoice` writes carry-forward PaymentAllocation rows
      * against the invoice it has just created, through
-     * `applyCreditForward` (app/Finance/Actions/GenerateInvoice.php:576), and then returns that
+     * `applyCreditForward` (app/Finance/Actions/GenerateInvoice.php:583), and then returns that
      * model. That is the way in
      * that shipped: both generate routes answered their 201 through InvoiceResource without passing
      * here.

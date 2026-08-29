@@ -301,6 +301,13 @@ final class GenerateInvoice
                         // A reduction line carries the policy it cites; a charge carries null. The
                         // finance_invoice_lines_reduction_guard is the authority (proofs 11–14).
                         'discount_policy_id' => $line->discountPolicyId,
+                        // WHERE THIS LINE'S MONEY WAS DESTINED, snapshotted (S11). Written through
+                        // from the spec and NOT re-resolved from the fee item here, unlike
+                        // is_discountable two methods down — see InvoiceLineSpec::$bankAccountId for
+                        // why those two fields are opposites rather than an inconsistency. Null on a
+                        // reduction line, and null on a charge line whose writer did not supply one;
+                        // the S11 commit-2 trigger is what closes the second case.
+                        'bank_account_id' => $line->bankAccountId,
                         'created_by_user_id' => $actorId,
                     ]);
                 }

@@ -179,7 +179,7 @@ it('d — the generate 201 reports the credit it just applied, and does not offe
      *
      * GenerateInvoice applies carry-forward credit INSIDE its own transaction: it writes
      * PaymentAllocation rows against the invoice it has just created, through
-     * `applyCreditForward` (app/Finance/Actions/GenerateInvoice.php:576), and then returns
+     * `applyCreditForward` (app/Finance/Actions/GenerateInvoice.php:583), and then returns
      * `$invoice->load('lines')`. That model was built by `create()`, so it
      * carries no `allocated_minor` and no `approved_credit_minor`, and InvoiceSettlement reads an
      * absent aggregate as zero — see `for` (app/Finance/Services/InvoiceSettlement.php:51). Both

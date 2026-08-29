@@ -65,6 +65,16 @@ operational facts an agent needs most often.
   should.
 - Tests alone are not verification — migrate the dev DB and drive the affected
   flows in the running app.
+- **`Http::fake()` ACCUMULATES stubs and the FIRST match wins — re-faking the same URL inside a
+  loop does nothing.** Every iteration after the first receives the FIRST iteration's response, so a
+  `foreach` over six provider statuses tests one status six times and reports six passes. Bit once
+  (2026-08-29, the Paystack client) and it surfaced only by luck: the arm asserted the status was
+  echoed back UNCHANGED, so iteration two compared `abandoned` against `failed` and reded. Had it
+  asserted only the thing it was nominally about — `isSuccessful()` is false — all six would have
+  passed for the same wrong reason and the file would have read as covering six states while covering
+  one. **Use a dataset (`->with([...])`), not a loop**: each case gets its own fake, its own name and
+  its own failure. Same family as the entries around it — the framework does something reasonable and
+  your test lies about what it exercised.
 - **Spatie `sync*` is non-atomic and its events fire POST-write** (vendor-read
   7.4.1; paid for twice — C5 roles, C6 permissions). Wrap every role/permission
   sync in `DB::transaction`; the un-wrapped failure mode is detach-persisted,

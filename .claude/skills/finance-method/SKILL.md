@@ -58,6 +58,62 @@ is pinned by nothing.
 The corollary when you propose something: if your proposal is a convention with
 no mechanism, say so plainly rather than dressing it as a control.
 
+## A description is not a property — make the assertion executable
+
+The wallpaper rule above is about a **rule** with no mechanism. This is its neighbour and it is more
+common: a **description** — a name, a docblock, a comment — that asserts a property the artifact does
+not actually have. Nothing is missing; something is *claimed*. And because the claim reads as
+verification, it stops anyone looking.
+
+Nine instances across three days and four branches, which is why it earns a section:
+
+| The description | What it claimed | What was true |
+|---|---|---|
+| a CHECK-constraint test holding a NAMED list | "the replaced constraints are gone" | it could not see a constraint nobody named — two shipped under it |
+| a collation scanner | "no bare string comparisons" | it did not match `<=>`, the operator the defect used |
+| the same scanner | "these comparisons are defective" | it flagged `BINARY`-guarded ones — someone else's correct code |
+| a mutation summariser | "this mutant survived" | it read only Pest's `failures` bucket; the guard had killed it by throwing |
+| a test named *"a redaction may change the payload and nothing else"* | "nothing else" | its loop never varied `id` |
+| a migration docblock: *"the rule is written ONCE, in one place"* | one place | the update door had no copy of it at all |
+| a test fixture: *"holds exactly the abilities named"* | exactly those | its helper assigned `admin`, making every negative arm vacuous |
+| a 502 fixture, under a test named *"a 5xx is UNAVAILABLE"* | that the 5xx branch works | its body was not JSON, so it passed through the UNREADABLE-BODY branch — deleting the 5xx check left it green |
+| a docblock claiming the comparison is `hash_equals` and never `===` | timing-safety | true, and **unverifiable by any behavioural test** — see below |
+
+**Two of those rows are worse than the others and are worth separating out.**
+
+**The FIXTURE row is the one READING cannot catch.** That test was correct in structure, correct in
+its assertions, and correctly named — and it exercised the wrong branch because of the *data* it was
+handed. Nothing in the file was wrong. Only mutating the branch it claimed to cover revealed that
+deleting that branch changed nothing. **When two branches can produce the same refusal, the fixture
+has to make the one under test the only one that can fire** — the same discipline as giving a fixture
+enough distinguishing structure that the rule under test is the sole explanation for the pass, one
+level down, in the input rather than the arrangement.
+
+**The `hash_equals` row is the hardest form, because the claim is unverifiable IN PRINCIPLE.** Every
+other row is a description nobody had checked, and the fix is to write the missing test. Timing-safety
+is invisible to assertions about return values: swapping `hash_equals` for `===` changes no observable
+behaviour at all, so no behavioural test can exist to catch it. **When a property cannot be reached
+behaviourally, the artifact itself is the only available instrument — assert against the source.**
+That is the same move as reading trigger bodies back out of `information_schema` instead of trusting
+the migration that claims to install them: check the artifact, not the intent. It is crude, and crude
+beats a sentence with nothing behind it.
+
+**The fix has been identical every time: turn the sentence into an assertion.** Enumerate the exact
+set instead of naming members. Run the matcher over a case it must find *and* one it must not flag.
+Count errors as kills. Put the missing axis in the loop. Read both trigger bodies. Pin that the bare
+fixture holds no roles and no permissions.
+
+Two things follow for how you work:
+
+**When you write a description that quantifies — "only", "every", "exactly", "nothing else", "once",
+"in one place" — you have written a test.** Either make it executable in the same change or weaken
+the words to what you actually checked. A quantifier in prose is a claim nobody can fail.
+
+**The danger scales with the audience.** A wrong number in your own notes costs you an hour. The
+same number in a ticket names another team's correct work as defective, in the message asking them to
+trust your other findings — and a finding they discount is worse than one you never sent. Before a
+description leaves your hands, ask what it asserts and whether anything checks it.
+
 ## Re-derive; never carry a number
 
 Numbers go stale between sessions, between branches, and between the moment a

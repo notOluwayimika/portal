@@ -52,7 +52,7 @@ upstream of that — the message is the delivery, and the document is only the d
 > it stops being a technical question and becomes a milestone one.
 >
 > **Separately, worth your eyes this week:** while fixing a collation defect on my branch I found the
-> same class live in 24 existing finance triggers, two of which gate the credit-note ceiling and the
+> same class live in 29 comparisons across 10 existing finance triggers, two of which gate the credit-note ceiling and the
 > opening-balance terminal state — string comparisons under `utf8mb4_unicode_ci` where `'X' = 'x'`.
 > Reachability not established, so I've ticketed rather than claimed it. But it's your code and it's
 > on production. `2026_08_17_100000`'s own docblock already names this failure mode.
@@ -160,8 +160,10 @@ because it is live on production today and it is in your files.
 Every `finance_` table is `utf8mb4_unicode_ci`, which is case- **and accent**-insensitive. Inside a
 trigger that makes `NEW.status = 'approved'` match `'Approved'`, and `NEW.x <=> OLD.x` treat a
 case-variant rewrite as no change at all. Measured across all 58 finance triggers, restricted to
-string-typed columns (collation is meaningless on an integer): **48 such comparisons, 24 of them
-bare.**
+string-typed columns (collation is meaningless on an integer): **29 genuinely bare comparisons
+across 10 triggers.** (An earlier draft said 24 — my scanner missed the `<=>` operator and mis-flagged
+two `BINARY`-protected comparisons. The ticket records both corrections; take the list over the
+number.)
 
 Two are worth your eyes before the rest, because they are domain comparisons on a `status` column —
 the shape that admits a value the rest of the system believes impossible:
@@ -175,6 +177,14 @@ the shape that admits a value the rest of the system believes impossible:
 writer can put a case variant into `status` at all, which is an app-layer question these triggers do
 not answer. That is the first thing to measure, and note that a `status` column with no DB-level
 domain guard would itself be the finding.
+
+**And the obvious sweep does not work, which is worth knowing before you plan one.** The natural
+hypothesis is that these are the triggers written before `2026_07_26_140002` recorded the #95
+correction — a dated cohort, sweepable. Measured: **six of the ten are after that date, and one of
+them is `2026_07_26_140001`, the sibling committed the same day.** The correction was written into one
+migration's docblock and never propagated, not even next door. So the fix is not only the collation —
+it is a tripwire that makes the next omission fail a build, which is what makes this different from
+adding the clause and hoping.
 
 This class is already named in your own `2026_08_17_100000` docblock, for domain arms: *omitting
 `COLLATE utf8mb4_bin` from ONE arm is the quiet failure, because the other arms keep biting and the

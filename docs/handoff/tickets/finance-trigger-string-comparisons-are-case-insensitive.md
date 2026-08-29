@@ -25,6 +25,32 @@ arms keep biting and the guard still looks alive.* What the gateway branch adds 
 FREEZE and WRITE-ONCE arms too** — and those are the ones nobody thought of, because "immutable" reads
 as a stronger word than it is.
 
+## What was measured — and the count was WRONG TWICE before it was right
+
+**The number in the first version of this ticket was 24. It is 29, across 10 triggers.** Both
+corrections came from the scanner, not from the schema, and they are recorded because anyone re-running
+this must not reproduce them:
+
+1. **The first two scans did not match `<=>`.** They matched `=`, `<>` and `REGEXP`. `<=>` is the
+   null-safe operator every *freeze* arm uses — so the instrument was blind to the majority case of
+   the very defect it was written to find. Adding it moved 24 → 29.
+2. **They also flagged `BINARY`-protected comparisons as bare.** This repo has **two** protection
+   idioms, not one: `COLLATE utf8mb4_bin`, and the older `BINARY x` operator that
+   `2026_07_26_140002` uses (later migrations moved to `COLLATE` because `NOT REGEXP BINARY` errors
+   3995 on utf8mb4). A scan that only knows `COLLATE` reports a correctly-guarded comparison as a
+   defect. Two comparisons were false positives.
+
+The corrected sweep:
+
+```
+PROTECTED by COLLATE utf8mb4_bin : 7
+PROTECTED by the BINARY operator : 2   <-- invisible to the first scan
+GENUINELY BARE                   : 29  across 10 triggers
+```
+
+**Take the list below over the number**, and re-derive before acting: this is the fourth time on the
+originating branch that a measuring instrument turned out to be blind to the axis it was measuring.
+
 ## What was measured
 
 Scanned `information_schema.TRIGGERS.ACTION_STATEMENT` for every trigger on a `finance_` table,
@@ -33,15 +59,50 @@ an integer, and counting those inflates the number to 55 and buries the real one
 
 ```
 finance triggers scanned                      : 58
-STRING-column comparisons                     : 48
-  under COLLATE utf8mb4_bin                   : 24
-  BARE (case- and accent-insensitive)         : 24
+STRING-column comparisons (corrected sweep)   : 38
+  protected by COLLATE utf8mb4_bin            :  7
+  protected by the BINARY operator            :  2
+  GENUINELY BARE                              : 29  across 10 triggers
 ```
 
-**The scan under-reports, and the reason matters.** Its first version matched `=`, `<>` and `REGEXP`
-and **missed every `<=>`** — which is exactly the null-safe operator the freeze arms use, so it swept
-cleanly over the defect it was written to find. Same family as the mutation summariser that counted
-only Pest's `failures` bucket. Any re-run of this scan must match `<=>`.
+**Any re-run must match `<=>` AND know both protection idioms** — see the section above for what each
+omission cost. Same family as the mutation summariser that counted only Pest's `failures` bucket: an
+instrument blind to the axis it measures reports a clean sweep over the defect.
+
+## §2b · THE DATED-BOUNDARY HYPOTHESIS IS FALSE — measured, and what replaces it is worse
+
+A reasonable hypothesis on reading `2026_07_26_140002`: it records the superseded claim (§3.5 said
+kind/status are compared against **literals** so the hazard "does not arise") and its correction under
+#95, and writes `BINARY` on every comparison as a result. So perhaps the bare triggers are simply the
+ones written **before** 2026-07-26, and the fix is a dated sweep rather than a triage.
+
+**It does not hold.** Mapping each of the 10 bare-comparison triggers to the migration that last
+installs it:
+
+| Trigger | Installed by | Date |
+|---|---|---|
+| `finance_invoices_total_immutable` | `2026_07_19_120000_slice2_invoice_total_immutable…` | 07-19 |
+| `finance_void_requests_update_guard` | `2026_07_25_140000_create_finance_void_requests` | 07-25 |
+| `finance_credit_notes_insert_guard` | `2026_07_25_150000_finance_credit_note_requires_issued_invoice` | 07-25 |
+| `finance_credit_notes_update_guard` | `2026_07_25_150000_…` | 07-25 |
+| **`finance_discount_policy_changes_update_guard`** | **`2026_07_26_140001_create_finance_discount_policy_changes`** | **07-26** |
+| `finance_fee_schedule_changes_update_guard` | `2026_07_28_120000_create_finance_fee_schedule_changes` | 07-28 |
+| `finance_discount_policies_update_guard` | `2026_08_01_100000_fix_discount_policy_guard_message_quoting` | 08-01 |
+| `finance_opening_balance_batches_no_delete_posted` | `2026_08_08_110000_opening_balance_posting_state_and_guards` | 08-08 |
+| `finance_opening_balance_batches_no_unpost` | `2026_08_08_120000_opening_balance_posted_rows_are_terminal` | 08-08 |
+| `finance_bank_accounts_identity_immutable` | `2026_08_10_110000_finance_bank_account_identity_is_immutable` | 08-10 |
+
+**Six of the ten are AFTER the correction, and one of them is `140001` — the SIBLING of `140002`,
+committed the same day.** The migration that wrote the discipline down and the migration next to it
+that ignored it are adjacent files with adjacent timestamps.
+
+**So there is no dated boundary to sweep, and the real finding is worse than a stale cohort:** the #95
+correction was recorded in **one migration's docblock** and never became a rule. It did not propagate
+to its own sibling on the same day, nor to any of the five later ones. That is the wallpaper principle
+exactly — *a convention with no lint, gate or test behind it is a wish* — and it is why the fix for
+this ticket is not only "add the collation" but **the tripwire that makes the next omission fail a
+build.** One exists already for the two gateway tables; widening its table filter to `finance\_%` once
+these 29 are fixed is a one-line change and is the point of having written it that way.
 
 ## §3 · The two worth looking at first
 

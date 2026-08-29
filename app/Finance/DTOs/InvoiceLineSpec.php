@@ -16,6 +16,11 @@ use App\Support\Money;
  * feeItemId is nullable LOOKUP provenance only — where the price came from. It is
  * never load-bearing and never joined for display.
  *
+ * bankAccountId is the SNAPSHOT counterpart to it, and the difference is the reason
+ * both exist: feeItemId says which catalog row the price was taken from and can only
+ * ever be re-read against that row AS IT IS NOW; bankAccountId says where the money
+ * was destined AT ISSUE and never moves again (S11).
+ *
  * The caller supplies lines; it never supplies a total. The invoice total is
  * DERIVED from these specs inside the creating transaction (F6), which is what
  * makes "total = SUM(lines)" true by construction rather than by trust.
@@ -95,6 +100,43 @@ final readonly class InvoiceLineSpec
          * "unset and therefore suspect".
          */
         public ?DiscountBase $percentBase = null,
+        /**
+         * WHERE THIS LINE'S MONEY IS DESTINED (S11) — the integer `finance_bank_accounts.id`,
+         * snapshotted onto `finance_invoice_lines.bank_account_id` and frozen there by the
+         * append-only triggers.
+         *
+         * A SNAPSHOT, NEVER A LOOKUP, and that distinction is the whole reason the field exists.
+         * Before it, the only destination available was a live join through $feeItemId to
+         * `finance_fee_items.bank_account_id`, which answers "where would this go if it were billed
+         * today" rather than "where was it destined". Its larger failure is ABSENCE — $feeItemId is
+         * nullable with no foreign key, and every line the bursar's modal writes has none, so the
+         * join cannot answer for them at all. Its narrower one is mutation, which the fee-item
+         * parent-state trigger currently blocks through the application but not at the database; the
+         * S11 migration's docblock has that measured in full.
+         *
+         * NULL MEANS "NOT RECORDED", and it is legal on every kind at this layer. It is the intended
+         * permanent state of every line issued before the column existed, and the intended state of
+         * a REDUCTION line, which sends money nowhere. Whether a reduction should inherit the
+         * destination of the charge it offsets is unmodelled and unanswered; the S11 commit-2 trigger
+         * permits null on non-charge lines precisely so it can stay unanswered.
+         *
+         * IT IS A CHOSEN VALUE AND SO IT IS NOT RESOLVED SERVER-SIDE like $isDiscountable and
+         * $percentBase are. Those two are PROPERTIES of a catalog row, so a caller asserting them is
+         * a client deciding a server fact and GenerateInvoice overwrites them. This is the opposite:
+         * the mapper reads it off the item because that IS the item's destination, and the bursar's
+         * modal reads it off an operator who picked one. There is no single row to re-derive it from
+         * — a free-text line has no fee item at all — so overwriting it would mean inventing a
+         * default, which is the fabrication `2026_08_10_120000` refused this column for.
+         *
+         * WHAT KEEPS IT HONEST INSTEAD is the composite foreign key
+         * (bank_account_id, school_id) -> finance_bank_accounts (id, school_id): a line cannot name
+         * another School's account, whatever the caller claims. That is a database refusal, not a
+         * trusted one.
+         *
+         * Added AFTER the existing params, same discipline as $discountPolicyId, so the positional
+         * construction sites (DriveFinanceStates) keep working untouched.
+         */
+        public ?int $bankAccountId = null,
     ) {
         if ($percentBase !== null && $percent === null) {
             throw new \LogicException(
@@ -138,6 +180,12 @@ final readonly class InvoiceLineSpec
      * A copy of this spec with a concrete amount and no pending percentage (carrying the provenance
      * fields).
      *
+     * THE DESTINATION SURVIVES, unlike the base below. A percentage reduction resolves to a concrete
+     * naira figure; it does not acquire or lose a destination by being resolved. Carrying it is a
+     * no-op today — every percentage spec is a reduction and reductions carry null — and it is
+     * carried anyway so this method stays a faithful copy rather than a place a field silently dies
+     * if a destination-bearing percentage is ever constructed.
+     *
      * THE BASE IS DROPPED WITH THE PERCENTAGE, and it must be: they are one fact in two fields, and
      * a resolved spec keeping its base while losing its percent would violate this class's own
      * constructor invariant — it would throw here, inside the resolver, on the line it just resolved
@@ -145,7 +193,7 @@ final readonly class InvoiceLineSpec
      */
     public function withAmount(Money $amount): self
     {
-        return new self($this->description, $amount, $this->feeItemId, $this->kind, $this->note, null, $this->discountPolicyId, $this->isDiscountable, null);
+        return new self($this->description, $amount, $this->feeItemId, $this->kind, $this->note, null, $this->discountPolicyId, $this->isDiscountable, null, $this->bankAccountId);
     }
 
     /**
@@ -158,12 +206,12 @@ final readonly class InvoiceLineSpec
      */
     public function withPercentBase(?DiscountBase $percentBase): self
     {
-        return new self($this->description, $this->amount, $this->feeItemId, $this->kind, $this->note, $this->percent, $this->discountPolicyId, $this->isDiscountable, $percentBase);
+        return new self($this->description, $this->amount, $this->feeItemId, $this->kind, $this->note, $this->percent, $this->discountPolicyId, $this->isDiscountable, $percentBase, $this->bankAccountId);
     }
 
     /** A copy of this spec with the server-resolved discountability (S1 3.6 — never taken from the wire). */
     public function withDiscountable(bool $isDiscountable): self
     {
-        return new self($this->description, $this->amount, $this->feeItemId, $this->kind, $this->note, $this->percent, $this->discountPolicyId, $isDiscountable, $this->percentBase);
+        return new self($this->description, $this->amount, $this->feeItemId, $this->kind, $this->note, $this->percent, $this->discountPolicyId, $isDiscountable, $this->percentBase, $this->bankAccountId);
     }
 }

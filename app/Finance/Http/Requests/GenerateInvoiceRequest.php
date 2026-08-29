@@ -7,6 +7,7 @@ use App\Finance\Enums\DiscountPolicyStatus;
 use App\Finance\Enums\FeeScheduleStatus;
 use App\Finance\Enums\InvoiceKind;
 use App\Finance\Enums\InvoiceLineKind;
+use App\Finance\Models\BankAccount;
 use App\Finance\Models\DiscountPolicy;
 use App\Finance\Models\FeeItem;
 use App\Support\Money;
@@ -242,6 +243,57 @@ class GenerateInvoiceRequest extends FormRequest
                     }
                 },
             ],
+            // WHERE THIS LINE'S MONEY IS DESTINED (S11 commit 1). A CHOSEN value, which is what
+            // separates it from every other server-resolved field on this request and is why it is
+            // accepted from the wire at all: `is_discountable` and the percentage base are
+            // PROPERTIES of a catalog row, so a client asserting them is deciding a server fact and
+            // GenerateInvoice overwrites them. A destination has no single row to be re-derived
+            // from — a free-text line cites no fee item — so the operator picks it, exactly as they
+            // pick the policy behind a reduction.
+            //
+            // WHAT THEREFORE HAS TO HOLD IT HONEST IS THE DATABASE, and it does: the composite
+            // foreign key (bank_account_id, school_id) -> finance_bank_accounts (id, school_id)
+            // makes a cross-School pair non-existent in the parent, so a forged id is refused 1452
+            // whatever this rule does. The rule below is the same convenience-over-a-real-guard
+            // arrangement the two fields above document: it turns an unusable id into a 422 naming
+            // the field instead of a 500 from a foreign-key violation.
+            //
+            // NULLABLE HERE, AND THAT IS COMMIT 1 OF 2 RATHER THAN A GAP. The column is nullable and
+            // nothing yet requires a destination on a charge line; the S11 commit-2 trigger is what
+            // does, and it lands after both writers populate the field, because a trigger ahead of
+            // its writers breaks this very modal the moment it ships. Two consequences until then,
+            // both intended: an unselected <select> posts "", ConvertEmptyStringsToNull rewrites it
+            // to null before any rule here can see it (documented at length on the two fields
+            // above), and the line is written with no recorded destination; and a REDUCTION line is
+            // simply not sent one, because it sends money nowhere.
+            //
+            // NOT FILTERED TO ACTIVE ACCOUNTS, deliberately, and this is the one place the omission
+            // could be read as an oversight. `deactivated_at` withdraws an account from CHOICE
+            // (BankAccount::scopeActive's own comment) — the modal narrows its list the way
+            // selectablePolicies does — but nothing in the schema says a deactivated account may not
+            // be billed to, and `finance_fee_items.bank_account_id` carries no such predicate
+            // either, so a fee item may already point at one and the mapper will snapshot it.
+            // Refusing here would make the two writers disagree about the same account, and would be
+            // this rule inventing a lifecycle rule nobody has stated. Recorded rather than closed.
+            //
+            // A UUID, read through the SCOPED model — same shape and same two reasons as
+            // `fee_item_id` above: the integer primary key never crosses the wire (U8 commit 1), and
+            // SchoolScope rather than a hand-rolled `where('school_id', …)` is what does the
+            // scoping, so this cannot become a second implementation of the one isolation boundary.
+            // One message for both outcomes, because telling a caller that an id they cannot see
+            // nevertheless exists is itself the leak.
+            'lines.*.bank_account_id' => [
+                'sometimes',
+                'nullable',
+                'bail',
+                'string',
+                'uuid',
+                function (string $attribute, mixed $value, Closure $fail): void {
+                    if (BankAccount::query()->where('uuid', (string) $value)->doesntExist()) {
+                        $fail('The selected :attribute is invalid.');
+                    }
+                },
+            ],
         ];
     }
 
@@ -464,6 +516,14 @@ class GenerateInvoiceRequest extends FormRequest
                     ? self::idForUuid(DiscountPolicy::query(), (string) $line['discount_policy_id'])
                     : null,
                 // isDiscountable is NOT read from the wire — the Action resolves it from the fee item.
+                // The DESTINATION is, and that is the deliberate asymmetry: see the rule above, and
+                // InvoiceLineSpec::$bankAccountId, for why a chosen value is not a server-resolved
+                // one. Same uuid → integer translation as the two ids above; null here means the
+                // field was absent, null, or an empty string the global middleware rewrote, never
+                // that a validated uuid failed to resolve.
+                bankAccountId: isset($line['bank_account_id'])
+                    ? self::idForUuid(BankAccount::query(), (string) $line['bank_account_id'])
+                    : null,
             ),
             $lines,
         ));

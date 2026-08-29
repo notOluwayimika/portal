@@ -207,13 +207,18 @@ export function patchForKind(kind: DraftLine['kind']): Partial<DraftLine> {
  * the kind select.
  *
  * AND `''` IS SENT AS IS HERE TOO, for the same reason and with a DIFFERENT consequence that must
- * not be glossed. The empty string becomes null before any rule sees it, and in THIS commit the
- * server accepts that: the column is nullable and the line is written with no recorded destination.
- * Nothing refuses it yet. The S11 commit-2 trigger is what makes an unselected destination on a
- * charge line a refusal, and it lands after this so the modal is already sending the field when it
- * does. Until then an unselected select produces a permanently destination-less line on an
- * append-only table, which is why the control below says so in words rather than relying on the
- * operator noticing an empty dropdown.
+ * not be glossed. The empty string becomes null before any rule sees it, and the request is then
+ * REFUSED: GenerateInvoiceRequest::assertDestinationsChosen() (S11 commit 2) answers 422 with a
+ * FIELD error keyed to `lines.N.bank_account_id` on the ORIGINAL wire index, and
+ * finance_invoice_lines_destination_guard (2026_08_29_120000) is the authority behind it. Sending
+ * `''` rather than refusing client-side is exactly what makes that refusal reach the operator as a
+ * ROW NUMBER — the server cannot name a line it was never sent.
+ *
+ * MEASURED, not read (drive 2026-08-29, docs/handoff/drives/2026-08-29-new-invoice-destination):
+ * one charge line with the select untouched came back "Line 1 — Select the account this charge is
+ * destined for. A charge line has to record where its money is going."; the form kept every value
+ * the bursar had typed; and nothing was written — the refusal lands before the Action's
+ * transaction, so the append-only table is never reached.
  */
 export function wireLine(
     line: DraftLine,
@@ -315,9 +320,11 @@ function errorLinesFrom(data: unknown): string[] {
  * — not looked up later through the mutable fee catalog, which could only ever answer "where would
  * this go today". The catalog is fetched on open and narrowed by selectableBankAccounts; the select
  * appears only on a charge line and the id is CLEARED when a line flips to a reduction. NOTHING IN
- * THIS FILE REFUSES A MISSING ONE — in this commit the column is nullable and an unselected
- * destination is accepted and written as null, which is why the empty-catalog branch says what that
- * costs. The S11 commit-2 trigger is what makes it a refusal.
+ * THIS FILE REFUSES A MISSING ONE, AND NOTHING HERE NEEDS TO: since S11 commit 2 the request is
+ * refused server-side — assertDestinationsChosen() names EVERY offending line in one response and
+ * finance_invoice_lines_destination_guard is the authority behind it. What this file still owes the
+ * operator is the ROW NUMBER, and errorLinesFrom() is where that is supplied. The empty-catalog
+ * branch below is a separate statement about a school that can offer no destination at all.
  *
  * A REDUCTION CITES A POLICY (U8 commit 4). Until this commit the modal offered `waiver` and
  * `discount` in its Kind select and sent no `discount_policy_id` at all, so every reduction the
@@ -766,8 +773,10 @@ export function NewInvoiceModal({
                                      *
                                      * A NATIVE <select> for the same reason the policy one below is:
                                      * Radix's SelectItem cannot take `value=""`, and unselected is a
-                                     * reachable state here — in THIS commit it is even an accepted
-                                     * one.
+                                     * reachable state here. Since S11 commit 2 it is a REFUSED one,
+                                     * which is why it must stay REACHABLE: the empty value is what
+                                     * the server reads as "no destination on this line", and it is
+                                     * what lets the 422 name the row.
                                      */}
                                     {line.kind === 'charge' && (
                                         <div className="pl-1">
@@ -793,15 +802,23 @@ export function NewInvoiceModal({
                                             ) : accounts.length === 0 ? (
                                                 /*
                                                  * NEVER AN EMPTY SELECT — same rule as the policy
-                                                 * block below, and here the sentence also has to
-                                                 * carry the consequence, because unlike a missing
-                                                 * policy a missing destination does NOT stop the
-                                                 * submit in this commit. The invoice is raised and
-                                                 * the line is permanently silent about where its
-                                                 * money went, on a table that can never be
-                                                 * corrected. Saying so is the only thing standing
-                                                 * between the operator and that outcome until the
-                                                 * S11 commit-2 trigger refuses it outright.
+                                                 * block below, and here the sentence still has to
+                                                 * carry the consequence. THE CONSEQUENCE CHANGED
+                                                 * WITH S11 COMMIT 2 and the new one is not the old
+                                                 * one weakened. It is no longer "nothing refuses
+                                                 * this, so the invoice is raised and the line is
+                                                 * permanently silent about where its money went":
+                                                 * assertDestinationsChosen() refuses it and
+                                                 * finance_invoice_lines_destination_guard is the
+                                                 * authority. It is that the invoice cannot be
+                                                 * raised AT ALL until this school has an active
+                                                 * account — every charge line must name a
+                                                 * destination, this select is the only place to
+                                                 * choose one, and a school with none can offer
+                                                 * nothing to choose. Without this sentence the
+                                                 * bursar meets a 422 they cannot act on from this
+                                                 * screen. The warning stays; only its reason
+                                                 * moved.
                                                  */
                                                 <p className="text-xs text-amber-700 dark:text-amber-400">
                                                     This school has no active

@@ -25,7 +25,7 @@
 Done, with five design deviations named below (the fourth is a correction of my own first version;
 the fifth is the retention decision). Step 2 of the payments advisory §6 — the gateway
 transaction table, its status enum and its migration — is implemented, shape-verified from
-`information_schema`, and bite-proven with twenty watched reds, and applied against a real MySQL 5.7.23.
+`information_schema`, and bite-proven with twenty-two watched reds, and applied against a real MySQL 5.7.23.
 
 Base: `origin/staging` @ `6f54a18a`. Branch: `feat/gateway-transaction-table`. Shape: five new
 files (one enum, two models, one migration, one test file) plus this report. Five commits — settlement data,
@@ -211,7 +211,7 @@ bites at step 4.
 | `app/Finance/Enums/GatewayTransactionStatus.php` | 72 | `pending` · `success` · `failed` · `abandoned`. A reader of the trigger's domain, not a second copy of it. |
 | `app/Finance/Models/GatewayTransaction.php` | — | `AddUuid` + `BelongsToSchool`, `MoneyCast` on `amount` **and `fee`**, enum cast on `status`, `invoice()` / `payment()` / `events()`. |
 | `app/Finance/Models/GatewayTransactionEvent.php` | — | The raw delivery. Append-only at the database; `payload` cast to array. |
-| `tests/Feature/Finance/GatewayTransactionSchemaTest.php` | — | 26 tests, 132 assertions. Every write is raw `DB::table`, never the model — the guards under test are the database's. |
+| `tests/Feature/Finance/GatewayTransactionSchemaTest.php` | — | 26 tests, 135 assertions. Every write is raw `DB::table`, never the model — the guards under test are the database's. |
 
 Re-derive the line counts from the tree rather than from this table; they moved with the second
 commit and a carried number is how a stale fact becomes a confident assertion.
@@ -302,8 +302,9 @@ order.
 
 ### THE RECURRING CLASS ON THIS BRANCH: an instrument blind to the axis under test
 
-Three times, in one branch, and they are not three anecdotes — they are one failure mode wearing
-three costumes. Naming it here because the next one will wear a fourth.
+Four times, in one branch, and they are not four anecdotes — they are one failure mode wearing four
+costumes. The fourth arrived *after* this section was written, in the sweep for the very class the
+section describes, which is the most honest argument for naming it that could be asked for.
 
 > **A measuring instrument that cannot see the axis it is measuring reports a clean sweep over the
 > defect, and a clean sweep is indistinguishable from an absence of defects.**
@@ -313,12 +314,33 @@ three costumes. Naming it here because the next one will wear a fourth.
 | `CheckConstraintsAsTriggersTest`, named lists | a CHECK nobody thought to name | green, while two shipped |
 | the Class B scanner, first version | the `<=>` operator — the one the freeze arms use | zero offenders, over two live defects |
 | the immutability test loops | value **equality** (only value *identity* was varied) | green, against a guard comparing case-insensitively |
+| the finance-wide collation sweep | `<=>` **and** the `BINARY` idiom — in opposite directions | a plausible 24, against a true 29 |
 
 And the repo already carries a fourth from an earlier session — a mutation summariser that printed
 only Pest's `failures` bucket and so filed every exception-based kill as a survivor, disagreeing with
 reality for exactly the controls most likely to be guards.
 
-**What the three have in common** is not carelessness: every one of them was a deliberate, reasonable
+**AND THE FOURTH INSTANCE WAS WRONG IN BOTH DIRECTIONS AT ONCE, WHICH IS WORSE.** The finance-wide
+sweep for this very class produced **24**, and 24 was wrong twice:
+
+| error | direction | cause |
+|---|---|---|
+| matcher did not know `<=>` | **under**-count | blind to the freeze arms, the majority case |
+| `BINARY x` read as unprotected | **over**-count | this repo has TWO idioms; the scan knew one |
+
+The two errors ran opposite and partially cancelled. **The sum looked entirely plausible — and
+plausibility is what stops anyone checking.** A scanner wrong in both directions at once is more
+dangerous than one wrong in either, because each error launders the other. The corrected sweep is 29
+bare across 10 triggers, and the ticket now says to work the list rather than the count.
+
+**So the generalisation is not "an instrument must be able to speak" but "an instrument must be shown
+to speak when it should AND to stay silent when it should".** The tripwire-for-the-tripwire had only
+the first half: a known positive, a planted bare comparison it must find. It now carries **known
+negatives** too — `COLLATE`-guarded and `BINARY`-guarded comparisons it must NOT flag — because
+over-reporting is not a harmless failure when the report names someone else's code as defective.
+Mutations 21 and 22 fire each half.
+
+**What the four have in common** is not carelessness: every one of them was a deliberate, reasonable
 instrument that happened to be blind on one axis, and in every case the blindness was invisible from
 the instrument's own output. The green was not a lie about the code — it was a true statement about a
 question nobody had asked.
@@ -520,7 +542,7 @@ Raw output, in the order run. Test DB is `portal_testing` throughout; the produc
 
 ```
 $ DB_DATABASE=portal_testing ./vendor/bin/pest tests/Feature/Finance/GatewayTransactionSchemaTest.php
-{"tool":"pest","result":"passed","tests":26,"passed":26,"assertions":132,"duration_ms":13442}
+{"tool":"pest","result":"passed","tests":26,"passed":26,"assertions":135,"duration_ms":12777}
 ```
 
 **The new file plus every sibling that reasons about this schema** — schema conventions (which
@@ -897,6 +919,25 @@ failed 23 / 26
  - it_CLASS_B_—_no_string_column_is_compared_under_a_case_insensitive_col
 ```
 
+**21 · The Class B matcher blinded to `<=>` again** — the known-positive half, and the exact
+under-count that produced the false 24:
+
+```
+failed 25 / 26
+ - it_CLASS_B_—_the_tripwire_has_a_KNOWN_POSITIVE_and_a_KNOWN_NEGAT
+```
+
+**22 · `BINARY` no longer recognised as protection** — the known-negative half, and the over-count
+that cancelled the first error into plausibility:
+
+```
+failed 25 / 26
+ - it_CLASS_B_—_the_tripwire_has_a_KNOWN_POSITIVE_and_a_KNOWN_NEGAT
+```
+
+Both halves of one test, each firing on its own direction. Before this round only the first existed,
+and 24 is what that costs.
+
 **Restored after each**, and the file verified byte-identical to the pre-mutation copy before the
 final green run (`diff -q` → clean). The greens in the Proof section above were produced by the
 restored file, not by a file I had stopped mutating and hoped was right.
@@ -1010,12 +1051,17 @@ should be said out loud rather than discovered.
 
 ## Findings raised, not fixed
 
-- **The same collation class is live in 24 other places in the finance schema**, measured across all
-  58 `finance_` triggers and restricted to string-typed columns. Two look worth attention first —
-  `finance_credit_notes` compares `status = 'approved'` bare, which gates the credit-note **ceiling**
-  check, and `finance_opening_balance_batches` compares `status = 'posted'` bare, which gates the
-  terminal-state guard. **Whether either is reachable was not established** and should not be assumed
-  either way. Ticketed:
+- **The same collation class is live in 29 comparisons across 10 other finance triggers** — measured
+  across all 58 `finance_` triggers, restricted to string-typed columns. **An earlier version of this
+  line said 24; that was my scanner, twice over, and the correction is recorded below.** Two look
+  worth attention first — `finance_credit_notes` compares `status = 'approved'` bare, which gates the
+  credit-note **ceiling** check, and `finance_opening_balance_batches` compares `status = 'posted'`
+  bare, which gates the terminal-state guard. **Whether either is reachable was not established** and
+  should not be assumed either way. The obvious remedy does not work either: the hypothesis that these
+  predate `2026_07_26_140002`'s recording of the #95 correction is **measured false** — six of the ten
+  are later, and one is `2026_07_26_140001`, the sibling committed the same day. The correction lived
+  in one docblock and never became a rule, which is why the ask is a tripwire and not a sweep.
+  Ticketed:
   `docs/handoff/tickets/finance-trigger-string-comparisons-are-case-insensitive.md`. Severity:
   **ticket**, with those two worth a look before the rest.
   The Class B tripwire is deliberately scoped to the two gateway tables for exactly this reason —

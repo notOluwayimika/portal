@@ -845,23 +845,49 @@ it('CLASS B — no string column is compared under a case-insensitive collation 
     expect($offenders)->toBe([], "string comparisons under the default (case-insensitive) collation:\n  ".implode("\n  ", $offenders));
 });
 
-it('CLASS B — the tripwire above can actually SEE a bare comparison (it is not vacuous)', function () {
-    // A sweep that reports zero offenders is indistinguishable from a sweep whose matcher is broken,
-    // and this project has paid for exactly that (the mutation summariser that counted only Pest's
-    // `failures` bucket). So: run the SAME matcher over a body with a known bare comparison in it and
-    // require it to be found. If the regex ever stops matching `<=>`, this reds rather than the sweep
-    // silently going quiet.
-    $planted = "IF NOT (NEW.provider <=> OLD.provider) THEN SIGNAL SQLSTATE '45000'; END IF;";
+it('CLASS B — the tripwire has a KNOWN POSITIVE and a KNOWN NEGATIVE, because it was wrong in both directions', function () {
+    // A sweep reporting zero offenders is indistinguishable from a sweep whose matcher is broken, so
+    // it needs a case it MUST find. That much was here already. What was missing is the other half,
+    // and its absence is exactly how the finance-wide count of this defect came out wrong:
+    //
+    //   · the matcher did not know `<=>`            -> UNDER-counted (blind to the freeze arms)
+    //   · it flagged `BINARY x` as unprotected      -> OVER-counted (this repo has TWO idioms:
+    //                                                  `COLLATE utf8mb4_bin`, and the older `BINARY`
+    //                                                  operator 2026_07_26_140002 uses)
+    //
+    // The two errors ran in OPPOSITE directions and partially cancelled. The sum looked entirely
+    // plausible, and plausibility is what stops anyone checking — which makes a scanner wrong in both
+    // directions at once worse than one wrong in either. The corrected sweep is 29 bare, not 24.
+    //
+    // So: a known positive AND a known negative. An instrument is trusted only when it has been shown
+    // both to speak when it should and to stay silent when it should.
+    $matcher = "/(BINARY\s+)?(NEW|OLD)\.(\w+)(\s+COLLATE\s+(\w+))?\s*(<=>|=|<>|NOT\s+REGEXP|REGEXP)\s*((BINARY\s+)?'[^']*'|(BINARY\s+)?(?:NEW|OLD)\.\w+(?:\s+COLLATE\s+\w+)?)/i";
 
-    preg_match_all(
-        "/(NEW|OLD)\.(\w+)(\s+COLLATE\s+(\w+))?\s*(<=>|=|<>|NOT\s+REGEXP|REGEXP)\s*('[^']*'|(?:NEW|OLD)\.\w+(?:\s+COLLATE\s+\w+)?)/i",
-        $planted,
-        $matches,
-        PREG_SET_ORDER,
-    );
+    /** Re-implements the sweep's verdict for one comparison: is it left unprotected? */
+    $isBare = function (string $sql) use ($matcher): array {
+        preg_match_all($matcher, $sql, $m, PREG_SET_ORDER);
 
-    expect($matches)->toHaveCount(1)
-        ->and($matches[0][2])->toBe('provider')
-        ->and($matches[0][5])->toBe('<=>')
-        ->and(trim($matches[0][4] ?? ''))->toBe('');
+        return array_values(array_filter($m, fn ($x) => trim($x[1] ?? '') === ''
+            && strtolower(trim($x[5] ?? '')) !== 'utf8mb4_bin'
+            && stripos($x[7], 'BINARY') !== 0
+            && stripos($x[7], 'utf8mb4_bin') === false));
+    };
+
+    // KNOWN POSITIVE — the `<=>` freeze arm, the shape the matcher was once blind to.
+    $bare = $isBare("IF NOT (NEW.provider <=> OLD.provider) THEN SIGNAL SQLSTATE '45000'; END IF;");
+    expect($bare)->toHaveCount(1)
+        ->and($bare[0][3])->toBe('provider')
+        ->and($bare[0][6])->toBe('<=>');
+
+    // KNOWN NEGATIVES — both protection idioms, and both operators. Any of these coming back as an
+    // offender means the sweep manufactures work that does not exist, which is how two correctly
+    // guarded comparisons were reported as defects in someone else's code.
+    foreach ([
+        'IF NOT (NEW.provider COLLATE utf8mb4_bin <=> OLD.provider) THEN SIGNAL; END IF;',
+        "IF NEW.status COLLATE utf8mb4_bin = 'pending' THEN SIGNAL; END IF;",
+        "IF BINARY NEW.kind <> BINARY 'charge' THEN SIGNAL; END IF;",
+        "IF NEW.kind <> BINARY 'charge' THEN SIGNAL; END IF;",
+    ] as $guarded) {
+        expect($isBare($guarded))->toBe([], "the sweep flagged a PROTECTED comparison: {$guarded}");
+    }
 });

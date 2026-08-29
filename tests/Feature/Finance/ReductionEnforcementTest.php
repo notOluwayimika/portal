@@ -151,7 +151,7 @@ function reRawLine(int $schoolId, int $invoiceId, string $kind, ?int $discountPo
 function reInvoiceId($test, School $school, User $admin, StudentCurriculum $enrollment): int
 {
     rePost($test, $school, $admin, $enrollment, [
-        ['description' => 'Tuition', 'amount_minor' => 100000],
+        ['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000],
     ])->assertCreated();
 
     return (int) DB::table('finance_invoices')->value('id');
@@ -397,8 +397,8 @@ it('proof 16 — a non-discountable charge is excluded from the percentage base 
     // Tuition ₦100,000 (discountable) + Transport ₦20,000 (NOT) + a 10% discount. Base = tuition only, so
     // the reduction is −₦10,000, NOT −₦12,000. is_discountable comes from the fee ITEM, resolved server-side.
     rePost($this, $school, $admin, $enrollment, [
-        ['description' => 'Tuition', 'amount_minor' => 100000, 'fee_item_id' => $items['Tuition']->uuid],
-        ['description' => 'Transport', 'amount_minor' => 20000, 'fee_item_id' => $items['Transport']->uuid],
+        ['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000, 'fee_item_id' => $items['Tuition']->uuid],
+        ['bank_account_id' => testBankAccountUuid(), 'description' => 'Transport', 'amount_minor' => 20000, 'fee_item_id' => $items['Transport']->uuid],
         ['description' => 'Sibling discount', 'kind' => 'discount', 'percent' => 10, 'discount_policy_id' => $policy->uuid],
     ])->assertCreated();
 
@@ -418,8 +418,8 @@ it('proof 17 — a percentage with NO discountable charge left is the existing 4
     ]);
 
     $response = rePost($this, $school, $admin, $enrollment, [
-        ['description' => 'Transport', 'amount_minor' => 20000, 'fee_item_id' => $items['Transport']->uuid],
-        ['description' => 'Feeding', 'amount_minor' => 15000, 'fee_item_id' => $items['Feeding']->uuid],
+        ['bank_account_id' => testBankAccountUuid(), 'description' => 'Transport', 'amount_minor' => 20000, 'fee_item_id' => $items['Transport']->uuid],
+        ['bank_account_id' => testBankAccountUuid(), 'description' => 'Feeding', 'amount_minor' => 15000, 'fee_item_id' => $items['Feeding']->uuid],
         ['description' => 'Discount', 'kind' => 'discount', 'percent' => 10, 'discount_policy_id' => $policy->uuid],
     ]);
 

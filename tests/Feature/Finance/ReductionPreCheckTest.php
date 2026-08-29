@@ -124,7 +124,7 @@ it('arm 1 — a reduction line with NO discount policy is a field error on that 
     [$school, $admin, $enrollment] = rpcSetup();
 
     $response = rpcPost($this, $school, $admin, $enrollment, [
-        ['description' => 'Tuition', 'amount_minor' => 100000],
+        ['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000],
         ['description' => 'Free-text discount', 'amount_minor' => -10000, 'kind' => 'discount'],
     ])->assertStatus(422)->assertJsonValidationErrors('lines.1.discount_policy_id');
 
@@ -142,7 +142,7 @@ it('arm 1 — the same refusal for an EMPTY-STRING policy, keyed to the same fie
     [$school, $admin, $enrollment] = rpcSetup();
 
     rpcPost($this, $school, $admin, $enrollment, [
-        ['description' => 'Tuition', 'amount_minor' => 100000],
+        ['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000],
         ['description' => 'Unselected select', 'amount_minor' => -10000, 'kind' => 'discount', 'discount_policy_id' => ''],
     ])->assertStatus(422)->assertJsonValidationErrors('lines.1.discount_policy_id');
 
@@ -156,7 +156,7 @@ it('arm 2 — a reduction citing a RETIRED policy is a field error on that line'
     $policy = rpcPolicy($school, status: 'retired', name: 'Retired');
 
     $response = rpcPost($this, $school, $admin, $enrollment, [
-        ['description' => 'Tuition', 'amount_minor' => 100000],
+        ['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000],
         ['description' => 'Discount', 'amount_minor' => -10000, 'kind' => 'discount', 'discount_policy_id' => $policy->uuid],
     ])->assertStatus(422)->assertJsonValidationErrors('lines.1.discount_policy_id');
 
@@ -173,7 +173,7 @@ it('arm 2 — a SUPERSEDED policy is refused the same way (status is not a two-v
     $policy = rpcPolicy($school, status: 'superseded', name: 'Superseded');
 
     rpcPost($this, $school, $admin, $enrollment, [
-        ['description' => 'Tuition', 'amount_minor' => 100000],
+        ['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000],
         ['description' => 'Discount', 'amount_minor' => -10000, 'kind' => 'discount', 'discount_policy_id' => $policy->uuid],
     ])->assertStatus(422)->assertJsonValidationErrors('lines.1.discount_policy_id');
 
@@ -187,7 +187,7 @@ it('arm 3 — a reduction citing a requires_approval policy is a field error on 
     $policy = rpcPolicy($school, requiresApproval: true, name: 'NeedsApproval');
 
     $response = rpcPost($this, $school, $admin, $enrollment, [
-        ['description' => 'Tuition', 'amount_minor' => 100000],
+        ['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000],
         ['description' => 'Discount', 'amount_minor' => -10000, 'kind' => 'discount', 'discount_policy_id' => $policy->uuid],
     ])->assertStatus(422)->assertJsonValidationErrors('lines.1.discount_policy_id');
 
@@ -206,7 +206,7 @@ it('arm 5 — a charge line carrying a discount policy is a field error on that 
     $policy = rpcPolicy($school);
 
     $response = rpcPost($this, $school, $admin, $enrollment, [
-        ['description' => 'Tuition', 'amount_minor' => 100000, 'discount_policy_id' => $policy->uuid],
+        ['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000, 'discount_policy_id' => $policy->uuid],
     ])->assertStatus(422)->assertJsonValidationErrors('lines.0.discount_policy_id');
 
     expect((string) $response->json('errors')['lines.0.discount_policy_id'][0])
@@ -228,7 +228,7 @@ it('arm 4 — a foreign School’s policy is refused EARLIER than the pre-check,
     $policyB = rpcPolicy($schoolB, name: 'B-only'); // active, no approval — only its School differs
 
     $response = rpcPost($this, $schoolA, $adminA, $enrollmentA, [
-        ['description' => 'Tuition', 'amount_minor' => 100000],
+        ['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000],
         ['description' => 'Foreign discount', 'amount_minor' => -10000, 'kind' => 'discount', 'discount_policy_id' => $policyB->uuid],
     ])->assertStatus(422)->assertJsonValidationErrors('lines.1.discount_policy_id');
 
@@ -263,7 +263,7 @@ it('arm 4 — a super_admin with NO School context: an ACCEPTABLE policy leaves 
     $response = $this->actingAs($super)->postJson('/api/v1/finance/invoices', [
         'enrollment_id' => $enrollmentA->uuid,
         'lines' => [
-            ['description' => 'Tuition', 'amount_minor' => 100000],
+            ['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000],
             ['description' => 'Discount', 'amount_minor' => -10000, 'kind' => 'discount', 'discount_policy_id' => $policy->uuid],
         ],
     ])->assertStatus(422);
@@ -305,7 +305,7 @@ it('arm 4 — a super_admin with NO School context: a RETIRED policy is answered
     $response = $this->actingAs($super)->postJson('/api/v1/finance/invoices', [
         'enrollment_id' => $enrollmentA->uuid,
         'lines' => [
-            ['description' => 'Tuition', 'amount_minor' => 100000],
+            ['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000],
             ['description' => 'Discount', 'amount_minor' => -10000, 'kind' => 'discount', 'discount_policy_id' => $policy->uuid],
         ],
     ])->assertStatus(422)->assertJsonValidationErrors('lines.1.discount_policy_id');
@@ -344,7 +344,7 @@ it('student route — arm 1: a reduction with NO policy is a field error on that
     [$school, $admin, $enrollment] = rpcSetup();
 
     $response = rpcPostForStudent($this, $school, $admin, $enrollment, [
-        ['description' => 'Tuition', 'amount_minor' => 100000],
+        ['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000],
         ['description' => 'Free-text discount', 'amount_minor' => -10000, 'kind' => 'discount'],
     ])->assertStatus(422)->assertJsonValidationErrors('lines.1.discount_policy_id');
 
@@ -368,7 +368,7 @@ it('student route — arm 1: the EMPTY-STRING policy the modal posts when nothin
     [$school, $admin, $enrollment] = rpcSetup();
 
     $response = rpcPostForStudent($this, $school, $admin, $enrollment, [
-        ['description' => 'Tuition', 'amount_minor' => 100000, 'kind' => 'charge'],
+        ['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000, 'kind' => 'charge'],
         ['description' => 'Sibling discount', 'amount_minor' => -10000, 'kind' => 'discount', 'discount_policy_id' => ''],
     ])->assertStatus(422)->assertJsonValidationErrors('lines.1.discount_policy_id');
 
@@ -422,7 +422,7 @@ it('student route — the ACCEPTED payload has the modal’s exact shape, key fo
     $policy = rpcPolicy($school);
 
     rpcPostForStudent($this, $school, $admin, $enrollment, [
-        ['description' => 'Tuition', 'amount_minor' => 100000, 'kind' => 'charge'],
+        ['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000, 'kind' => 'charge'],
         ['description' => 'Sibling discount', 'amount_minor' => -10000, 'kind' => 'discount', 'discount_policy_id' => $policy->uuid],
     ])->assertCreated();
 
@@ -438,7 +438,7 @@ it('student route — arm 2: a reduction citing a RETIRED policy is a field erro
     $policy = rpcPolicy($school, status: 'retired', name: 'Retired');
 
     $response = rpcPostForStudent($this, $school, $admin, $enrollment, [
-        ['description' => 'Tuition', 'amount_minor' => 100000],
+        ['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000],
         ['description' => 'Discount', 'amount_minor' => -10000, 'kind' => 'discount', 'discount_policy_id' => $policy->uuid],
     ])->assertStatus(422)->assertJsonValidationErrors('lines.1.discount_policy_id');
 
@@ -452,7 +452,7 @@ it('student route — arm 3: a reduction citing a requires_approval policy is a 
     $policy = rpcPolicy($school, requiresApproval: true, name: 'NeedsApproval');
 
     $response = rpcPostForStudent($this, $school, $admin, $enrollment, [
-        ['description' => 'Tuition', 'amount_minor' => 100000],
+        ['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000],
         ['description' => 'Discount', 'amount_minor' => -10000, 'kind' => 'discount', 'discount_policy_id' => $policy->uuid],
     ])->assertStatus(422)->assertJsonValidationErrors('lines.1.discount_policy_id');
 
@@ -466,7 +466,7 @@ it('student route — arm 5: a charge line carrying a discount policy is a field
     $policy = rpcPolicy($school);
 
     $response = rpcPostForStudent($this, $school, $admin, $enrollment, [
-        ['description' => 'Tuition', 'amount_minor' => 100000, 'discount_policy_id' => $policy->uuid],
+        ['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000, 'discount_policy_id' => $policy->uuid],
     ])->assertStatus(422)->assertJsonValidationErrors('lines.0.discount_policy_id');
 
     expect((string) $response->json('errors')['lines.0.discount_policy_id'][0])
@@ -503,7 +503,7 @@ it('student route — a student with NO enrollment gets the ENROLLMENT refusal, 
 
     $response = $this->actingAs($admin)->withSession(['school_id' => $school->id])
         ->postJson("/api/v1/finance/students/{$student->uuid}/invoices", ['lines' => [
-            ['description' => 'Tuition', 'amount_minor' => 100000],
+            ['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000],
             ['description' => 'Discount', 'amount_minor' => -10000, 'kind' => 'discount', 'discount_policy_id' => $policy->uuid],
         ]])->assertStatus(422);
 
@@ -525,7 +525,7 @@ it('student route — an ACTIVE, no-approval policy still generates the invoice'
     $policy = rpcPolicy($school);
 
     rpcPostForStudent($this, $school, $admin, $enrollment, [
-        ['description' => 'Tuition', 'amount_minor' => 100000],
+        ['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000],
         ['description' => 'Sibling discount', 'amount_minor' => -10000, 'kind' => 'discount', 'discount_policy_id' => $policy->uuid],
     ])->assertCreated();
 
@@ -546,7 +546,7 @@ it('a reduction citing an ACTIVE, no-approval policy of this School still genera
     $policy = rpcPolicy($school);
 
     rpcPost($this, $school, $admin, $enrollment, [
-        ['description' => 'Tuition', 'amount_minor' => 100000],
+        ['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000],
         ['description' => 'Sibling discount', 'amount_minor' => -10000, 'kind' => 'discount', 'discount_policy_id' => $policy->uuid],
     ])->assertCreated();
 
@@ -563,8 +563,8 @@ it('a charge-only invoice with no policy anywhere still generates', function () 
     [$school, $admin, $enrollment] = rpcSetup();
 
     rpcPost($this, $school, $admin, $enrollment, [
-        ['description' => 'Tuition', 'amount_minor' => 100000],
-        ['description' => 'Transport', 'amount_minor' => 20000],
+        ['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000],
+        ['bank_account_id' => testBankAccountUuid(), 'description' => 'Transport', 'amount_minor' => 20000],
     ])->assertCreated();
 
     expect(DB::table('finance_invoices')->count())->toBe(1)
@@ -582,7 +582,7 @@ it('names EVERY offending line, not just the first', function () {
     $good = rpcPolicy($school, name: 'Good');
 
     rpcPost($this, $school, $admin, $enrollment, [
-        ['description' => 'Tuition', 'amount_minor' => 100000, 'discount_policy_id' => $good->uuid], // arm 5
+        ['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000, 'discount_policy_id' => $good->uuid], // arm 5
         ['description' => 'Retired discount', 'amount_minor' => -1000, 'kind' => 'discount', 'discount_policy_id' => $retired->uuid], // arm 2
         ['description' => 'Approval discount', 'amount_minor' => -1000, 'kind' => 'discount', 'discount_policy_id' => $approval->uuid], // arm 3
         ['description' => 'Bare discount', 'amount_minor' => -1000, 'kind' => 'discount'], // arm 1
@@ -614,7 +614,7 @@ it('keys the error by the CALLER’s key, not by position, for a keyed-object pa
         ->postJson('/api/v1/finance/invoices', [
             'enrollment_id' => $enrollment->uuid,
             'lines' => [
-                3 => ['description' => 'Tuition', 'amount_minor' => 100000],
+                3 => ['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000],
                 7 => ['description' => 'Discount', 'amount_minor' => -10000, 'kind' => 'discount', 'discount_policy_id' => $policy->uuid],
             ],
         ])->assertStatus(422)->assertJsonValidationErrors('lines.7.discount_policy_id');
@@ -654,7 +654,7 @@ it('loads every cited policy in ONE query, however many reduction lines there ar
     });
 
     rpcPost($this, $school, $admin, $enrollment, [
-        ['description' => 'Tuition', 'amount_minor' => 400000],
+        ['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 400000],
         ['description' => 'D1', 'amount_minor' => -1000, 'kind' => 'discount', 'discount_policy_id' => $a->uuid],
         ['description' => 'D2', 'amount_minor' => -1000, 'kind' => 'discount', 'discount_policy_id' => $b->uuid],
         ['description' => 'D3', 'amount_minor' => -1000, 'kind' => 'discount', 'discount_policy_id' => $c->uuid],

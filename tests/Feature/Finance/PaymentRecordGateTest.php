@@ -63,7 +63,7 @@ function paymentGateFixture(School $school): array
             'status' => 'active',
         ]);
 
-        return app(GenerateInvoice::class)->handle($enrollment->uuid, [new InvoiceLineSpec('Tuition', Money::fromKobo(100000))], InvoiceKind::Scheduled);
+        return app(GenerateInvoice::class)->handle($enrollment->uuid, [new InvoiceLineSpec('Tuition', Money::fromKobo(100000), bankAccountId: testBankAccountId())], InvoiceKind::Scheduled);
     });
 
     return [$student, $invoice];

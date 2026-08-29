@@ -385,11 +385,20 @@ it('leaves a line with NO recorded destination null and fully readable — there
 
     // A line written the way every line before this column was written: no destination supplied.
     // This is what every existing production row looks like, and NULL is its permanent, honest state.
-    $invoice = ActiveSchool::runFor($f['school']->id, fn () => app(GenerateInvoice::class)->handle(
-        $f['enrollment']->uuid,
-        [new InvoiceLineSpec('Legacy tuition', Money::fromKobo(100000))],
-        InvoiceKind::Scheduled,
-    ));
+    //
+    // WRITTEN WITH S11 COMMIT 2'S GUARD TEMPORARILY ABSENT, because that is literally what "issued
+    // before the guard existed" means. `finance_invoice_lines_destination_guard` refuses this INSERT
+    // now, and the table is append-only, so there is no legal insert that could be edited into this
+    // shape afterwards — the historical row is unreachable by every other route. The guard is put
+    // back before the assertions run, so everything below is read against a schema that HAS it.
+    $invoice = withoutDatabaseTrigger(
+        'finance_invoice_lines_destination_guard',
+        fn () => ActiveSchool::runFor($f['school']->id, fn () => app(GenerateInvoice::class)->handle(
+            $f['enrollment']->uuid,
+            [new InvoiceLineSpec('Legacy tuition', Money::fromKobo(100000))],
+            InvoiceKind::Scheduled,
+        )),
+    );
 
     $line = ActiveSchool::runFor($f['school']->id, fn () => InvoiceLine::query()
         ->where('invoice_id', $invoice->id)->firstOrFail());

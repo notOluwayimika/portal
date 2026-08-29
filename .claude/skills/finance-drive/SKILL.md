@@ -125,6 +125,21 @@ The moment an Action exists, those two move to it and only the NULL row stays.
 at the same line** — an exemption that spreads by resemblance is how the rule stops
 meaning anything.
 
+**AND THE THIRD CANDIDATE WAS REJECTED, which is recorded here because it looked
+certain.** S11 commit 2 (`finance_invoice_lines_destination_guard`, 2026-08-29) made a
+destination mandatory on every charge line, and the obvious reading was that the
+allocation screen's `unrecorded` destination state had just become unreachable by any
+writer — the exact shape of the NULL-`kind` exemption, and a licence to plant the row.
+It is FALSE. `AllocationProposal` resolves an invoice's destination through
+`fee_item_id`, not `bank_account_id` (`app/Finance/Services/AllocationProposal.php:252` (AllocationProposal::destinationsFor));
+S11 commit 1 left that read where it was on purpose, because switching it would report
+every pre-column invoice `unrecorded`. So a free-text line still renders the state while
+carrying a perfectly valid destination, and `DriveFinanceStates::unallocatedRemainder()`
+produces it by executing the real Action, as before. **Before claiming a state has become
+unreachable, find the code that DERIVES it and check which column it reads** — a rule
+about column A does not close a state derived from column B, and an exemption taken on
+that reasoning would have written a row the system can still reach.
+
 **Drive the fixture, not the production copy.** Past drives disagreed on this.
 Three ran against the local production copy — the sidebar
 (`docs/handoff/reports/feat-finance-sidebar-section.md:167-170`), the fail-closed

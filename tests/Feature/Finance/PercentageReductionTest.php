@@ -56,9 +56,19 @@ function postPct(array $lines): TestResponse
 {
     [$school, $admin, $enrollment, $policy] = pctSetup();
 
-    $lines = array_map(function (array $line) use ($policy) {
+    // Provenance is filled in HERE and not in each arm's literal, for both fields and for the same
+    // reason: the rows they name do not exist until `pctSetup()` has run, so a literal calling
+    // `testBankAccountUuid()` in an argument list would resolve against an empty `schools` table.
+    // A reduction gets the active policy; a CHARGE gets a destination, which
+    // `finance_invoice_lines_destination_guard` has required since S11 commit 2. Arms that set
+    // either key explicitly keep their own value — that is what lets an arm aim at the field.
+    $lines = array_map(function (array $line) use ($policy, $school) {
         if (($line['kind'] ?? 'charge') !== 'charge' && ! isset($line['discount_policy_id'])) {
             $line['discount_policy_id'] = $policy->uuid;
+        }
+
+        if (($line['kind'] ?? 'charge') === 'charge' && ! array_key_exists('bank_account_id', $line)) {
+            $line['bank_account_id'] = testBankAccountUuid($school->id);
         }
 
         return $line;

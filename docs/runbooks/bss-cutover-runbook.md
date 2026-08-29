@@ -70,13 +70,29 @@ operator, days later, with receipts on the desk. Fee items also point at these, 
 
 - [ ] Entered, submitted, and **approved** — a schedule only bills from `active` status.
 
-**The `is_discountable` flag on each item is a money decision, and whoever types it must be told so.**
-It decides what a "discountable charges" scholarship applies to. On the drive fixture, reading one
-award against the whole bill instead of discountable charges was **₦15,000 per child**.
+**Nothing about `is_discountable` is an open judgement. Brookstone decided the rule during the
+scholarship arc; this step types it in.** Recorded in
+`docs/handoff/scholarship-and-cutover-decisions.md` §3.3 and §7, and it is two axes, not one:
 
-Say it to them in words: *this flag decides whether a scholarship reduces this item.* Tuition and
-transport are not the same answer, and nobody doing data entry will infer that.
+- **Which items a scholarship can reduce is per fee schedule** — that is this flag, and it is the
+  only one of the two set on this screen. Brookstone's own worked example names both sides:
+  *100% on discountable items leaves the child paying transport; 100% of total fees leaves them
+  paying nothing.* Tuition reduces, transport does not.
+- **Whether a student's percentage runs against those items or against the whole bill is per
+  student** — that is the award's base, set in 2.2 and 2.3, and it is not on this screen at all.
 
+So the only thing to get right here is a list Brookstone hands you: for each item, yes or no. Not a
+decision to make at the keyboard.
+
+**Where it goes wrong is the default, not the decision.** The column defaults `true`
+(`2026_07_26_130001:40`) and a new row in the bursar UI arrives with the box already ticked
+(`fee-schedules.tsx:258`), labelled *Discountable*. An item nobody thought about is discountable.
+On the drive fixture that one flag was worth **₦15,000 per child**.
+
+- [ ] Get the discountable / non-discountable split from Brookstone **in writing, before entry
+      starts** — not sorted out during it.
+- [ ] Read the ticked boxes back against that list before submitting for approval. Every row, not
+      the ones somebody changed.
 - [ ] After approval, re-run the four counts above. Any remaining zero is still a blocker.
 
 ---

@@ -65,7 +65,7 @@ function supRaise(School $school, StudentCurriculum $enrollment, InvoiceKind $ki
 {
     return ActiveSchool::runFor($school->id, fn () => app(GenerateInvoice::class)->handle(
         $enrollment->uuid,
-        [new InvoiceLineSpec($what, Money::fromKobo($kobo))],
+        [new InvoiceLineSpec($what, Money::fromKobo($kobo), bankAccountId: testBankAccountId())],
         $kind,
     ));
 }

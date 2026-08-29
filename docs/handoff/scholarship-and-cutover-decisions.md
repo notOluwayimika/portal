@@ -1,8 +1,10 @@
 # Scholarships and the September cutover — decisions taken
 
 **Date:** 25 August 2026
-**Revision:** 3 — Brookstone's clarifications. Rev 1 proposed a single scholarship-to-policy FK;
-rev 2 removed the C2C fee schedule; rev 3 restores it as the *target* and settles scope.
+**Revision:** 4 — rev 3 was Brookstone's clarifications of 25 August (rev 1 proposed a single
+scholarship-to-policy FK; rev 2 removed the C2C fee schedule; rev 3 restored it as the *target*
+and settled scope). Rev 4 adds §11, Brookstone's 29 August ruling on mid-term charges, and §12,
+the fee-item catalog direction.
 Superseded decisions are marked so nobody re-proposes them.
 **Status:** Decisions are settled unless marked OPEN.
 **Purpose:** So nobody re-derives this from the code, and nobody asks Brookstone the same question
@@ -241,6 +243,9 @@ Brookstone the window exists and how long it lasts.
   collective figure to the sponsoring organisation, paid off platform.
 - The already-issued bills for BSS students **already show the discount**.
 - ~70 C2C students.
+- **(29 August)** A scholarship covers the **termly school fees**. It does **not** apply to a
+  mid-term extra charge. See §11 — this is already the behaviour, and §11 says why that is a
+  liability rather than a comfort.
 
 **Answered from the code, so nobody asks again:**
 
@@ -286,3 +291,77 @@ supersede, not an edit. That sits *before* the dry-run comparison, which sits *b
 - A rule without a lint, a gate or a database constraint is decoration.
 - Prove a guard by breaking it. A bite-proof that comes back green is a non-discriminating test, not
   a passing guard — say so rather than recording it as a pass.
+
+---
+
+## 11. A scholarship covers the termly fees, not a mid-term extra charge
+
+**Brookstone, 29 August 2026.** A scholarship reduces the **term's school fees**. A charge raised
+mid-term — a trip, a replacement item, an optional service taken up after the term bill went out —
+is **not** reduced by it. The family pays that in full whatever their award.
+
+**This is already what the code does, and it is not done by a rule.** It falls out of which writer
+handles which invoice:
+
+- The **bulk run** applies awards. `ProcessBulkInvoiceRun::reductionSpecFor()` appends the reduction
+  per student to a copy of the mapper's lines.
+- **`GenerateInvoice` contains no reference to `StudentDiscountAward` at all** — measured, zero
+  occurrences. Every ad-hoc invoice, and every supplementary one, therefore prices at full rate.
+
+And the two paths carry exactly the split Brookstone described. `FeeScheduleLineMapper::linesFor()`
+bills **mandatory items only**, because `is_mandatory` is a property of the price list and nothing in
+the schema records which child takes the bus. Its docblock states the consequence plainly: optional
+items are *"added per child afterwards, singly through the generate modal or as a supplementary
+invoice."* Those are the mid-term charges, and they go through the writer that cannot see an award.
+
+**Why this section exists, and it is the whole point of writing it down: the ruling is enforced by an
+absence.** Nothing asserts that `GenerateInvoice` ignores awards. It ignores them because nobody
+wired them in. A later change that makes the generate modal "helpfully" apply a student's award would
+contradict a decision Brookstone has taken, would look like a bug fix in review, and **not one test
+would go red**. An absence is not a guard.
+
+- [ ] **Pin it.** A test that a supplementary invoice for a student holding an active 50% award
+      carries no reduction line, naming this section as the reason. Block is with the implementer;
+      it is not landed at the time of writing.
+
+Do not treat "no code change needed" as the end of this item. The code change needed is the one that
+makes the ruling breakable-with-a-red.
+
+---
+
+## 12. Fee items become a catalog with templates, not free text
+
+**Direction agreed 29 August.** Today a bursar can type an invoice line as free text. That is how the
+first version had to work, and it is the wrong long-run shape for three reasons that are already
+visible in this document:
+
+1. **A free-text line has no fee item, so it has no `is_discountable`.** It falls to
+   `InvoiceLineSpec::$isDiscountable`, whose default is **`true`** (`app/Finance/DTOs/InvoiceLineSpec.php:74`).
+   A line nobody classified is inside the discount base. §3.3's axis one is settled *per fee schedule*
+   — a free-text line is outside that settlement entirely.
+2. **A free-text line has no destination** in the same sense. S11 made the destination required on
+   charge lines precisely because the catalog already knows each item's account and a human re-picking
+   it invites money landing in the wrong one.
+3. **Two bursars typing the same fee produce two different strings**, so nothing aggregates and every
+   report is a fuzzy match.
+
+**The order, and it is deliberate:**
+
+1. **The mandatory fee catalog (templates) first.** Items exist as catalog rows carrying their own
+   `is_discountable`, `is_mandatory` and destination account, authored through the maker-checker
+   like every other governance act.
+2. **The survey check.** Ask Brookstone what they actually raise mid-term and how often, before
+   deciding how much of the free-text path survives. A catalog that cannot express a real charge
+   sends people straight back to free text.
+3. **Section 0 execution** — the cutover's own configuration, which is what the catalog is for.
+
+**Not before cutover.** Section 0 of the runbook enters the term fee structure by hand into the
+schema as it stands; that path works and is the critical path. This is the shape the *next* term is
+entered with, and the survey happens alongside cutover rather than after it, because the answers
+change what gets built and Brookstone is available now.
+
+**Open until the survey returns:** whether free text is removed outright or kept behind an explicit
+"uncatalogued charge" affordance that forces the two fields the catalog would have supplied. Removing
+it outright is cleaner and is the reason to ask rather than assume — a school that cannot bill an
+unforeseen charge on the day will bill it some other way, off the platform, and that is worse than a
+messy line.

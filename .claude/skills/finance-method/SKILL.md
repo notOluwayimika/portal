@@ -58,6 +58,41 @@ is pinned by nothing.
 The corollary when you propose something: if your proposal is a convention with
 no mechanism, say so plainly rather than dressing it as a control.
 
+## A description is not a property — make the assertion executable
+
+The wallpaper rule above is about a **rule** with no mechanism. This is its neighbour and it is more
+common: a **description** — a name, a docblock, a comment — that asserts a property the artifact does
+not actually have. Nothing is missing; something is *claimed*. And because the claim reads as
+verification, it stops anyone looking.
+
+Seven instances across two days on one branch, which is why it earns a section:
+
+| The description | What it claimed | What was true |
+|---|---|---|
+| a CHECK-constraint test holding a NAMED list | "the replaced constraints are gone" | it could not see a constraint nobody named — two shipped under it |
+| a collation scanner | "no bare string comparisons" | it did not match `<=>`, the operator the defect used |
+| the same scanner | "these comparisons are defective" | it flagged `BINARY`-guarded ones — someone else's correct code |
+| a mutation summariser | "this mutant survived" | it read only Pest's `failures` bucket; the guard had killed it by throwing |
+| a test named *"a redaction may change the payload and nothing else"* | "nothing else" | its loop never varied `id` |
+| a migration docblock: *"the rule is written ONCE, in one place"* | one place | the update door had no copy of it at all |
+| a test fixture: *"holds exactly the abilities named"* | exactly those | its helper assigned `admin`, making every negative arm vacuous |
+
+**The fix has been identical every time: turn the sentence into an assertion.** Enumerate the exact
+set instead of naming members. Run the matcher over a case it must find *and* one it must not flag.
+Count errors as kills. Put the missing axis in the loop. Read both trigger bodies. Pin that the bare
+fixture holds no roles and no permissions.
+
+Two things follow for how you work:
+
+**When you write a description that quantifies — "only", "every", "exactly", "nothing else", "once",
+"in one place" — you have written a test.** Either make it executable in the same change or weaken
+the words to what you actually checked. A quantifier in prose is a claim nobody can fail.
+
+**The danger scales with the audience.** A wrong number in your own notes costs you an hour. The
+same number in a ticket names another team's correct work as defective, in the message asking them to
+trust your other findings — and a finding they discount is worse than one you never sent. Before a
+description leaves your hands, ask what it asserts and whether anything checks it.
+
 ## Re-derive; never carry a number
 
 Numbers go stale between sessions, between branches, and between the moment a

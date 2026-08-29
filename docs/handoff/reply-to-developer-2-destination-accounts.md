@@ -20,12 +20,22 @@ that is per-school configuration with exactly one value.
 
 **One correction to the FK.** You asked for composite *"like its ten siblings"* —
 `finance_school_settings` is a **top-level** Finance table and owns `school_id` directly with a plain
-RESTRICT FK; the composite pattern belongs to child tables
-(`docs/finance-data-ownership.md`). But composite is still the right answer here, for a different
-reason: the **target** is school-scoped. A plain single-column FK to `finance_bank_accounts (id)`
-would let one school's settings name another school's account, and gateway money would settle to the
-wrong school with nothing refusing it. So: `(settlement_bank_account_id, school_id)` referencing
-`finance_bank_accounts (id, school_id)`.
+RESTRICT FK; the composite pattern belongs to child tables. But composite is still the right answer
+here, for a different reason: the **target** is school-scoped. A plain single-column FK to
+`finance_bank_accounts (id)` would let one school's settings name another school's account, and
+gateway money would settle to the wrong school with nothing refusing it. So:
+`(settlement_bank_account_id, school_id)` referencing `finance_bank_accounts (id, school_id)`.
+
+**Where that convention is actually written down, because I got this wrong first:**
+`2026_08_10_120000`'s docblock — *"Ten existing finance FKs to a School-owned parent are
+(child_id, school_id) -> parent(id, school_id); there is not one plain single-column FK among
+them."* An earlier draft of this reply cited `docs/finance-data-ownership.md`, copied from
+`2026_07_21_100000`'s docblock. **That doc says nothing about composite keys** — its Part 7 gives six
+day-one rules, of which the one that applies here is *every Finance FK is ON DELETE RESTRICT*. If you
+went looking there on my say-so, that is why you found nothing. The migration cites the right source.
+
+The unique key the composite reference needs, `finance_bank_accounts_id_school_unique` on
+`(id, school_id)`, already exists — `2026_08_10_120000` added it for the payments and fee-item FKs.
 
 **Your resolver contract, so nothing on your side changes when the column lands:**
 

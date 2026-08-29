@@ -258,21 +258,47 @@ problem that predates them. Ticket:
 
 ---
 
-## 11. Two things unmeasured on production's MySQL
+## 11. The case-collation question on 5.7 — MEASURED 29 August, and it holds
 
-**Severity: low, but they are the quiet kind.**
+**Severity: was the quiet kind. Two of the three arms are now measured on production and pass.**
 
-Production is Percona **5.7.23**; everything here was measured on 8.0.43.
+Production is Percona **5.7.23**; everything else in this file was measured on 8.0.43. The open
+question was whether `COLLATE utf8mb4_bin` inside a trigger body takes effect there — flagged in
+`2026_08_17_100000`'s own docblock as *documented, not measured*. If it did not, a guard would admit
+`'Gateway'`, `'Total'`, `'Discount'` while every other arm still bit, so it would look alive and be
+dead.
 
-- `COLLATE utf8mb4_bin` inside a trigger body is *documented*, not measured, on 5.7 — flagged in
-  `2026_08_17_100000`'s own docblock and inherited by the new `gateway` arm. If it does not take
-  effect there, the guard admits `'Gateway'` while every other arm still bites, so it looks alive.
-- The `MESSAGE_TEXT` 1648 behaviour above carries the same caveat.
+**It takes effect.** Run against `portaa10_portal` on 29 August, each inside a transaction that was
+rolled back:
 
-**After the payment-origin migration runs on staging, attempt an insert with `origin = 'Gateway'`,
-capital G, and confirm it is refused.** Two minutes, and it is the only way to know.
+```
+INSERT INTO scholarships (…, kind, …) VALUES (…, 'Discount', …);
+  #1644 - scholarships: kind must be discount or sponsored, or null when it is not
+          configured yet.
 
-This now travels with finding 0: six migrations are about to meet 5.7.23 for the first time.
+INSERT INTO finance_discount_policy_changes (…, base, …) VALUES (…, 'Total', …);
+  #1644 - finance_discount_policy_changes: base must be discountable or total, or null.
+```
+
+Both refused, and refused with the **trigger's own prose** — `#1644` is the `SIGNAL` raised from
+inside the body, not a schema or column error. That distinction is the whole measurement: an INSERT
+that fails for the wrong reason would have read as a pass.
+
+Note the code: **1644**, with the message intact. Finding 10 records 1648 on 8.0.43 for an
+over-length `MESSAGE_TEXT`; that is a different path and is not what these raise.
+
+**Still unmeasured, and it is the same mechanism:**
+
+- `origin = 'Gateway'`, capital G, on `finance_payments`. It could not be constructed on 29 August
+  because production had **no bank accounts and no invoices** — the row has nothing to reference.
+  Run it on the day Section 0.3 creates the first account. The evidence above makes a failure
+  unlikely, since it is the same clause in the same migration family, but "unlikely" is not
+  "measured" and this entry exists because that distinction has cost this project before.
+
+Also still true: 68 triggers exist in `portaa10_portal`, confirmed the same day. An earlier query
+returning empty was a client artifact, not a missing schema — and note there are **seventeen** dated
+copies of this database on the same hosting account, so confirm `SELECT DATABASE()` before running
+anything by hand.
 
 ---
 

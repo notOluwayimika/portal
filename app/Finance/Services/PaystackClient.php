@@ -34,8 +34,17 @@ use Throwable;
  * `verify()` returns a transaction when Paystack answered, and throws {@see PaystackUnavailable}
  * when it did not. **"We could not find out" is not "it failed"** — collapsing them marks a paid
  * parent's attempt as failed and leaves their money visible only on a bank statement. This mirrors
- * `HttpCallbackTransport`, which learned the same shape on the outbound path: an ambiguous outcome
- * reported as a definite one is worse than an error.
+ * the notifications module's `CallbackUnconfirmed`, which learned the same shape on the outbound
+ * path: an ambiguous outcome reported as a definite one is worse than an error.
+ *
+ * AND IT CREATES A CASE THE WEBHOOK HANDLER MUST ANSWER, decided in advance rather than discovered
+ * half-way through writing it: a genuine, correctly-signed webhook arrives and `verify()` is
+ * unreachable. Recording from the webhook body is forbidden (no truth), a 4xx or 5xx makes the
+ * provider retry harder, and dropping it loses money nobody will look for again. The answer —
+ * acknowledge 200, persist the delivery, leave the transaction `pending`, let verify-on-return or
+ * the discrepancy report recover it — is written up with its reasoning in
+ * `docs/handoff/decisions/webhook-arrives-but-verify-is-unreachable.md`, and belongs in §7's failure
+ * table as a fifth row.
  *
  * ── IT DOES NOT RETRY ────────────────────────────────────────────────────────────────────────────
  *

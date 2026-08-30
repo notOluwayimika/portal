@@ -61,56 +61,81 @@ twenty-four look deliberate.
 
 ---
 
-## 0. Staging is 20 commits and four migrations ahead of `main`
+## 0. Staging is 58 commits and FIVE migrations ahead of `main` — and the count was never the hard part
 
-**Severity: this is the time-critical one, and it is operational rather than a defect. It is also
-the gate on everything else: nothing in the BSS scholarship chain can happen on production until
-this promotion does.**
+**Severity: time-critical, operational rather than a defect, and the gate on everything else.**
 
-**Re-measured 29 August, and the previous revision of this entry was wrong in BOTH directions —
-which is worse than being merely out of date.** It said 44 commits and six migrations and listed the
-six. Five of those six have since shipped to `main`; three that had not yet been written are now
-pending. Anyone planning the promotion off that list would have deployed the wrong set. Re-measure,
-always, and never read the list below as current either:
+**Re-measured 30 August, and this entry has now been wrong three times — twice by me.** It said 44
+and six, then 20 and four, and both were produced by reading `git diff --name-only` as a list of
+ADDITIONS. It is not. It lists files that DIFFER, which includes files already on `main` whose
+content was edited on staging. Every earlier revision of this entry conflated the two.
+
+**Use `--name-status`, and read the letters:**
 
 ```
 git rev-list --count origin/main..origin/staging
-git diff --name-only origin/main origin/staging -- database/migrations
+git diff --name-status origin/main origin/staging -- database/migrations
 ```
 
-`main` is at `2488d35` (PR #321), `staging` at `bf073cc` (PR #328). Four migrations have not run on
-production:
+Measured 30 August, `main` at `2488d35`, `staging` at `9e65f8e`:
 
 ```
-2026_08_21_110000_finance_allocation_not_over_payment_amount
-2026_08_29_100000_finance_school_settings_settlement_bank_account
-2026_08_29_110000_finance_invoice_lines_destination_account
-2026_08_29_120000_finance_invoice_lines_require_destination
+M  2026_08_17_100000_maker_checker_and_payment_origin_as_triggers
+M  2026_08_21_110000_finance_allocation_not_over_payment_amount
+M  2026_08_25_100000_finance_payment_origin_admits_gateway
+A  2026_08_27_100000_create_finance_gateway_transactions
+A  2026_08_29_100000_finance_school_settings_settlement_bank_account
+A  2026_08_29_110000_finance_invoice_lines_destination_account
+A  2026_08_29_120000_finance_invoice_lines_require_destination
+A  2026_08_30_100000_create_finance_manual_invoice_run_tables
 ```
 
-**The three S11 migrations travel together and are ORDERED.** `110000` adds
-`finance_invoice_lines.bank_account_id` as nullable and makes both writers populate it; `120000`
-makes it required on charge lines via `finance_invoice_lines_destination_guard`. Running `120000`
-without `110000` is not a partial deploy, it is a broken one. `100000` is the settlement-account
-column Developer 2 asked for and is independent of the other two.
+**FIVE migrations to run. Three are edits to files already on `main`.**
 
-**`120000` is BEFORE INSERT only, deliberately, and that is what makes it safe to run against
-existing data.** Every line issued before the column existed carries NULL legitimately; an UPDATE arm
-would retro-refuse all of them. Verified in the migration's own docblock and pinned by a test that
-reads the trigger set from `information_schema`.
+## Why the M/A distinction is not pedantry
 
-**`2026_08_21_110000_finance_allocation_not_over_payment_amount` is still the odd one out, and it has
-now been sitting for eight days.** A constraint stopping an allocation from exceeding its payment,
-unrelated to the destination work, and it still does not deserve to share that blast radius.
+**Laravel records a migration by FILENAME. An already-run migration is skipped regardless of its
+content.** So an edit to a migration that has already executed on production never takes effect
+there, and the deploy looks clean while shipping a schema that does not match the file.
 
-**Promote in more than one step**, and put the allocation constraint in its own.
+**Here, all three edits are comment-only** — verified by filtering the diff for lines that are not
+`*`, `/*` or `//`, which returns nothing for each. They are Developer 2's #332, checked on their
+side with `token_get_all` rather than asserted. **So there is no hazard in this batch.** The check
+is recorded because the next batch may not be so lucky, and nothing warns you.
 
-Term 1 goes `active` on 5 September and the first bulk run follows it.
+## Two things that ARE load-bearing
 
-**And read `the-release-gate-cannot-see-a-pull-request-merge.md` before promoting.** Every merge to
-`main` in this repository's history has been a PR merge, which runs no local hook and reads no
-`.quality-promote-ok` stamp. A green `bin/quality` is the per-push floor; it is not the release
-gate, and the release gate has never run on a release that reached `main`.
+**The three S11 migrations are ORDERED.** `110000` adds `finance_invoice_lines.bank_account_id` as
+nullable and makes both writers populate it; `120000` makes it required via
+`finance_invoice_lines_destination_guard`. Running `120000` without `110000` is not a partial
+deploy, it is a broken one.
+
+**`120000` is BEFORE INSERT only, deliberately**, which is what makes it safe against existing rows:
+every line issued before the column existed carries NULL legitimately, and an UPDATE arm would
+retro-refuse all of them.
+
+## "On main" is not "ran on production"
+
+Everything above is a statement about branches. **The only authority on what has actually executed is
+production itself:**
+
+```
+php artisan migrate:status
+```
+
+An earlier revision of this entry asserted the allocation constraint had "been sitting eight days
+unshipped" on the strength of a branch diff. It is on `main`. Whether it has RUN is a different
+question and the branch cannot answer it.
+
+## Still true
+
+Promote in more than one step, and do not let the five arrive as one. Term 1 goes `active` on
+5 September and the first bulk run follows it.
+
+**And read `the-release-gate-cannot-see-a-pull-request-merge.md` before promoting** — it took its
+first measured casualty on 30 August, a red `staging` from two branches that were each green alone.
+A green `bin/quality` is the per-push floor; the release gate has still never run on anything that
+reached `main`.
 
 ---
 

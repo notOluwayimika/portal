@@ -28,7 +28,8 @@ beforeEach(fn () => $this->seed(DatabaseSeeder::class));
  * others — so a gate below cannot pass on some ability that arrived with a role.
  *
  * IT DOES NOT USE `User::grantSchoolAccess()`, and that is the point rather than an oversight: that
- * method assigns the **admin** role by default (`app/Models/User.php:421`), which would hand this
+ * method assigns the **admin** role by default — `grantSchoolAccess` (app/Models/User.php:421) —
+ * which would hand this
  * fixture a pile of abilities nobody asked for and make "holds exactly what is named" false. The
  * negative arms below would then be proving something about admin rather than about
  * `parent_portal.access`. Attaching the school directly is what keeps the fixture's degrees of

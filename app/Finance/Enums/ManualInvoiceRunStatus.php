@@ -48,4 +48,25 @@ enum ManualInvoiceRunStatus: string
      * (docs/handoff/tickets/a-supplementary-invoice-has-no-duplicate-backstop.md).
      */
     case Failed = 'failed';
+
+    /**
+     * TERMINAL means "this run has stopped and will not write another row" — `completed` or
+     * `failed`, and nothing else.
+     *
+     * IT LIVES HERE BECAUSE THREE PLACES ASK THE SAME QUESTION and a fourth would drift. The
+     * generated column `active_run_key` (2026_08_30_100000) is the first: it is `school_id` while
+     * the status is `pending` or `running` and NULL otherwise, so the set this method returns FALSE
+     * for is exactly the set that holds a School's one-active-run key. `ManualInvoiceRunController`
+     * asks it to refuse a second start and to name the run in flight; the run report asks it to
+     * decide whether the cohort equality is answerable YET — mid-run a shortfall is normal, and
+     * reporting "does not balance" over a run that is still working would fire the alarm on every
+     * healthy run.
+     *
+     * Written as a positive list of the two terminal cases rather than a negation of the two
+     * non-terminal ones, so a fifth status added later is NOT silently terminal.
+     */
+    public function isTerminal(): bool
+    {
+        return $this === self::Completed || $this === self::Failed;
+    }
 }

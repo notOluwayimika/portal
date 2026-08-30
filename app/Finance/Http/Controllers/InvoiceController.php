@@ -36,7 +36,7 @@ use Illuminate\Routing\Controller;
  * That bites HERE and not only on the page routes, and this is the caller where it shipped.
  * GenerateInvoice applies carry-forward credit inside its own transaction: it writes
  * PaymentAllocation rows against the invoice it has just created, through
- * `applyCreditForward` (app/Finance/Actions/GenerateInvoice.php:479), and then returns that
+ * `applyCreditForward` (app/Finance/Actions/GenerateInvoice.php:583), and then returns that
  * freshly created model. Serialising it directly answered `settlement_state:
  * 'unpaid'`, the full total outstanding, `can_record_payment: true` and `can_request_void: true`
  * with no blocked reason, for an invoice that had just been settled on the way in.
@@ -62,6 +62,14 @@ class InvoiceController extends Controller
         // 403 and is told nothing about a policy it may not apply. The DB reduction_guard remains the
         // authority and the backstop — see the method for what it does and does not cover.
         $request->assertDiscountPoliciesUsable();
+
+        // The DESTINATION, refused as a FIELD error before the Action's transaction (S11 commit 2).
+        // AFTER the policy pre-check rather than before it, and the order is arbitrary in the sense
+        // that neither refusal is more fundamental than the other — what is NOT arbitrary is that
+        // both run before the Action, so nothing is written by a request either one would refuse.
+        // The trigger `finance_invoice_lines_destination_guard` remains the authority and the
+        // backstop; this only names the field.
+        $request->assertDestinationsChosen();
 
         try {
             $invoice = $action->handle(
@@ -145,6 +153,10 @@ class InvoiceController extends Controller
 
         // Reduction provenance as FIELD errors, still before the Action's transaction (U8 commit 3).
         $request->assertDiscountPoliciesUsable();
+
+        // And the destination (S11 commit 2) — the modal's own route, and the one the per-line
+        // select was built for. See generate() above for why both pre-checks sit here.
+        $request->assertDestinationsChosen();
 
         try {
             $invoice = $action->handle(

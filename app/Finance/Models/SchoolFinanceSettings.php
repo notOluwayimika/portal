@@ -11,12 +11,18 @@ use Illuminate\Database\Eloquent\Model;
  * At most one row per School — `UNIQUE(school_id)` in the schema, so that is a
  * database fact, not a convention this class has to defend.
  *
- * Only `invoice_number_prefix` exists today. The policy names two further
- * configurables (waiver approver §5, repeat treatment §6); they are deliberately
- * absent until they have consumers, and adding them later is an additive column.
+ * Two columns exist today. `invoice_number_prefix` is presentational;
+ * `settlement_bank_account_id` decides where a school's gateway money lands. It is
+ * read through the `SettlementBankAccount` service rather than from here directly,
+ * because its absence is a refusal and not a null — named in prose rather than as a
+ * `{@see}` so a Model does not import a Service to describe itself. The policy names
+ * two further configurables (waiver approver §5, repeat treatment §6); they are
+ * deliberately absent until they have consumers, and adding them later is an additive
+ * column.
  *
  * @property int $school_id
  * @property string|null $invoice_number_prefix
+ * @property int|null $settlement_bank_account_id
  */
 class SchoolFinanceSettings extends Model
 {

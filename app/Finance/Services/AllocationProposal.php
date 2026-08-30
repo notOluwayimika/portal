@@ -30,14 +30,30 @@ use Illuminate\Support\Collection;
  * `finance_allocation_not_over_payment_amount` / `_invoice_total` triggers are the floor beneath
  * that. This class exists to show an operator a starting point, not to decide anything.
  *
- * ── THE BANK-ACCOUNT DESTINATION IS A LIVE LOOKUP, NOT A SNAPSHOT, AND THE SCREEN SAYS SO ──
+ * ── THE BANK-ACCOUNT DESTINATION IS STILL A LIVE LOOKUP HERE, AND THE SCREEN SAYS SO ──
  *
- * The MVP cut brief (§9 item 6) says the account "must be snapshotted onto the invoice line". IT IS
- * NOT, and that is deliberate rather than an oversight: `2026_08_10_120000_finance_bank_account_foreign_keys`
- * §"finance_invoice_lines — DELIBERATELY NOT IN SCOPE" argues that a destination column on a table
- * whose lines are free text with no fee item behind them would be null on every row or defaulted to
- * a destination nobody chose. `finance_invoice_lines` therefore has no `bank_account_id`, and the
- * only destination that exists anywhere is `finance_fee_items.bank_account_id` (NOT NULL).
+ * THE SNAPSHOT NOW EXISTS. `finance_invoice_lines.bank_account_id` landed with S11 commit 1
+ * (`2026_08_29_110000_finance_invoice_lines_destination_account`), both writers populate it, and the
+ * MVP cut brief's §9 item 6 — "must be snapshotted onto the invoice line" — is satisfied for every
+ * line issued from that point on. THIS CLASS DOES NOT READ IT YET, and that is a decision with a
+ * date on it rather than an omission:
+ *
+ *   · every line issued BEFORE that migration has the column NULL and always will — there is no
+ *     backfill, because writing today's catalog reading into a column that claims to record issue
+ *     time manufactures a false history on a table that cannot be corrected;
+ *   · so a straight switch to the column would report every historical invoice `unrecorded` and
+ *     black out the mismatch banner this screen exists for;
+ *   · and until S11 commit 2's trigger requires a destination on a charge line, a line written after
+ *     the migration can be null too, which makes the column's coverage a moving target rather than a
+ *     property a reader can rely on.
+ *
+ * What replaces this derivation is therefore not "read the column" but a three-valued read — the
+ * line's own account, else the live lookup for a line issued before the column, else `unrecorded` —
+ * and it needs its own commit and its own arms because the fallback is exactly where a wrong answer
+ * would look right. Until then this stays as it is.
+ *
+ * THE DERIVATION BELOW IS UNCHANGED, and the only destination it reads is
+ * `finance_fee_items.bank_account_id` (NOT NULL) through `fee_item_id`.
  *
  * So the mismatch this screen must show (cut brief line 307 — money received into account A settling
  * lines destined for account B) is derivable ONLY through `finance_invoice_lines.fee_item_id`, which
@@ -51,11 +67,19 @@ use Illuminate\Support\Collection;
  *     of its five lines reports `matches` qualified by three lines it could not read, rather than an
  *     unqualified `matches`. The screen renders that qualification; it does not re-derive it.
  *
- * A LIVE LOOKUP CAN ALSO GO STALE IN THE OTHER DIRECTION: the fee item's account can be edited, and
- * a superseded schedule's item still resolves. So this answers "where would this charge's money go if
- * it were billed from the catalog as it stands today", which is the best available answer and is not
- * the same question as "where was it destined when it was billed". The day S11's snapshot lands, this
- * derivation is replaced by reading the line's own column and the ambiguity goes away.
+ * A LIVE LOOKUP CAN ALSO GO STALE IN THE OTHER DIRECTION, and this paragraph OVERCLAIMED until S11
+ * measured it. It said "the fee item's account can be edited" — through the application it cannot:
+ * `finance_fee_items_parent_state_guard_upd` refuses an UPDATE whose parent schedule is not a
+ * `draft`, only `active` schedules are billable, and nothing returns an active schedule to draft. A
+ * raw UPDATE, a migration or tinker still can, and the freeze is a coincidence of two independent
+ * rules rather than a stated one — if `billable()` widens, or a correction path returns a schedule
+ * to draft, the edit becomes reachable again with nothing going red. Kept as a hazard, restated as
+ * the narrower one it is.
+ *
+ * What remains true unconditionally is the question this answers: "where would this charge's money go
+ * if it were billed from the catalog as it stands today", which is the best available answer HERE and
+ * is not the same question as "where was it destined when it was billed". A superseded schedule's
+ * item still resolves, and a free-text line resolves to nothing at all.
  */
 final class AllocationProposal
 {

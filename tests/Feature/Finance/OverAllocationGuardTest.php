@@ -52,7 +52,7 @@ function overAllocSetup(int $invoiceKobo = 100000): array
 
     $invoice = ActiveSchool::runFor($school->id, fn () => app(GenerateInvoice::class)->handle(
         $enrollment->uuid,
-        [new InvoiceLineSpec('Tuition', Money::fromKobo($invoiceKobo))],
+        [new InvoiceLineSpec('Tuition', Money::fromKobo($invoiceKobo), bankAccountId: testBankAccountId())],
         InvoiceKind::Scheduled,
     ));
 

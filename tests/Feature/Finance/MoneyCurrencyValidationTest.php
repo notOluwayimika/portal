@@ -41,7 +41,7 @@ function mcvInvoice(School $school): object
     return ActiveSchool::runFor($school->id, function () use ($school, $student) {
         $e = StudentCurriculum::create(['student_id' => $student->id, 'curriculum_id' => Curriculum::factory()->create(['school_id' => $school->id])->id, 'status' => 'active']);
 
-        return app(GenerateInvoice::class)->handle($e->uuid, [new InvoiceLineSpec('Tuition', Money::fromKobo(100000))], InvoiceKind::Scheduled);
+        return app(GenerateInvoice::class)->handle($e->uuid, [new InvoiceLineSpec('Tuition', Money::fromKobo(100000), bankAccountId: testBankAccountId())], InvoiceKind::Scheduled);
     });
 }
 
@@ -158,7 +158,7 @@ it('F1 — a well-formed USD invoice line is refused at the edge, and no invoice
         ->postJson('/api/v1/finance/invoices', [
             'enrollment_id' => $enrollment,
             'kind' => InvoiceKind::Scheduled->value,
-            'lines' => [['description' => 'Tuition', 'amount_minor' => 100000, 'currency' => 'USD']],
+            'lines' => [['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000, 'currency' => 'USD']],
         ])
         ->assertStatus(422)
         ->assertJsonValidationErrors(['lines.0.currency']);

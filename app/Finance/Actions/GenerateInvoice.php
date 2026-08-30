@@ -5,9 +5,11 @@ namespace App\Finance\Actions;
 use App\Exceptions\BusinessRuleException;
 use App\Finance\Contracts\BillableEnrollmentProvider;
 use App\Finance\DTOs\InvoiceLineSpec;
+use App\Finance\Enums\DiscountBase;
 use App\Finance\Enums\InvoiceKind;
 use App\Finance\Enums\InvoiceStatus;
 use App\Finance\Enums\LedgerEntryType;
+use App\Finance\Models\DiscountPolicy;
 use App\Finance\Models\FeeItem;
 use App\Finance\Models\Invoice;
 use App\Finance\Models\Payment;
@@ -188,6 +190,11 @@ final class GenerateInvoice
         // the percentage base depends on it. Server-side and never from the wire — see resolveDiscountability.
         $lines = $this->resolveDiscountability($lines);
 
+        // And resolve each percentage line's BASE from the policy it cites (S1 axis C) — also
+        // server-side, also before percentages, and for the same reason one paragraph up: what a
+        // percentage is taken OF is a property of the POLICY, not something a caller gets to assert.
+        $lines = $this->resolveDiscountBase($lines);
+
         // Resolve percentage reductions into concrete amounts FIRST, so everything below
         // — the throw checks, the fold, the persisted rows — operates on a single,
         // uniform shape: concrete signed lines. A stored line is never "10%"; it is the
@@ -294,6 +301,13 @@ final class GenerateInvoice
                         // A reduction line carries the policy it cites; a charge carries null. The
                         // finance_invoice_lines_reduction_guard is the authority (proofs 11–14).
                         'discount_policy_id' => $line->discountPolicyId,
+                        // WHERE THIS LINE'S MONEY WAS DESTINED, snapshotted (S11). Written through
+                        // from the spec and NOT re-resolved from the fee item here, unlike
+                        // is_discountable two methods down — see InvoiceLineSpec::$bankAccountId for
+                        // why those two fields are opposites rather than an inconsistency. Null on a
+                        // reduction line, and null on a charge line whose writer did not supply one;
+                        // the S11 commit-2 trigger is what closes the second case.
+                        'bank_account_id' => $line->bankAccountId,
                         'created_by_user_id' => $actorId,
                     ]);
                 }
@@ -396,17 +410,91 @@ final class GenerateInvoice
     }
 
     /**
+     * Resolve each PERCENTAGE line's base from the discount policy it cites — SERVER-SIDE, never
+     * from the wire. The exact shape of {@see resolveDiscountability()} above, deliberately: one
+     * query for every cited policy keyed by id, never one per line, and the caller's value
+     * overwritten rather than trusted.
+     *
+     * WHY IT IS NOT A CALLER'S CHOICE, which is the whole point of the method. `base` decides whether
+     * "50%" means half the tuition or half the whole bill, and those are different amounts of money.
+     * Left on the wire, a client could widen its own discount by asserting `total` against a
+     * tuition-only policy. Left to each PRODUCER, the bulk run and the bursar's modal would each
+     * decide it, and cold review found exactly that: the run read the policy and the manual path did
+     * not, so one policy applied two ways gave two figures. Resolving it here makes them agree BY
+     * CONSTRUCTION rather than by two call sites remembering to.
+     *
+     * A NON-PERCENTAGE LINE IS NEVER TOUCHED — it cannot carry a base at all
+     * ({@see InvoiceLineSpec}'s constructor refuses one), so there is nothing to resolve and calling
+     * the wither on it would raise that very invariant.
+     *
+     * AN UNRESOLVABLE POLICY RESOLVES DOWN, NOT ACROSS. A cited id that is absent, or belongs to
+     * another School (DiscountPolicy carries SchoolScope, so this read is implicitly under the active
+     * School), yields null — the DEFAULT base, `discountable`, which reduces LESS. It is not left as
+     * the caller supplied it: that would let a foreign or invented policy id smuggle a wider base
+     * past this method. The line is refused a moment later anyway by
+     * `finance_invoice_lines_reduction_guard`, which is the guarantee; this is only about not
+     * honouring a claim on the way there.
+     *
+     * @param  list<InvoiceLineSpec>  $lines
+     * @return list<InvoiceLineSpec>
+     */
+    private function resolveDiscountBase(array $lines): array
+    {
+        $ids = array_values(array_unique(array_filter(
+            array_map(
+                static fn (InvoiceLineSpec $line) => $line->isPercentage() ? $line->discountPolicyId : null,
+                $lines,
+            ),
+            static fn (?int $id) => $id !== null,
+        )));
+
+        if ($ids === []) {
+            return $lines;
+        }
+
+        $bases = DiscountPolicy::query()->whereIn('id', $ids)->pluck('base', 'id');
+
+        return array_map(
+            static fn (InvoiceLineSpec $line) => $line->isPercentage()
+                ? $line->withPercentBase($bases[$line->discountPolicyId] ?? null)
+                : $line,
+            $lines,
+        );
+    }
+
+    /**
      * Turn every percentage-reduction spec into a concrete-amount spec.
      *
      * SEMANTIC (stated because the brief's "10% off the tuition line" implies per-line
      * targeting and this does NOT do that): a percentage reduction is computed against
-     * the invoice's GROSS CHARGES — the signed sum of every charge-kind line — not
+     * the invoice's GROSS CHARGES — the signed sum of the charge-kind lines — not
      * against one named line. "10% waiver" means 10% off the bill. Per-line targeting is
      * a later refinement with its own design; it is deliberately not invented here on a
      * fragile description/index reference.
      *
-     * The magnitude is `grossCharges->percentage($p)` — the banker's-rounded op — and
-     * the resulting line stores that concrete negative naira figure, never the percent.
+     * WHICH charge lines is the spec's own {@see DiscountBase} and is read PER SPEC, not once for
+     * the invoice. Two percentage reductions on one invoice may legitimately sit on different bases
+     * — a whole-bill scholarship discount beside a tuition-only staff waiver — so a single
+     * `$grossCharges` computed before the map would be a base resolved once and reused, and the
+     * second spec would silently inherit the first one's answer.
+     *
+     *   Discountable — the signed sum of the charge lines whose fee item is discountable. What every
+     *                  percentage did before this axis existed, and what a spec with no base gets.
+     *   Total        — the signed sum of ALL charge lines.
+     *
+     * BOTH SUMS ARE FOLDED ONCE, before the map, and then SELECTED per spec: the arithmetic is
+     * per-invoice, only the choice is per-line. Reductions are excluded from both — folding other
+     * reductions into a base would let two reductions compound in an order-dependent way.
+     *
+     * THE "AT LEAST ONE CHARGE LINE" REFUSAL IS NOW PER SPEC, and that is a behaviour change stated
+     * rather than slipped in. It used to fire whenever there was no DISCOUNTABLE charge line, which
+     * was the only base there was. An invoice of purely non-discountable charges plus a `total`-base
+     * percentage is now a legitimate bill and resolves; the same invoice with a `discountable`-base
+     * percentage still refuses, with the same sentence, because there is still nothing for it to
+     * reduce. Each spec is answered against the base it actually named.
+     *
+     * The magnitude is `$base->percentage($p)` — the banker's-rounded op, unchanged — and the
+     * resulting line stores that concrete negative naira figure, never the percent.
      *
      * @param  list<InvoiceLineSpec>  $lines
      * @return list<InvoiceLineSpec>
@@ -427,29 +515,45 @@ final class GenerateInvoice
             return $lines;
         }
 
-        // Gross = the signed sum of the CHARGE lines only. Percentage reductions reduce
-        // the charges; folding other reductions into the base would let two reductions
-        // compound in an order-dependent way.
-        $grossCharges = null;
+        $totalCharges = null;
+        $discountableCharges = null;
+
         foreach ($lines as $line) {
-            // Skip non-discountable charge lines (S1 3.6): a "50% staff-child discount" takes 50% off the
-            // discountable charges only — tuition, not transport/feeding an item marks is_discountable=false.
-            if (! $line->isReduction() && ! $line->isPercentage() && $line->isDiscountable) {
-                $grossCharges = $grossCharges === null
+            if ($line->isReduction() || $line->isPercentage()) {
+                continue;
+            }
+
+            $totalCharges = $totalCharges === null
+                ? $line->resolvedAmount()
+                : $totalCharges->plus($line->resolvedAmount());
+
+            // The discountable sum is a SUBSET of the total, taken in the same pass (S1 3.6): a
+            // "50% staff-child discount" takes 50% off the discountable charges only — tuition, not
+            // the transport/feeding an item marks is_discountable = false.
+            if ($line->isDiscountable) {
+                $discountableCharges = $discountableCharges === null
                     ? $line->resolvedAmount()
-                    : $grossCharges->plus($line->resolvedAmount());
+                    : $discountableCharges->plus($line->resolvedAmount());
             }
         }
 
-        if ($grossCharges === null) {
-            throw new BusinessRuleException('A percentage reduction needs at least one charge line to reduce.');
-        }
-
         return array_map(
-            fn (InvoiceLineSpec $line) => $line->isPercentage()
+            function (InvoiceLineSpec $line) use ($totalCharges, $discountableCharges) {
+                if (! $line->isPercentage()) {
+                    return $line;
+                }
+
+                $base = $line->percentBase() === DiscountBase::Total
+                    ? $totalCharges
+                    : $discountableCharges;
+
+                if ($base === null) {
+                    throw new BusinessRuleException('A percentage reduction needs at least one charge line to reduce.');
+                }
+
                 // percentage() returns a positive magnitude; a reduction stores it negated.
-                ? $line->withAmount($grossCharges->percentage($line->percent)->times(-1))
-                : $line,
+                return $line->withAmount($base->percentage($line->percent)->times(-1));
+            },
             $lines,
         );
     }

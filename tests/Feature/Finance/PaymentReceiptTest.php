@@ -86,7 +86,7 @@ function prInvoice(School $school, Student $student, int $kobo): Invoice
 {
     return ActiveSchool::runFor($school->id, fn () => app(GenerateInvoice::class)->handle(
         StudentCurriculum::where('student_id', $student->id)->value('uuid'),
-        [new InvoiceLineSpec('Tuition', Money::fromKobo($kobo))],
+        [new InvoiceLineSpec('Tuition', Money::fromKobo($kobo), bankAccountId: testBankAccountId())],
         InvoiceKind::Scheduled,
     ));
 }
@@ -100,7 +100,7 @@ function prSupplementaryInvoice(School $school, Student $student, int $kobo): In
 {
     return ActiveSchool::runFor($school->id, fn () => app(GenerateInvoice::class)->handle(
         StudentCurriculum::where('student_id', $student->id)->value('uuid'),
-        [new InvoiceLineSpec('Damaged locker door', Money::fromKobo($kobo))],
+        [new InvoiceLineSpec('Damaged locker door', Money::fromKobo($kobo), bankAccountId: testBankAccountId())],
         InvoiceKind::Supplementary,
     ));
 }

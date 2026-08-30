@@ -5,10 +5,14 @@ use App\Enums\Permission;
 use App\Enums\StudentStatusEnum;
 use App\Enums\TeacherStatusEnum;
 use App\Finance\Console\ImportOpeningBalances;
+use App\Finance\Enums\DiscountBasis;
+use App\Finance\Enums\DiscountPolicyStatus;
 use App\Finance\Exports\OpeningBalanceImportTemplateExport;
 use App\Finance\Http\Controllers\InvoiceDetailController;
 use App\Finance\Http\Controllers\PaymentReceiptController;
+use App\Finance\Models\DiscountPolicy;
 use App\Finance\Models\Payment;
+use App\Finance\Services\DiscountAwardImporter;
 use App\Http\Controllers\ClassResultsController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\ImpersonationController;
@@ -510,6 +514,80 @@ Route::middleware(['auth', 'tenant', 'permission:finance.access'])->group(functi
     })
         ->middleware('permission:finance.opening-balance.submit')
         ->name('admin.finance.opening-balances.import');
+
+    /*
+     * The BSS discount-award operator screen. Gated on `finance.discount-award.manage` — the SAME
+     * ability all four of its API routes carry (routes/endpoints/finance.php), so a visible sidebar
+     * item can never 403 on click and the page cannot admit somebody its own upload would refuse.
+     *
+     * IT IS ITS OWN SCREEN AND NOT A PANEL ON /finance/discount-policies. That page is gated on
+     * `finance.discount-policy.change.submit`, a different seat, and DiscountPoliciesScreenTest has an
+     * arm that reds if the import ever appears there — the page gate and the button gate would
+     * otherwise disagree, which is the U1 defect.
+     *
+     * THE FORMAT AND THE POLICY PAIRS ARE PROPS, NOT A FETCH, and the second one is the point.
+     *
+     * Every row of this file resolves to an ACTIVE percentage policy matching its (percentage,
+     * applies-to) pair; a pair nobody approved is refused, by design (DiscountAwardImporter). So a
+     * school with no such policies rejects EVERY row, and a bursar who uploads ninety-one rows to get
+     * ninety-one failures has been failed by this screen and not by their file. The pairs are computed
+     * here so the warning is on the first paint: a fetched version renders an upload form for a moment
+     * before admitting the upload cannot work, which is a moment long enough to use it.
+     *
+     * PAIRS RATHER THAN A BOOLEAN, because the same query answers the question after the empty one —
+     * "which percentages may my sheet use" — and that is the OTHER refusal knowable before the upload.
+     * The count comes with them: two active policies on one pair is also a refusal
+     * (DiscountAwardImporter's ambiguity arm), and it is likewise knowable now rather than afterwards.
+     *
+     * `ActiveSchool::id()`, NOT `getOrFail()`. That returns the School MODEL, and binding a model into
+     * a `where` on `school_id` matches nothing while reading as correct — it shipped an empty term
+     * select on the screen above. `SchoolScope` already bounds DiscountPolicy; the explicit predicate
+     * is kept for the reason the comment above gives, so the reader can see the bound at the call site.
+     */
+    Route::get('/finance/discount-award-imports', function () {
+        $pairs = DiscountPolicy::query()
+            ->where('school_id', ActiveSchool::id())
+            ->where('status', DiscountPolicyStatus::Active->value)
+            ->where('basis', DiscountBasis::Percent->value)
+            ->whereNotNull('percent')
+            ->get(['percent', 'base'])
+            ->groupBy(fn (DiscountPolicy $policy) => $policy->percent.'|'.$policy->base->value)
+            ->map(fn ($group) => [
+                'percent' => (int) $group->first()->percent,
+                'base' => $group->first()->base->value,
+                // The phrase to TYPE IN THE SHEET, read from the importer's own canonical map. The
+                // screen states the pair in the file's vocabulary rather than the enum's, and it does
+                // it through the same function the refusal messages use.
+                'applies_to' => DiscountAwardImporter::appliesToLabel($group->first()->base),
+                'policy_count' => $group->count(),
+            ])
+            ->sortBy([['base', 'asc'], ['percent', 'asc']])
+            ->values();
+
+        // The format guide, from the SAME constants the template renders — the sheet a bursar fills in
+        // and the reference beside it cannot drift, because there is one definition of each.
+        $columns = collect(DiscountAwardImporter::COLUMNS)
+            ->map(fn (array $meta, string $column) => [
+                'column' => $column,
+                'required' => $meta['required'],
+                'format' => $meta['format'],
+                'example' => $meta['example'],
+                'notes' => $meta['notes'],
+            ])
+            ->values();
+
+        $notes = collect(DiscountAwardImporter::NOTES)
+            ->map(fn (array $note) => ['rule' => $note[0], 'meaning' => $note[1]])
+            ->values();
+
+        return Inertia::render('admin/finance/discount-award-imports', [
+            'columns' => $columns,
+            'notes' => $notes,
+            'pairs' => $pairs,
+        ]);
+    })
+        ->middleware('permission:finance.discount-award.manage')
+        ->name('admin.finance.discount-award-imports');
 });
 
 Route::middleware(['auth', 'tenant', 'permission:admin_area.access'])->group(function () {

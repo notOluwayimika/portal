@@ -1,6 +1,6 @@
 ---
 name: finance-drive
-description: How this project drives a screen in a real browser — the throwaway drive instance, the fixture and its two count tables, the seats and what each one proves, checking isolation by id rather than by label, the friction that has already cost sessions, and what the drive report must contain. Load this whenever a brief says to drive a screen, whenever you are about to write a brief that asks for one, whenever you are asked to look at a page in the running app, and before you claim a screen works. It replaces the DRIVE section that briefs used to carry.
+description: How this project drives a screen in a real browser — the throwaway drive instance, the fixture and its three count tables, the seats and what each one proves, checking isolation by id rather than by label, the friction that has already cost sessions, and what the drive report must contain. Load this whenever a brief says to drive a screen, whenever you are about to write a brief that asks for one, whenever you are asked to look at a page in the running app, and before you claim a screen works. It replaces the DRIVE section that briefs used to carry.
 ---
 
 # Driving a screen
@@ -96,10 +96,49 @@ nobody anticipated (`finance_demo`, `school_uat`) is refused rather than wiped. 
 `migrate:fresh`-es, which is why the guards are structural. Both must be satisfied
 honestly; neither is a thing to route around.
 
-Every state in the fixture is produced by **executing the real Actions**, never by
-writing rows, so nothing you see is a state the system cannot reach —
+Every Finance state in the fixture is produced by **executing the real Actions**,
+never by writing rows, so nothing you see is a state the system cannot reach —
 `finance:reconcile-accounts` runs clean on the result
 (`docs/finance/drive-environment.md:17-19`).
+
+**ONE DOCUMENTED EXCEPTION, and it exists because the rule's own justification
+inverts there.** `DriveCastSeeder::seedScholarships()` writes `scholarships.kind`
+as NULL directly, because NULL is a state that EXISTS IN PRODUCTION — the
+2026-08-26 migration backfilled every row to it — and that **no current code path
+can create**, since `ScholarshipController::store()` requires `kind`. Routing it
+through the endpoint would produce a CLASSIFIED row and destroy the only state
+that screen acts on, while making the fixture look more principled than it was.
+The seeder says so in those terms at the write. Treat a new exception the same way:
+it is admissible only when the state is real in production and unreachable by every
+writer, and it must be argued at the line that makes it.
+
+**THAT METHOD NOW ALSO WRITES TWO CLASSIFIED ROWS, AND THEY ARE A WEAKER CASE THAT
+IS MARKED AS ONE** (added 2026-08-28 for the discount-award import, which reads the
+`kind` this fixture had never set and needs a holder on each). `discount` and
+`sponsored` ARE reachable — `store()` mints exactly them — so the "no writer exists"
+argument does not cover them. What covers them is narrower and is stated at the
+write: the sanctioned writer is a CONTROLLER rather than an Action, its whole body
+is `Scholarship::create(['school_id', 'name', 'kind'])`, and there is nothing else
+for a seeder to call, so the write is byte-identical rather than a shortcut past it.
+The moment an Action exists, those two move to it and only the NULL row stays.
+**Read the distinction, and copy the weaker form only with the same argument written
+at the same line** — an exemption that spreads by resemblance is how the rule stops
+meaning anything.
+
+**AND THE THIRD CANDIDATE WAS REJECTED, which is recorded here because it looked
+certain.** S11 commit 2 (`finance_invoice_lines_destination_guard`, 2026-08-29) made a
+destination mandatory on every charge line, and the obvious reading was that the
+allocation screen's `unrecorded` destination state had just become unreachable by any
+writer — the exact shape of the NULL-`kind` exemption, and a licence to plant the row.
+It is FALSE. `AllocationProposal` resolves an invoice's destination through
+`fee_item_id`, not `bank_account_id` (`app/Finance/Services/AllocationProposal.php:252` (AllocationProposal::destinationsFor));
+S11 commit 1 left that read where it was on purpose, because switching it would report
+every pre-column invoice `unrecorded`. So a free-text line still renders the state while
+carrying a perfectly valid destination, and `DriveFinanceStates::unallocatedRemainder()`
+produces it by executing the real Action, as before. **Before claiming a state has become
+unreachable, find the code that DERIVES it and check which column it reads** — a rule
+about column A does not close a state derived from column B, and an exemption taken on
+that reasoning would have written a row the system can still reach.
 
 **Drive the fixture, not the production copy.** Past drives disagreed on this.
 Three ran against the local production copy — the sidebar
@@ -134,16 +173,42 @@ by construction.
 
 ## Check the fixture before you drive anything
 
-The seed command prints **TWO count tables**, not one, and a reader who takes the
-first one for the whole thing will look for a column that is in the other.
+The seed command prints **THREE count tables**, not one, and a reader who takes the
+first one for the whole thing will look for a column that is in another.
 
-**Table 1 — the bulk-run slot**, thirteen columns: academic sessions, terms, class
-levels, bank accounts, discount policies, payments split by `origin`, then
+**Table 1 — the bulk-run slot**, SEVENTEEN columns: school, academic sessions, terms,
+class levels, bank accounts, discount policies, payments split by `origin`, then
 **payments w/ remainder, open invoices**, then **active fee schedules, cohort at
-slot, unplaceable**.
+slot, awarded in cohort, sponsored in cohort, unplaceable**, then **decided credit
+notes, decided voids**. After it the command prints each school's **billable schedule
+lines** — the schedule's MANDATORY items with their amounts and their `discountable`
+flags, which are the inputs to any arithmetic a money drive checks by hand (added
+2026-08-28; read those flags as a SET, because with every mandatory line discountable
+the two discount bases denote the same money).
 
-**Table 2 — the guardians slot**, twelve columns: the same first ten, then
-**students, guardians**.
+**Table 2 — the guardians slot**, FOURTEEN columns: the same first ten, then
+**students, guardians**, then **scholarships, scholarships (unconfigured)**.
+
+**Table 3 — the discount-award import slot**, SEVEN columns: school, **award pairs,
+discount policies, students, on a discount scholarship, on another scholarship,
+discount awards**. It is NARROW ON PURPOSE and **shares nothing with the two above
+except `School` and `Discount policies`** — that screen reads no term, no class
+level, no bank account and no invoice, so repeating the shared ten a third time
+would be waste rather than a cross-check. Added 2026-08-28 by the BSS award-import
+drive. `Discount awards` was ZERO on a fresh fixture and is no longer: the money drive
+later that day seeded two standing awards per school on PLACED students, so it now
+reads 2. It is still the denominator the import drive's re-upload check is measured
+against — that check simply starts from two. The import drive's own four holders remain
+unawarded and unplaced, which is what keeps its first upload able to report `awarded`;
+the two sets of holders are deliberately different students.
+
+Tables 1 and 2 were re-derived against the command's actual output on 2026-08-27 and
+both were WRONG here before that — thirteen and twelve, written when U13/U14's two
+columns and U6's three had not all landed. Table 3's count was derived the same way
+on 2026-08-28, and that run also CONFIRMED the two above were still right — which is
+the check this paragraph asks for, done rather than assumed. That is this section's
+own rule failing and then holding, in this very paragraph, which is why the
+instruction is to read the OUTPUT.
 
 **`Payments w/ remainder` and `Open invoices` were added for U10's allocation
 drive**, and they are the current instance of the rule two paragraphs down. That
@@ -154,13 +219,17 @@ while `Payments (portal)` read 3. `Open invoices` is a separate question, not th
 same one twice: a payment with a remainder and no open invoice is a real state — the
 money banks as credit — but it is a screen with an empty table.
 
-**THE FIRST TEN COLUMNS ARE DUPLICATED, VALUE FOR VALUE.** Both tables are built
-from the same four closures over the same two schools, so those eight are the same
-numbers printed twice; only the tail of each row is new. That is worth knowing for
-two reasons. Reading them as one wide table double-counts nothing but wastes the
-check, and — more usefully — **if the shared ten ever DISAGREE between the two
-tables, something is wrong with the counting rather than with the fixture**, because
-nothing writes between the two `$this->table()` calls.
+**TABLES 1 AND 2 DUPLICATE THEIR FIRST TEN COLUMNS, VALUE FOR VALUE.** Both are built
+from the same closures over the same two schools, so those ten are the same numbers
+printed twice; only the tail of each row is new. That is worth knowing for two
+reasons. Reading them as one wide table double-counts nothing but wastes the check,
+and — more usefully — **if the shared ten ever DISAGREE between those two tables,
+something is wrong with the counting rather than with the fixture**, because nothing
+writes between the `$this->table()` calls.
+
+**TABLE 3 IS NOT PART OF THAT.** It shares only `School` and `Discount policies`, and
+deliberately: the award-import screen reads none of the other eight, so repeating them
+would be waste rather than a cross-check. Do not read a missing column there as drift.
 
 Between and after them the command prints two more things a drive uses: a line
 naming the bulk-run screen and its slot, and, after table 2, the **generated
@@ -180,11 +249,46 @@ null coordinates and seeded no schedule, so a run would have billed nobody on a
 fixture that looked full. A guardians drive then needed students and guardians, and
 added a second table rather than widening the first. U10's allocation drive then
 needed payments with a remainder and open invoices, and found the same shape a third
-time: three payments, none of them allocatable. **When your screen depends on
-something the tables do not count, add the column before you open a browser** — and
-update the enumeration in this paragraph with it. That last step has now been missed
-twice and caught twice, which is the argument for reading the command's ACTUAL output
-against this paragraph rather than trusting it.
+time: three payments, none of them allocatable. U13/U14 added the two decided-document
+columns. And the `scholarships.kind` drive found the FOURTH instance and the starkest:
+`DriveCastSeeder` and `SeedDriveFixture` between them contained the string
+"scholarship" **zero times**, so the Scholarships tab would have opened onto an empty
+list. And the BSS discount-award drive found the FIFTH, in the sharpest form yet: the
+fixture held ONE discount policy per school and its scholarships had no holders, so
+that screen — whose third column IS the base axis — could not distinguish a resolver
+that read the axis from one that ignored it, and would have refused every row of any
+sheet for one reason. It added a THIRD table rather than widening either
+(`Award pairs` cannot be derived from `Discount policies`: three rows could be three
+drafts, three fixed amounts, or three on one pair). And the money drive found the SIXTH
+the same day, in the place the fixture looked most convincing: the schedule carried one
+discountable item and one NON-discountable one, so a reader asking "can this fixture
+tell the two discount bases apart?" answered yes — but the non-discountable item was
+also NOT MANDATORY, and a run bills mandatory items only. Every invoice a run produced
+held one line and that line was discountable, so `discountable` and `total` denoted the
+SAME money and an implementation ignoring the base axis entirely would have passed.
+**It is not enough for the SCHEDULE to be mixed; the BILLED SUBSET has to be** — check
+the flags on the lines that actually reach the document, not on the ones the catalog
+holds.
+
+**When your screen depends on something the tables do not count, add the column
+before you open a browser** — and update the enumeration in this paragraph with it.
+That last step has now been missed THREE times and caught three times, which is the
+argument for reading the command's ACTUAL output against this paragraph rather than
+trusting it.
+
+**AND CHECK WHETHER A COUNT IS THE RIGHT SHAPE, not only whether it exists.** `Award
+pairs` counts DISTINCT `(percent, base)` pairs, not policies, because the pair is what
+a row of that sheet names — and the two numbers disagree exactly when the fixture is
+degenerate in the way that matters. A column that counts the wrong unit reads healthy
+while the screen it was added for cannot be driven, which is this section's failure
+mode reproduced one level in.
+
+**`Scholarships` is SPLIT into a total and an unconfigured count, for the reason
+`Payments (portal)/(migrated)` is split.** The tab's only actionable state is
+`kind IS NULL`; a single total would read as coverage on a fixture whose rows were all
+already classified — which is exactly what the fixture looks like after ONE drive has
+run, since re-seeding is the only thing that puts them back. The second column is the
+one to read before opening a browser.
 
 **Nothing in this repository can execute that table.** `SeedDriveFixture` refuses
 outside `APP_ENV=drive` (`:49-54`) and `phpunit.xml:29` pins the suite to
@@ -383,9 +487,22 @@ statement". It is already in the committed `.env.drive.example:40`; if you built
 your `.env.drive` from something else, this is the first thing you will hit
 (`docs/handoff/drives/2026-07-25/README.md:77-83`).
 
+**Drive `localhost:8001`, never `127.0.0.1:8001` — `session.domain` is `localhost`.**
+A harness pointed at the IP signs in and appears to succeed: `POST /login` answers a
+302. It then holds no session at all, because the cookie was issued for `localhost`
+and the browser will not send it back to a different host — so every
+`/api/v1/finance/*` call 401s, every page bounces to `/login`, and the login form
+renders again with no error on it. That is indistinguishable from a wrong password,
+and the cycle it costs is spent checking credentials that were never wrong.
+`localhost:8001` is also `app.url`. Not a defect in whatever you are driving; the
+same class as the Sanctum entry above, and measured on the discount-base drive
+(`docs/handoff/drives/2026-08-27-discount-base/README.md` § 2).
+
 **`php artisan serve` is single-threaded**, and the SPA can lose the CSRF race on
 the very first paint. Have the drive script reload once on the error state rather
-than reporting the error state (same source).
+than reporting the error state (the Sanctum entry's source, named rather than
+called "same source" — that read correctly only while the two sat adjacent, which
+the entry between them ended).
 
 **Measure after the redirect settles.** A drive once reported
 `sidebar entry present: false` because it counted links immediately after login,
@@ -414,8 +531,9 @@ what each one shows without opening it — `maker-03-inline-amount-error.png`,
 `isolation-01-school-b-list.png`. The drive section of your implementation report
 carries:
 
-1. **BOTH fixture count tables**, pasted from the command — see "Check the fixture"
-   for why there are two and what their shared first eight columns mean.
+1. **ALL THREE fixture count tables**, pasted from the command — see "Check the
+   fixture" for why there are three, which ten columns tables 1 and 2 share, and why
+   table 3 shares almost none of them.
 2. **What the selects actually contained — by count and by value.** Not "the page
    loaded", not "the select was populated". The raw lines your script read out of
    the DOM, uncut, exactly as U1 and U2 pasted them. A summary of what a select

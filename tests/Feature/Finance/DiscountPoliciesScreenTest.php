@@ -243,7 +243,12 @@ it('carries `status` and `requires_approval`, in the shapes the invoice modal re
     foreach ($full as $row) {
         expect($row)->toHaveKeys([
             'id', 'name', 'description', 'basis', 'value_minor', 'value_currency', 'percent',
-            'requires_approval', 'status',
+            // `base` gained a reader on the screen at the same time as this line: valueLabel() used
+            // to hardcode "of discountable charges" over every percent policy, `total` ones
+            // included. Drop the key from the Resource and the client says "of discountable
+            // charges" about half the whole bill — a wrong figure, silently, with the em-dash
+            // fallback nowhere in sight because `percent` still arrives.
+            'base', 'requires_approval', 'status',
         ]);
 
         expect($row['basis'])->toBeIn(['amount', 'percent']);
@@ -364,9 +369,20 @@ it('has ONE MAKER ability, so the page gate and the button gate cannot disagree'
 
     expect($makerAbilities->all())->toBe([
         'finance.discount-policy.change.submit',
-    ], 'A second MAKER-side discount ability now exists. '
+        // ADDED BY THE BSS AWARD IMPORT, AND ADMITTED ONLY BECAUSE IT GATES NOTHING ON THIS SCREEN.
+        // `finance.discount-award.manage` gates four routes under /v1/finance/discount-award-imports
+        // — template, upload, status, report — and this page posts none of them. So the page gate and
+        // the button gate still cannot disagree here: holding the page still implies holding every
+        // control on it.
+        //
+        // THAT SENTENCE IS NOT LEFT AS PROSE. The arm below asserts this page references neither the
+        // import endpoint nor the new ability, so the day a control for it IS added to this screen,
+        // this file goes red and the U1 question becomes live again — which is what this tripwire was
+        // widened on the promise of.
+        'finance.discount-award.manage',
+    ], 'A further MAKER-side discount ability now exists. '
         .DPS_PAGE.' gates the whole page on finance.discount-policy.change.submit and asks nothing '
-        .'else, because until now every control on it posted that one endpoint. If the new ability '
+        .'else, because every control on it posts that one endpoint. If the new ability '
         .'gates an action on this screen, the page gate and the button gate can now disagree — the U1 '
         .'defect — and the page needs an in-page can() on whatever those controls actually post.');
 
@@ -383,9 +399,40 @@ it('has ONE MAKER ability, so the page gate and the button gate cannot disagree'
         'finance.discount-policy.change.submit',
         'finance.discount-policy.change.approve',
         'finance.discount-policy.change.reject',
+        'finance.discount-award.manage',
     ], 'The discount ability set no longer matches on the word "discount". If these were renamed, the '
         .'maker arm above is now matching nothing and proving nothing — re-derive its filter from '
         .'whatever the catalog calls them now.');
+});
+
+it('does not put an award-import control on this page — the reason the maker arm was widened', function () {
+    /*
+     * THE ENFORCEMENT BEHIND THE ARM ABOVE. `finance.discount-award.manage` was admitted to the maker
+     * list on ONE claim: it gates nothing on this screen, so the page gate and the button gate cannot
+     * disagree. A claim wider than its artifact is the same defect as a control with no enforcement,
+     * one level up — so the claim is checked rather than believed.
+     *
+     * If a later commit puts the award import's template button, upload or report link on this page,
+     * this arm reds and the U1 question is live again: the page would then need an in-page can() on
+     * `finance.discount-award.manage`, because a seat holding change.submit does NOT hold it (the
+     * grants map puts it on accounts_officer alone).
+     */
+    $page = dpsRead(DPS_PAGE);
+
+    // `str_contains(...)` + `toBeFalse($message)`, NOT `->not->toContain($needle, $message)`.
+    // `toContain` is VARIADIC, so a message passed to it becomes a SECOND NEEDLE and the negation
+    // then passes whenever EITHER string is absent — which the message always is. Written that way
+    // first, this arm stayed green with the import endpoint planted in the page: a guard that could
+    // not fail, reading as covered. Caught by bite-proving it rather than by reading it.
+    expect(str_contains($page, 'discount-award-imports'))->toBeFalse(
+        DPS_PAGE.' now posts or links the discount-award import endpoint, which is gated on '
+        .'finance.discount-award.manage while the page gate asks only for '
+        .'finance.discount-policy.change.submit. Those are different seats — add an in-page can() on '
+        .'the control, or move it to its own screen.');
+
+    expect(str_contains($page, 'discount-award.manage'))->toBeFalse(
+        DPS_PAGE.' now names finance.discount-award.manage. If this page has grown an award control, '
+        .'gate that control in-page rather than leaving the whole screen on one ability.');
 });
 
 // ── The nav entry ────────────────────────────────────────────────────────────────────────────────

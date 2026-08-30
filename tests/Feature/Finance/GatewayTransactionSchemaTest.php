@@ -63,7 +63,7 @@ function gtxSchool(): array
 
         $invoice = app(GenerateInvoice::class)->handle(
             $enrollment->uuid,
-            [new InvoiceLineSpec('Tuition', Money::fromKobo(500000))],
+            [new InvoiceLineSpec('Tuition', Money::fromKobo(500000), bankAccountId: testBankAccountId($school->id))],
             InvoiceKind::Scheduled,
         );
 

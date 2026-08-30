@@ -10,6 +10,7 @@ use App\Finance\Http\Controllers\FeeScheduleChangeController;
 use App\Finance\Http\Controllers\FeeScheduleController;
 use App\Finance\Http\Controllers\FinanceAccountController;
 use App\Finance\Http\Controllers\InvoiceController;
+use App\Finance\Http\Controllers\ManualInvoiceRunController;
 use App\Finance\Http\Controllers\OpeningBalanceBatchController;
 use App\Finance\Http\Controllers\PaymentAllocationController;
 use App\Finance\Http\Controllers\PaymentController;
@@ -408,4 +409,41 @@ Route::get('/v1/finance/bulk-invoice-runs', [BulkInvoiceRunController::class, 'i
 Route::post('/v1/finance/bulk-invoice-runs', [BulkInvoiceRunController::class, 'store'])
     ->middleware('permission:finance.invoice.generate');
 Route::get('/v1/finance/bulk-invoice-runs/{run:uuid}', [BulkInvoiceRunController::class, 'show'])
+    ->middleware('permission:finance.invoice.generate');
+
+/*
+ * THE MANUAL INVOICE RUN — a bursar's own list of students, one supplementary invoice each, from
+ * lines they typed. Two routes and no more; the filter-and-tick screen is a later commit and brings
+ * whatever reads it needs with it.
+ *
+ * SAME ABILITY AS EVERY OTHER INVOICE ROUTE, and nothing new is coined. `finance.invoice.generate`
+ * already governs the single-student POST and all four bulk-run routes on exactly this reasoning:
+ * the authority to raise one invoice is the authority to raise ninety. A `…generate-manual` minted
+ * here would be granted to precisely the roles that already hold `generate` — deciding nothing while
+ * adding a second case to keep in step. The read carries the same ability as the write for the
+ * reason the opening-balance maker's five routes do: the person who starts a run is the person who
+ * must read it back.
+ *
+ * NO PREVIEW, AND THE ASYMMETRY WITH THE BULK RUN IS DELIBERATE. A scheduled run's cohort is
+ * COMPUTED — the operator names two coordinates and the server decides who that is, so a preview is
+ * the only way to see the list before committing to it. A manual run's list is GIVEN: the operator
+ * IS the preview, and they are looking at the students they ticked. What they cannot see in advance
+ * is which of them the server can place, and that is answered by the run report rather than by a
+ * second endpoint — there is no maker-checker on this path, so the report is where a wrong selection
+ * has to surface anyway, and one place is better than two that can disagree.
+ *
+ * THERE IS NO DELETE AND NO CANCEL, for the reason the block above states and one worse. A run is
+ * the record of a billing act and the only thing that accounts for the students it did NOT bill, so
+ * deleting one destroys the evidence. And re-running is NOT the recovery path it is on the scheduled
+ * side: a supplementary invoice has no duplicate backstop at any layer
+ * (docs/handoff/tickets/a-supplementary-invoice-has-no-duplicate-backstop.md), so a second run over
+ * the same list bills everyone on it a second time.
+ *
+ * ORDER IS NOT LOAD-BEARING HERE — there is no literal-segment route to shadow `{run:uuid}` — but
+ * the POST is declared first anyway so a `preview` or a `retry` added later meets the same
+ * declaration-order trap the two blocks above record, in the place they record it.
+ */
+Route::post('/v1/finance/manual-invoice-runs', [ManualInvoiceRunController::class, 'store'])
+    ->middleware('permission:finance.invoice.generate');
+Route::get('/v1/finance/manual-invoice-runs/{run:uuid}', [ManualInvoiceRunController::class, 'show'])
     ->middleware('permission:finance.invoice.generate');

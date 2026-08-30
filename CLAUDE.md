@@ -75,6 +75,18 @@ operational facts an agent needs most often.
   surrounding shell still exits 0. Three false signals from this on 2026-08-30 alone, each of which
   read as a real finding. Before starting a suite, check nothing else is running:
   `ps -eo command | grep -c '[p]hp.*vendor/bin/pest'`.
+
+  **AND MAKE IT GATE, NOT REPORT.** Written as a bare `echo` at the top of a compound command it is
+  decoration: on 2026-08-30 exactly such a pre-flight printed `2` and the suite started anyway,
+  because nothing branched on the number. A check whose result is not acted on is the same defect as
+  a rule with no lint behind it, one layer smaller. Either guard it —
+
+  ```bash
+  [ "$(ps -eo command | grep -c '[p]hp.*vendor/bin/pest')" -eq 0 ] || { echo "busy"; exit 1; }
+  ```
+
+  — or do not write it, because an unheeded check manufactures the confidence that stops anyone
+  looking.
 - **`Http::fake()` ACCUMULATES stubs and the FIRST match wins — re-faking the same URL inside a
   loop does nothing.** Every iteration after the first receives the FIRST iteration's response, so a
   `foreach` over six provider statuses tests one status six times and reports six passes. Bit once
@@ -136,12 +148,18 @@ operational facts an agent needs most often.
   branch that touches no Finance code — a stale Vite manifest after a `staging` pull
   that added new pages, so every Inertia test rendering them 500'd. The check is
   cheap: run the failing files on the base branch with none of your work present.
-  **AND THE STALE MANIFEST IS INVISIBLE TO EVERY REVIEW**, which is why it recurs. `public/build`
-  is gitignored, so a stale manifest appears in no diff, survives no code review, and is never fixed
-  *for* anybody — it breaks independently on every machine that pulls, and each person diagnoses it
-  from scratch. Bit again 2026-08-30 merging `staging` into a branch that adds an Inertia page: the
-  page's own tests 500'd with `Unable to locate file in Vite manifest`, which reads as a broken page
-  rather than a stale artifact.
+  **AND THE RULE ABOVE UNDER-DESCRIBES ITS OWN FAILURE — a `staging` pull is not the only thing that
+  stales it.** `public/build/manifest.json` is ONE SHARED, GITIGNORED artifact, and **any
+  `bin/quality` run on any branch rebuilds it from that branch's tree**. So pushing branch A silently
+  invalidates the manifest for branch B, with no pull, no merge and no edit involved — ordinary
+  branch-switching is enough. Measured 2026-08-30: the manifest was rebuilt on a branch that adds an
+  Inertia page, its tests passed, a push on an unrelated docs branch then rebuilt it WITHOUT that
+  page, and the same tests 500'd with `Unable to locate file in Vite manifest`.
+
+  Being gitignored is what makes it recur: it appears in no diff, survives no code review, and is
+  never fixed *for* anybody — it breaks independently on every machine and is re-diagnosed from
+  scratch each time. **Rebuild before running any suite that renders a page your branch adds, if
+  anything else has run since** — not merely after a pull.
   **Rebuild the frontend after any `staging` pull that touches it**, and note the
   worse cousin — a manifest that is stale but still *resolvable* passes against the
   wrong bundle instead of erroring.

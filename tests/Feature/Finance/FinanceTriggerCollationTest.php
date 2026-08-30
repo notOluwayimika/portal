@@ -210,11 +210,21 @@ it('adds no NEW bare string comparison to any finance trigger', function () {
 
     expect($new)->toBe([], "NEW bare string comparison(s) in a finance trigger:\n  "
         .implode("\n  ", $new)
-        ."\n\nThe tables are utf8mb4_unicode_ci, which is case- AND accent-insensitive, so this "
-        ."comparison treats 'x' and 'X' as equal. A domain arm written this way admits values no "
-        ."report filter matches; a freeze arm written this way does not freeze.\n\n"
-        .'THE FIX IS `COLLATE utf8mb4_bin` ON THE COMPARISON — not an entry in ftcAcceptedBare(). '
-        .'That list is a debt register for work predating this gate and should only ever shrink.');
+        ."\n\n"
+        ."=====================================================================\n"
+        ."  THE FIX IS `COLLATE utf8mb4_bin` ON THE COMPARISON.\n"
+        ."  IT IS *NOT* AN ENTRY IN ftcAcceptedBare().\n"
+        ."=====================================================================\n\n"
+        .'THIS GATE CANNOT BE SATISFIED BY ADDING TO ITS LIST, and that is deliberate. It is the '
+        .'one way it differs from CheckConstraintsAsTriggersTest, where adding your constraint to '
+        .'the enumeration IS the correct fix. If you have just come from that gate, this is the '
+        .'reflex to break: ftcAcceptedBare() is a DEBT REGISTER of comparisons that predate this '
+        .'gate, it may only SHRINK, and a companion arm in this file fails on a stale entry — so an '
+        ."addition that is not genuinely pre-existing is caught either way.\n\n"
+        .'WHY IT MATTERS: the finance tables are utf8mb4_unicode_ci, which is case- AND '
+        ."accent-insensitive, so this comparison treats 'x' and 'X', and 'NGN' and 'NGN' with a "
+        .'diacritic, as equal. A DOMAIN arm written this way admits values no report filter will '
+        .'ever match. A FREEZE arm written this way does not freeze.');
 });
 
 it('reports the accepted list SHRINKING, so a fix cannot leave a stale entry behind', function () {

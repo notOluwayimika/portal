@@ -113,6 +113,49 @@ it('the seven replaced CHECK constraints are GONE, so there is exactly one mecha
     );
 });
 
+it('the set of CHECK constraints on finance_ tables is EXACTLY this list — a new one fails here', function () {
+    // WHY THIS IS AN EXACT SET AND NOT A `toContain` LIST. The two tests around this one are named
+    // lists: the seven that must be GONE, and three specimens that must be PRESENT. Neither can see a
+    // CHECK nobody thought to name — and on 2026-08-27 a new migration added two
+    // (`finance_gateway_transactions_amount_currency_shape` and `…_fee_currency_shape`) and this file
+    // stayed green, because "is it in my list of seven" is not "did anyone add a new one".
+    //
+    // A NEW `CHECK` ON A finance_ TABLE IS ALWAYS WRONG HERE, and it is worth stating why in one
+    // place. Measured on a real MySQL 5.7.23 container (2026-08-28), which is production's exact
+    // version: `ALTER TABLE … ADD CONSTRAINT … CHECK` RETURNS SUCCESS, `TABLE_CONSTRAINTS` then
+    // reports 0 rows for it, `SHOW CREATE TABLE` omits it, and the value it forbids INSERTS. On
+    // 8.0.43 it is real but evaluated AFTER every BEFORE trigger, so where a trigger already carries
+    // the rule it is unreachable. Inert on one server, shadowed on the other.
+    //
+    // The sixteen below are the ones that predate that measurement and stay by decision (see the
+    // test beneath this one). Adding to this list is allowed; doing it SILENTLY is not — and a
+    // migration that trips this should ask whether a trigger is what it wanted.
+    $actual = collect(DB::select(
+        "SELECT CONSTRAINT_NAME AS name FROM information_schema.TABLE_CONSTRAINTS
+          WHERE CONSTRAINT_SCHEMA = DATABASE() AND CONSTRAINT_TYPE = 'CHECK'
+            AND TABLE_NAME LIKE 'finance\\_%'"
+    ))->pluck('name')->sort()->values()->all();
+
+    expect($actual)->toBe([
+        'finance_credit_notes_amount_currency_shape',
+        'finance_discount_policies_basis_exclusive',
+        'finance_discount_policies_value_currency_shape',
+        'finance_discount_policy_changes_target_shape',
+        'finance_discount_policy_changes_terms_shape',
+        'finance_discount_policy_changes_value_currency_shape',
+        'finance_fee_items_amount_currency_shape',
+        'finance_invoice_lines_amount_currency_shape',
+        'finance_invoices_total_currency_shape',
+        'finance_ledger_transactions_amount_currency_shape',
+        'finance_payment_allocations_amount_currency_shape',
+        'finance_payments_amount_currency_shape',
+        'finance_student_accounts_balance_currency_shape',
+        'ob_batches_control_total_currency_shape',
+        'ob_rows_balance_currency_shape',
+        'ob_rows_student_total_balance_currency_shape',
+    ]);
+});
+
 it('the untouched CHECK constraints are NOT collateral damage', function () {
     // The other twelve rules stay as CHECKs by decision, documented in the audit: the currency-shape
     // ones are backed by the CHAR(3) column type, the rest are validated at the edge with a narrow

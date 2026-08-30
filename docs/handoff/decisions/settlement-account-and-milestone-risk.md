@@ -1,6 +1,31 @@
 # Decision request → Developer 1 — settlement account, and the 6 September milestone
 
-**Raised:** 2026-08-28. **Answer needed by: 31 August 2026.**
+**Raised:** 2026-08-28. **SUPERSEDED IN PART, 2026-08-30 — see the banner below.**
+**Answer needed by: 31 August 2026** for what remains.
+
+> ## ⚠️ MOST OF §1 AND §2 ARE ANSWERED. Verified on `origin/staging` @ `1921cb7e`, 2026-08-30.
+>
+> Developer 1 landed the settlement work on 29 August. **Do not action §1 or §2 below as written** —
+> they are kept for the record of what was asked and why, not as live requests.
+>
+> | asked | landed | verified by |
+> |---|---|---|
+> | a settlement account datum | `2026_08_29_100000_finance_school_settings_settlement_bank_account.php` | `git ls-tree` on staging |
+> | somewhere to resolve it from | `app/Finance/Services/SettlementBankAccount.php` + its test | file read on staging |
+> | the ability name for recording | `finance.payment.record` in `app/Enums/Permission.php` | `git grep` on staging |
+> | production readiness owner | Section 0 of the cutover runbook | — |
+> | invoice-line destination | `2026_08_29_110000` + `..._120000` (nullable, then required) | migration names on staging |
+>
+> **The resolver's real contract, since I will be calling it and got it wrong in my own plan:** it is
+> `final class SettlementBankAccount` with an **instance** method
+> `public function forSchool(int $schoolId): int` — not static, so it is injected — and it throws
+> `BusinessRuleException` when the school has no settlement account configured. Its message names the
+> school **by id and never by name**, which is the cross-school-leak rule holding in an error string.
+> **My `SettlementAccount::forSchool` stub is deleted; step 4 calls his class.**
+>
+> **What is still open is §3 and §5 below**, plus the three business questions.
+
+
 **Blocks:** §6 step 4 (the webhook handler) entirely. Steps 2, 3, 6 and 7 proceed without it.
 
 **Why the 31st and not "when you get to it".** The definition of done is 6 September. The 31st leaves
@@ -9,8 +34,9 @@ being a technical question and becomes a milestone one** — at that point it es
 the milestone rather than being chased again, because an unanswered dependency past its date is a
 schedule fact, not a dependency.
 
-Three things. Only the first is a decision; the second needs an owner and a date; the third is
-information about your code that should not wait for my branch to merge.
+Four things. Only the first is a decision; the second needs an owner and a date; the third is
+information about your code that should not wait for my branch to merge; the fourth is a request for
+review time on a branch that is now on the critical path.
 
 ---
 
@@ -20,6 +46,17 @@ information about your code that should not wait for my branch to merge.
 distinction matters: until a human sends it, the state of this dependency is *"raised in a file in
 the repository"*, which is not the same as *"asked"*. A document nobody has been pointed at is the
 paper form of a control with no enforcement behind it.
+
+**AND THE FILE HAD TO MOVE BEFORE EVEN THAT WAS TRUE.** This document was first written on
+`feat/gateway-transaction-table` — an unpushed branch pending review of work Developer 1 is not
+blocked by. So it was not "in the repository" in any sense he could reach: it was on one laptop,
+behind a review of something else. It now lives on this branch, off `staging`, pushed, **precisely so
+that the decision is not gated on the branch that happened to discover it.** The gateway branch can
+stay local as long as review needs; this cannot.
+
+The general form, since it is the same error one level out: *a dependency is only raised when the
+person it depends on can see it.* Writing it down, committing it, and even pushing it are all
+upstream of that — the message is the delivery, and the document is only the detail behind it.
 
 > Two things that need you, both today.
 >
@@ -41,10 +78,17 @@ paper form of a control with no enforcement behind it.
 > it stops being a technical question and becomes a milestone one.
 >
 > **Separately, worth your eyes this week:** while fixing a collation defect on my branch I found the
-> same class live in 24 existing finance triggers, two of which gate the credit-note ceiling and the
+> same class live in 29 comparisons across 10 existing finance triggers, two of which gate the credit-note ceiling and the
 > opening-balance terminal state — string comparisons under `utf8mb4_unicode_ci` where `'X' = 'x'`.
 > Reachability not established, so I've ticketed rather than claimed it. But it's your code and it's
 > on production. `2026_08_17_100000`'s own docblock already names this failure mode.
+>
+> **And one review ask:** `feat/gateway-transaction-table` is pushed — eight commits, two cold review
+> passes. Flagging it because the discrepancy report can't branch until the table is on `staging`, so
+> it's on my critical path rather than just in the queue. Whenever you have a window.
+>
+> *(Merged as #330 on 30 August — and it left two staging reds, both in test files I wrote. See §4's
+> postscript.)*
 
 ---
 
@@ -149,8 +193,10 @@ because it is live on production today and it is in your files.
 Every `finance_` table is `utf8mb4_unicode_ci`, which is case- **and accent**-insensitive. Inside a
 trigger that makes `NEW.status = 'approved'` match `'Approved'`, and `NEW.x <=> OLD.x` treat a
 case-variant rewrite as no change at all. Measured across all 58 finance triggers, restricted to
-string-typed columns (collation is meaningless on an integer): **48 such comparisons, 24 of them
-bare.**
+string-typed columns (collation is meaningless on an integer): **29 genuinely bare comparisons
+across 10 triggers.** (An earlier draft said 24 — my scanner missed the `<=>` operator and mis-flagged
+two `BINARY`-protected comparisons. The ticket records both corrections; take the list over the
+number.)
 
 Two are worth your eyes before the rest, because they are domain comparisons on a `status` column —
 the shape that admits a value the rest of the system believes impossible:
@@ -165,6 +211,14 @@ writer can put a case variant into `status` at all, which is an app-layer questi
 not answer. That is the first thing to measure, and note that a `status` column with no DB-level
 domain guard would itself be the finding.
 
+**And the obvious sweep does not work, which is worth knowing before you plan one.** The natural
+hypothesis is that these are the triggers written before `2026_07_26_140002` recorded the #95
+correction — a dated cohort, sweepable. Measured: **six of the ten are after that date, and one of
+them is `2026_07_26_140001`, the sibling committed the same day.** The correction was written into one
+migration's docblock and never propagated, not even next door. So the fix is not only the collation —
+it is a tripwire that makes the next omission fail a build, which is what makes this different from
+adding the clause and hoping.
+
 This class is already named in your own `2026_08_17_100000` docblock, for domain arms: *omitting
 `COLLATE utf8mb4_bin` from ONE arm is the quiet failure, because the other arms keep biting and the
 guard still looks alive.* What my branch adds is that it applies to **freeze and write-once** arms
@@ -174,6 +228,84 @@ Full write-up, the scan, and why the scan under-reported its first time:
 `docs/handoff/tickets/finance-trigger-string-comparisons-are-case-insensitive.md`.
 
 ---
+
+## 4 · ~~A review request~~ — DONE. Merged as PR #330 on 30 August.
+
+**Nothing is being asked for here any more.** Kept as the record of the ask and, more usefully, of
+what the merge cost — see the postscript at the end of this section.
+
+**`feat/gateway-transaction-table` was pushed** — eight commits, two cold review passes, both worked
+and re-mutated, plus the MySQL 5.7.23 measurements on `docs/mysql-5-7-measured`.
+
+**Why it is being flagged rather than left in the queue:** the §6 step 7 discrepancy report **cannot
+branch until that table is on `staging`.** A branch off `staging` cannot migrate a table that exists
+only on a feature branch, so the report cannot be written, tested, or committed. That was discovered
+by trying it, not predicted — and it converts the report from the "leaf that blocks nothing" it was
+described as into something gated on this review.
+
+So the chain is: **push → your review → merge → the report can start.** Pushing does not unblock it;
+merging does. Whenever you have a window — there is no need to rush the review itself, only to know
+that something is waiting on it.
+
+**And one thing it changes for you**, which is the reason it should not wait for the settlement work
+to land first: it is safer to review and merge BEFORE the settlement migration than after. The
+branch's `down()` was verified by re-deriving the rollback depth from `migrate:status` rather than
+trusting `--step=1`, and `--step=1` counts from the branch's latest migration — so once another
+migration sits on top, a rollback audit that trusts the step count reverts the wrong thing and passes
+having tested nothing. That is a documented bite in this repository, not a hypothetical.
+
+## 5 · What is actually still open, as of 2026-08-30
+
+Kept short deliberately: a list that re-asks answered questions is a list that stops being read.
+
+1. **The 29 collation-degenerate comparisons** (§3). **Not closed by open-findings §11** — that
+   measured the clause takes effect where it is written; these are 29 places it was never written.
+   §11 makes them more urgent, not less, because it removes the possibility that their absence was
+   harmless. The ticket now opens with that distinction.
+2. **Ability names for the gateway ROUTES.** `finance.payment.record` covers recording a payment;
+   the webhook, the verify-on-return and the pay-initiation endpoints still need theirs, and the
+   grants-convergence lint bites on merge if we each invent our own.
+3. **The three §11 business questions** — who bears the gateway fee, whether partial payment is
+   permitted, and what happens to a payment against an invoice voided in between. I searched staging
+   and could not find any of them answered. All three change the screen or the ledger.
+4. **The payment-received notification's name**, so it is registered once rather than twice.
+5. **Two policy defaults that are mine to raise and not to set:** how long a raw gateway payload is
+   retained before redaction (`docs/handoff/tickets/gateway-payload-retention.md`), and how long a
+   `pending` transaction is re-verified before a human is told
+   (`docs/handoff/decisions/webhook-arrives-but-verify-is-unreachable.md`).
+
+### Postscript — the merge left two staging reds, both in test files I wrote
+
+Repaired by #339. Recording it here rather than letting it sit only in a commit message, because one
+of the two is a process failure of mine and the other is a cost worth knowing about in advance.
+
+**1 · `GatewayTransactionSchemaTest`'s fixture — my miss, and the interesting one.** `gtxSchool()`
+built its invoice with a charge line carrying no destination. **S11 (`2026_08_29_120000`) had already
+made a destination REQUIRED on charge lines — it landed on 29 August, the day BEFORE I pushed.** So
+every one of the 22 arms in that file died in setUp against current `staging`, having been green
+against the base the branch was cut from.
+
+The branch was based on `origin/staging` @ `6f54a18a`. By the time I pushed, staging was at
+`1921cb7e`. **I never merged staging in, and never re-ran the suite against it** — every green I
+reported was measured against a base that had moved. That is the mirror of the rule this repo already
+has: *a red is not a regression until you have seen the same code green somewhere.* The converse is
+just as true and I did not apply it — **a green is not a pass when it was measured against a base
+that has moved.**
+
+Worse, I wrote in the PR body that *"reviewing this before the next migration lands is safer than
+after"* — while the migration that broke it had **already landed**. I asserted a state of `staging`
+I had not checked at the moment I wrote the sentence. Same class as everything else on the taxonomy.
+
+**2 · `CheckConstraintsAsTriggersTest`'s exact-set arm — not a defect; the gate doing its job.**
+#338 added a seventeenth `finance_%` CHECK and the enumeration refused it, exactly as designed:
+*adding to this list is allowed, doing it silently is not.* The repair names it and records that it is
+not trigger-backed.
+
+**But the coordination cost I flagged when writing it arrived within one day**, which is worth
+knowing: an exact-set gate over shared schema fires on legitimate additions too, in a test whose name
+mentions nobody's table. That is the intended trade — silent addition is what the named lists could
+not see — and it is a real tax on whoever adds the next CHECK. It should be widened to
+`finance\_%` only when the 29 are fixed, not before.
 
 ## If the 31st passes with no answer
 

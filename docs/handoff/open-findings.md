@@ -253,12 +253,33 @@ Ticket: `current-term-resolution-is-unordered.md`.
 
 ---
 
-## 9. `fee-schedules.tsx:445` ships `amount_minor: minor ?? 0`
+## 9. `fee-schedules.tsx:445` ships `amount_minor: minor ?? 0` — CHECKED 29 August, NOT a live defect
 
-**Severity: unassessed — check before dismissing.**
+**Severity: closed. The entry below is kept rather than deleted, because "nobody has checked" was
+the finding and the check is the answer.**
 
-A string that `nairaToMinor` rejected still travels as **zero**. It also records a per-row error, so
-whether this is a real defect depends on whether that error blocks submission. Nobody has checked.
+The concern was that a string `nairaToMinor` rejected would still travel as **zero**. It does get
+built as zero at `:445` — and it never leaves the browser. `:456-460`, immediately after the map and
+before any request:
+
+```js
+if (Object.keys(rejected).length > 0) {
+    setErrors({ fields: {}, items: rejected, message: null });
+
+    return;
+}
+```
+
+Every rejected row is recorded during the same map that produces the zero, and this returns before
+`axios` is reached on all three paths (create, edit-draft, supersede). **The zero is constructed and
+discarded.**
+
+**The residual, stated so the close is honest: the safety here is POSITIONAL, not structural.**
+Nothing binds the fallback to the guard. Move that `return`, or add a fourth submit path that skips
+it, and `amount_minor: 0` ships silently — a fee item priced at ₦0.00, on a screen where it would sit
+in a list of plausible-looking rows. The value-fabricating `?? 0` is what makes that possible, and
+building the payload only after validation would make it unrepresentable instead of merely
+unreachable. Not urgent; worth doing the next time that function is opened.
 
 ---
 

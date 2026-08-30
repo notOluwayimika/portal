@@ -50,6 +50,7 @@ use App\Services\ResultSignatureService;
 use App\Support\ActiveSchool;
 use App\Support\ApprovalAbility;
 use App\Support\CurrentTerm;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 use Laravel\Fortify\Features;
@@ -324,6 +325,115 @@ Route::middleware(['auth', 'tenant', 'permission:finance.access'])->group(functi
     ]))
         ->middleware('permission:finance.invoice.generate')
         ->name('admin.finance.bulk-invoice-run');
+
+    /*
+     * BULK MANUAL INVOICING — the bursar picks their OWN list of students, types the lines every one
+     * of them is to be charged, and raises one supplementary invoice each.
+     *
+     * Gated on `finance.invoice.generate` IN ADDITION to the group's finance.access, and it coins
+     * NOTHING: the ability is the one the single-student POST, the four bulk-run routes and this
+     * feature's own three API routes already carry. A visible control can therefore never 403 on
+     * click, and the page cannot be reached by a seat its data would refuse.
+     *
+     * BROOKSTONE RULED ON 30 AUGUST THAT THIS ISSUES DIRECTLY — no maker-checker, no second
+     * signature. There is no second human between a selection and real charges, so the confirmation
+     * on this screen is the last control that exists, and the run report it lands on afterwards is
+     * the only oversight the act ever gets.
+     *
+     * ── WHY THE ROSTER IS A FETCH AND THE FILTER OPTIONS ARE PROPS ───────────────────────────────
+     *
+     * The split is decided by which abilities the bursar seat holds, per the rule fee-schedules and
+     * the opening-balance operator screen both state: PROPS ARE FOR DATA THE SEAT CANNOT FETCH.
+     *
+     * Class levels, arms and scholarships are PROPS. The only API listing them is
+     * `GET /api/students/resources`, which sits under `permission:academic_setup.manage` — an
+     * ability `accounts_officer` does not hold. Widening that seat is a bigger change than the
+     * screen, and it is the third time this screen family has met the same wall.
+     *
+     * The STUDENT ROSTER is a FETCH, of `GET /api/v1/finance/manual-invoice-runs/students`, and it
+     * had to be built for this screen — see ManualInvoiceRunStudentController for why
+     * `/api/students` is unreachable from the bursar seat (`student.view` and
+     * `finance.invoice.generate` intersect on `admin` alone). A page of students is a paginated,
+     * filtered read that changes on every keystroke; it is not a prop, and shipping the whole
+     * school in the initial payload would hand the client the very id list brief §1 forbids it to
+     * hold.
+     *
+     * BANK ACCOUNTS ARE ALSO A FETCH, of `GET /api/v1/finance/bank-accounts` — the same decision
+     * fee-schedules records, and for the same reason: that route is gated on
+     * `finance.bank-account.manage`, which `accounts_officer` and `admin` both hold, so it is data
+     * this seat CAN fetch and a second source for it would be the drift shape. The implicit
+     * coupling — every role holding this page's ability also holding that one — is asserted in
+     * tests/Feature/Finance/ManualInvoiceRunPageTest.php rather than assumed.
+     *
+     * NO TERM PROP, and the absence is a fact about the feature rather than an omission. A manual
+     * run has no (term, class level) slot: `finance_manual_invoice_runs` carries neither column,
+     * because an arbitrary student list spans class levels by definition (the bulk brief §3). The
+     * lines are typed, not priced from a schedule, so there is no term for a schedule to be keyed
+     * to and nothing on this screen to default.
+     *
+     * `->id`, NOT THE MODEL — the scar the three route closures above carry. `getOrFail()` returns
+     * a School and binding it into `where('school_id', …)` matches nothing, which renders the form
+     * with empty selects: a page that looks fine, cannot be used, and passes every test.
+     */
+    Route::get('/finance/manual-invoice-runs', function () {
+        $school = ActiveSchool::getOrFail();
+        $schoolId = $school->id;
+
+        return Inertia::render('admin/finance/manual-invoice-runs/index', [
+            // UUIDs, not ids — StudentIndexFilters matches class level, arm and scholarship by
+            // uuid, so these are the values the roster fetch sends back. An integer here would be
+            // a filter that silently matches nothing.
+            'class_levels' => ClassLevel::query()
+                ->where('school_id', $schoolId)
+                ->orderBy('order')
+                ->get()
+                ->map(fn (ClassLevel $level) => ['id' => $level->uuid, 'name' => $level->name])
+                ->values(),
+            'arms' => $school->arms()->get()
+                ->map(fn ($arm) => ['id' => $arm->uuid, 'label' => $arm->label])
+                ->values(),
+            // Which arms exist for each class level, so the arm select can narrow to the chosen
+            // level instead of offering arms that would return nothing. Same shape and same source
+            // as /api/students/resources, so the screen's narrowing logic is the students index's.
+            'class_level_arms' => DB::table('class_level_arms as cla')
+                ->join('class_levels as cl', 'cl.id', '=', 'cla.class_level_id')
+                ->join('arms as a', 'a.id', '=', 'cla.arm_id')
+                // EXPLICIT School predicate: the query builder bypasses the model scope entirely.
+                ->where('cla.school_id', $schoolId)
+                ->orderBy('a.label')
+                ->distinct()
+                ->get(['cl.uuid as class_level', 'a.uuid as arm', 'a.label as label']),
+            'scholarships' => $school->scholarships()->orderBy('name')->get()
+                ->map(fn ($scholarship) => ['uuid' => $scholarship->uuid, 'name' => $scholarship->name])
+                ->values(),
+        ]);
+    })
+        ->middleware('permission:finance.invoice.generate')
+        ->name('admin.finance.manual-invoice-runs');
+
+    /*
+     * ONE MANUAL RUN'S REPORT. Takes a run uuid, so there is no single URL a menu could point at —
+     * the bulk run's report one block up has the identical shape and the identical exemption in
+     * FinanceNavCoverageTest.
+     *
+     * IT IS WHERE SUBMIT LANDS, and that is the feature's design rather than a convenience. There
+     * is no maker-checker on this path, so this page is the only account of what a selection did:
+     * the bursar's own target count against billed / failed / unplaceable, with the unplaceable
+     * NAMED by admission number. A toast cannot say any of that.
+     *
+     * THE UUID IS PASSED AS A PROP, NOT BOUND TO THE MODEL — the bulk run's reasoning verbatim.
+     * The page's whole content is the poll of GET /api/v1/finance/manual-invoice-runs/{run}, which
+     * is where isolation and the 404 are decided; binding here would put a second School check on a
+     * second path, with the shell and its feed able to disagree about whether a run exists.
+     *
+     * DECLARED AFTER the literal-segment route above. `{run}` constrains nothing, so in the other
+     * order it would swallow the index and the menu item would open a 404.
+     */
+    Route::get('/finance/manual-invoice-runs/{run}', fn (string $run) => Inertia::render('admin/finance/manual-invoice-runs/show', [
+        'runUuid' => $run,
+    ]))
+        ->middleware('permission:finance.invoice.generate')
+        ->name('admin.finance.manual-invoice-run');
 
     /*
      * U7 — ONE INVOICE: the detail screen, and the printable document beside it. Both take an

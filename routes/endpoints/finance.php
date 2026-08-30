@@ -11,6 +11,7 @@ use App\Finance\Http\Controllers\FeeScheduleController;
 use App\Finance\Http\Controllers\FinanceAccountController;
 use App\Finance\Http\Controllers\InvoiceController;
 use App\Finance\Http\Controllers\ManualInvoiceRunController;
+use App\Finance\Http\Controllers\ManualInvoiceRunStudentController;
 use App\Finance\Http\Controllers\OpeningBalanceBatchController;
 use App\Finance\Http\Controllers\PaymentAllocationController;
 use App\Finance\Http\Controllers\PaymentController;
@@ -439,11 +440,28 @@ Route::get('/v1/finance/bulk-invoice-runs/{run:uuid}', [BulkInvoiceRunController
  * (docs/handoff/tickets/a-supplementary-invoice-has-no-duplicate-backstop.md), so a second run over
  * the same list bills everyone on it a second time.
  *
- * ORDER IS NOT LOAD-BEARING HERE — there is no literal-segment route to shadow `{run:uuid}` — but
- * the POST is declared first anyway so a `preview` or a `retry` added later meets the same
- * declaration-order trap the two blocks above record, in the place they record it.
+ * ORDER IS NOW LOAD-BEARING, WHICH IT WAS NOT WHEN THIS BLOCK WAS WRITTEN. The paragraph here used
+ * to read "there is no literal-segment route to shadow `{run:uuid}`", and the screen commit made
+ * that false by adding `/students` below. `{run:uuid}` is a BINDING, not a pattern — nothing
+ * constrains the segment to look like a uuid — so declared in the other order it would swallow
+ * `/v1/finance/manual-invoice-runs/students` and answer 404 from a failed model binding, which
+ * reads as "the roster is empty" on the screen rather than as a routing mistake. The literal
+ * segment is declared FIRST, and the trap the two blocks above record is the reason.
+ *
+ * THE ROSTER IS THE READ THE SCREEN BRINGS WITH IT, exactly as this block already anticipated. It
+ * is a THIRD route on this feature and it is not a third scope: it answers a PAGE of students to
+ * tick, never a set of ids for the client to act on in bulk. See
+ * ManualInvoiceRunStudentController for why the screen cannot simply fetch `/api/students` — in
+ * one line, `student.view` and `finance.invoice.generate` intersect on `admin` alone, so the
+ * bursar seat this feature exists for would meet a 403 where the roster should be.
+ *
+ * SAME ABILITY AGAIN. A read of who might be billed is not a smaller authority than the write that
+ * bills them, and a feed gated differently from the page that consumes it is how a visible control
+ * comes to 403 on click.
  */
 Route::post('/v1/finance/manual-invoice-runs', [ManualInvoiceRunController::class, 'store'])
+    ->middleware('permission:finance.invoice.generate');
+Route::get('/v1/finance/manual-invoice-runs/students', [ManualInvoiceRunStudentController::class, 'index'])
     ->middleware('permission:finance.invoice.generate');
 Route::get('/v1/finance/manual-invoice-runs/{run:uuid}', [ManualInvoiceRunController::class, 'show'])
     ->middleware('permission:finance.invoice.generate');

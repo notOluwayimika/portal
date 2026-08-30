@@ -16,6 +16,7 @@ import {
     MessageSquare,
     PenTool,
     Percent,
+    Receipt,
     ReceiptText,
     RefreshCw,
     Shield,
@@ -500,6 +501,24 @@ export function AppSidebar() {
                     title: 'Bulk invoice runs',
                     href: '/finance/bulk-invoice-runs',
                     icon: Layers,
+                });
+            }
+
+            // Bulk manual invoicing — bill a bursar's OWN list of students, one supplementary
+            // invoice each, from lines they typed. Keyed on `finance.invoice.generate`, the SAME
+            // ability as Bulk invoice runs above and for the identical reason: the authority to
+            // raise one invoice is the authority to raise ninety, so nothing was coined for it and
+            // this item and its route ask exactly the same question.
+            //
+            // IT SITS BESIDE Bulk invoice runs rather than with the config items below, because it
+            // is an ACT. It is also the one act in this group with no approval step anywhere behind
+            // it (Brookstone, 30 August 2026), which is why its screen's confirmation and its run
+            // report carry the whole of the oversight.
+            if (can('finance.invoice.generate')) {
+                financeItems.push({
+                    title: 'Bulk manual invoicing',
+                    href: '/finance/manual-invoice-runs',
+                    icon: Receipt,
                 });
             }
 

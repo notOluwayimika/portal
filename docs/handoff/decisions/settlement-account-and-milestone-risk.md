@@ -254,6 +254,33 @@ trusting `--step=1`, and `--step=1` counts from the branch's latest migration �
 migration sits on top, a rollback audit that trusts the step count reverts the wrong thing and passes
 having tested nothing. That is a documented bite in this repository, not a hypothetical.
 
+## 4b · §11 DECISION 4 HAS MOVED UP — it blocks the webhook handler, not just a screen
+
+**Raised 2026-08-31.** The 2 September grouping assumed decision 4 (*what happens to a payment
+against an invoice cancelled in between*) only shaped a screen. It does not. **It blocks step 4's
+call site**, and the block is not the one anybody expected.
+
+The fee ruling made "who bears the fee" a **ledger** question, not a pricing one, and the two answers
+write different rows:
+
+| | what the parent is charged | what settles the invoice | where the fee lands |
+|---|---|---|---|
+| **Parent bears it** | gross (`bill + fee`) | the **bill** portion | never enters the ledger — it was never the school's money |
+| **School absorbs it** | the bill exactly | the bill, in full | a shortfall at **settlement**, not at payment |
+
+**Same screen, different `finance_payments` row.** And that row is append-only, so choosing wrongly
+is unrepairable — not "hard to fix", *unrepairable*.
+
+**So the fee-bearer policy will be a REQUIRED EXPLICIT INPUT to the payment path, with no default.**
+Nothing will compile without a choice being made somewhere a human can see it. A default here is
+exactly the shape this project keeps paying for: not a decision anyone took, becoming one the moment
+the first real transaction is written.
+
+**What is needed:** confirmation that "the parent bears it" is the answer for *every* case, including
+a payment landing against an invoice cancelled in between — where the money banks as account credit
+(already decided) but it is not yet stated whether the credit is the gross or the net. Both arms are
+being built; only the policy is missing.
+
 ## 5 · What is actually still open, as of 2026-08-30
 
 Kept short deliberately: a list that re-asks answered questions is a list that stops being read.
@@ -265,9 +292,11 @@ Kept short deliberately: a list that re-asks answered questions is a list that s
 2. **Ability names for the gateway ROUTES.** `finance.payment.record` covers recording a payment;
    the webhook, the verify-on-return and the pay-initiation endpoints still need theirs, and the
    grants-convergence lint bites on merge if we each invent our own.
-3. **The three §11 business questions** — who bears the gateway fee, whether partial payment is
-   permitted, and what happens to a payment against an invoice voided in between. I searched staging
-   and could not find any of them answered. All three change the screen or the ledger.
+3. **§11 decision 4 — ESCALATED, see §4b.** It blocks the webhook handler's call site, not merely a
+   screen: the fee ruling turned "who bears it" into a question about which `finance_payments` row
+   gets written, and that table is append-only. Decisions 2 and 3 are answered (parent bears; partial
+   permitted); 4 needs one more sentence about whether a payment against a cancelled invoice banks
+   as credit at gross or net.
 4. **The payment-received notification's name**, so it is registered once rather than twice.
 5. **Two policy defaults that are mine to raise and not to set:** how long a raw gateway payload is
    retained before redaction (`docs/handoff/tickets/gateway-payload-retention.md`), and how long a

@@ -85,8 +85,17 @@ operational facts an agent needs most often.
   [ "$(ps -eo command | grep -c '[p]hp.*vendor/bin/pest')" -eq 0 ] || { echo "busy"; exit 1; }
   ```
 
-  — or do not write it, because an unheeded check manufactures the confidence that stops anyone
-  looking.
+  — or use `bin/db-exclusive`, which is that guard as a script: `bin/db-exclusive ./vendor/bin/pest`
+  refuses rather than reports. **Do not write the inline form**, because an unheeded check
+  manufactures the confidence that stops anyone looking.
+
+  **AND ITS FIRST VERSION WAS BROKEN CLOSED**, which is worth more than the script. The matcher
+  `[p]hp.*vendor/bin/pest` also matched the INVOKING SHELL, whose command line contains the script's
+  own text — so it refused every time, including when the database was free. Same self-matching trap
+  as the `pgrep -f` wait-loops that blocked for hours the day before, now in the tool written to stop
+  a *different* self-inflicted false signal. It was caught only by asserting the **known negative**
+  (free → exit 0) alongside the known positive; a busy-only bite-proof passes a gate that always
+  refuses.
 - **`Http::fake()` ACCUMULATES stubs and the FIRST match wins — re-faking the same URL inside a
   loop does nothing.** Every iteration after the first receives the FIRST iteration's response, so a
   `foreach` over six provider statuses tests one status six times and reports six passes. Bit once

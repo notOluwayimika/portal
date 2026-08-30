@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# Refuse to start when another consumer already holds the test database.
+#
+# WHY THIS IS A SCRIPT AND NOT A LINE IN A COMMAND. Written inline as an `echo`, this check is
+# DECORATION: on 2026-08-30 exactly such a pre-flight printed "other consumers: 2" and the suite
+# started anyway, because nothing branched on the number. A check whose result is not acted on is a
+# rule with no lint behind it, one layer smaller — and it manufactures the confidence that stops
+# anyone looking.
+#
+# WHAT IT CATCHES. `bin/quality` runs the full suite and `.githooks/pre-push` runs `bin/quality`, so
+# A GIT PUSH IS A SUITE RUN and holds portal_testing for ~18 minutes. A second suite started beside
+# one produces `1213 Deadlock ... update roles set name = ...` and `1452` foreign-key violations on
+# `role_has_permissions`, spread across nearly every file — 798 reds in one measured run,
+# indistinguishable at a glance from a catastrophic regression. Three false signals from this in one
+# day, each of which read as a real finding.
+#
+# USAGE:  bin/db-exclusive ./vendor/bin/pest --log-junit junit.xml
+#         bin/db-exclusive --check          # just report, exit 1 if busy
+#
+# IT IS ADVISORY, DELIBERATELY. It counts processes rather than taking a lock, so it cannot see a
+# consumer on another machine or one started between the check and the run. It closes the case that
+# actually bit — a second run started from this session while a push was in flight — and claims
+# nothing wider.
+set -euo pipefail
+
+# THE MATCHER MUST NOT MATCH ITSELF, and the first version did. A pattern like
+# `[p]hp.*vendor/bin/pest` also matches the INVOKING SHELL, whose command line contains this
+# script's own text — so the gate refused every time, including when the database was free. A gate
+# that always refuses is as broken as one that never does, and it was caught only by asserting the
+# KNOWN NEGATIVE (free -> exit 0) rather than just the known positive.
+#
+# So: match only processes whose command STARTS with a php binary, and drop this process's own
+# ancestry. `pgrep -f` is deliberately not used — it is the same self-matching trap, and it cost
+# this project hours on 2026-08-29 when six wait-loops each matched one another and blocked forever.
+selfpids=" $$ ${PPID:-0} "
+
+busy_list=$(
+    ps -eo pid=,command= |
+    awk -v skip="$selfpids" '
+        $2 ~ /(^|\/)php[0-9.]*$/ && $0 ~ /vendor\/bin\/pest/ {
+            if (index(skip, " " $1 " ") == 0) print
+        }'
+)
+busy=$([ -z "$busy_list" ] && echo 0 || printf '%s\n' "$busy_list" | wc -l | tr -d ' ')
+
+if [ "$busy" -ne 0 ]; then
+    printf '\033[31mportal_testing is BUSY\033[0m — %d pest process(es) already running.\n' "$busy" >&2
+    printf '%s\n' "$busy_list" | sed 's/^/    /' >&2
+    printf 'Refusing to start: concurrent suites deadlock on `roles` and produce hundreds of\n' >&2
+    printf 'reds that look like a regression. Remember a `git push` IS a suite run.\n' >&2
+    exit 1
+fi
+
+[ "${1:-}" = "--check" ] && { echo "portal_testing is free."; exit 0; }
+[ $# -eq 0 ] && { echo "usage: bin/db-exclusive <command...>" >&2; exit 64; }
+
+exec "$@"

@@ -2,6 +2,7 @@
 
 use App\Enums\TermStatusEnum;
 use App\Finance\Actions\CreateFeeSchedule;
+use App\Finance\Models\BankAccount;
 use App\Models\AcademicSession;
 use App\Models\ClassLevel;
 use App\Models\Curriculum;
@@ -70,13 +71,22 @@ function prtSetup(array $descriptions = ['Tuition', 'Transport']): array
     ]);
     $level = ClassLevel::create(['school_id' => $school->id, 'name' => 'JSS 1', 'order' => 1]);
 
+    // A SECOND account, so the two items point at DIFFERENT ones. With both on the school's single
+    // account, "prefill emitted the item's own destination" and "prefill emitted any account of this
+    // School" are indistinguishable, and the round-trip arm's destination assertion could not fail on
+    // its own axis. Same reasoning as the non-discountable second item one comment down.
+    $secondAccount = BankAccount::withoutGlobalScopes()->firstOrCreate(
+        ['school_id' => $school->id, 'account_number' => 'PRT-SECOND-'.$school->id],
+        ['label' => 'Second account', 'bank_name' => 'Test Bank'],
+    );
+
     // Two items, and the SECOND is non-discountable — so the fixture distinguishes a resolution that
     // returns the right row from one that returns any row, and so `is_discountable` is not the same
     // value on every line (a flag that is `true` everywhere cannot show that it travelled).
     $specs = [];
     foreach (array_values($descriptions) as $i => $description) {
         $specs[] = [
-            'bank_account_id' => testBankAccountUuid($school->id),
+            'bank_account_id' => $i === 0 ? testBankAccountUuid($school->id) : (string) $secondAccount->uuid,
             'description' => $description,
             'amount_minor' => 100000 * ($i + 1),
             'currency' => 'NGN',
@@ -136,6 +146,21 @@ it('round-trips prefill’s lines into the generate endpoint VERBATIM, and store
         'The invoice stored a different fee_item_id than the item prefill named — or NULL, which is what '
         .'a silently dropped provenance looks like. finance_invoice_lines.fee_item_id carries no foreign '
         .'key by policy, so nothing but this assertion notices.');
+
+    // AND THE DESTINATION PREFILL NAMED, for the same reason one line up and one added in S11 commit 2:
+    // a 201 now proves only that SOME account was named, because the destination guard would have
+    // refused a null one. What it does not prove is that the account is the one the fee item carries —
+    // a prefill emitting any valid uuid of this School would still be accepted and would silently
+    // re-point the money. Matched by description so it does not depend on row order.
+    $expectedAccounts = $items->keyBy('description')->map(fn ($item) => (int) $item->bank_account_id);
+
+    $storedAccounts = DB::table('finance_invoice_lines')->get()->mapWithKeys(
+        fn ($line) => [$line->description => $line->bank_account_id === null ? null : (int) $line->bank_account_id],
+    );
+
+    expect($storedAccounts->all())->toBe($expectedAccounts->all(),
+        'The invoice stored a different destination than the fee item prefill named. The destination '
+        .'guard only refuses NULL; naming the WRONG account is a 201 and this assertion is what sees it.');
 });
 
 it('carries prefill’s ignored form flags through the generate endpoint without refusing them', function () {
@@ -158,10 +183,15 @@ it('carries prefill’s ignored form flags through the generate endpoint without
         ->assertOk()->json('lines');
 
     expect(array_keys($lines[0]))->toBe(
-        ['description', 'amount_minor', 'currency', 'kind', 'fee_item_id', 'is_mandatory', 'is_discountable'],
+        ['description', 'amount_minor', 'currency', 'kind', 'fee_item_id', 'bank_account_id', 'is_mandatory', 'is_discountable'],
         'prefill gained or lost a line key. Every key here is posted verbatim to the generate endpoint by '
         .'the arm above, so a new one is a new wire field on POST /v1/finance/invoices whether or not '
         .'GenerateInvoiceRequest was told about it.');
+
+    // `bank_account_id` IS NOT AN IGNORED FLAG, unlike the two below, and it joined this list in S11
+    // commit 2 rather than being an incidental addition: `finance_invoice_lines_destination_guard`
+    // refuses a charge line without one, so a prefill payload missing this key posts back as a 422 on
+    // every line. Its VALUE is asserted in the round-trip arm above, against the item it came from.
 
     // The two flags differ across the fixture's lines, so this is a real reading of both, not of a
     // constant. Line 0 is mandatory + discountable, line 1 is neither.

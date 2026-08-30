@@ -156,6 +156,14 @@ export type DiscountPolicyChangeApproval = {
     percent?: number | null;
     value_minor?: number | null;
     value_currency?: string | null;
+    // AXIS C, AND THE TWO KEYS ARE NOT INTERCHANGEABLE. `base` is the raw proposed term — null
+    // whenever the maker said nothing, which is the ordinary amend. `effective_base` is what the
+    // catalog will actually be stamped with, resolved server-side by the one method that also
+    // writes it (DiscountPolicyChange::effectiveBase()). RENDER `effective_base`: a checker shown
+    // the raw term is shown nothing in exactly the case where "55%" could mean either half the
+    // tuition or half the whole bill. Null on a retire, which approves no policy at all.
+    base?: 'discountable' | 'total' | null;
+    effective_base?: 'discountable' | 'total' | null;
     reason: string;
     note?: string | null;
     amount?: Money | null;
@@ -372,6 +380,19 @@ export type DraftLine = {
     // a charge line that references a policy. new-invoice-modal.tsx's patchForKind() is what clears
     // it on the flip back.
     discountPolicyId: string;
+    // The bank account uuid this CHARGE line's money is destined for (S11 commit 1). Exactly the
+    // same shape and the same `''`-is-unselected convention as discountPolicyId above, and the
+    // MIRROR of it: a policy belongs only on a reduction, a destination only on a charge. Both are
+    // cleared by patchForKind() when a line's kind flips away from the one they belong to, so a
+    // hidden field can never ride along on a submit.
+    //
+    // The two fields are not symmetric in what an empty value COSTS, and the difference is worth
+    // knowing before reading the modal. An empty policy on a reduction is refused today, by the
+    // server pre-check and by finance_invoice_lines_reduction_guard. An empty destination on a
+    // charge is ACCEPTED today and written as a line with no recorded destination; the S11 commit-2
+    // trigger is what closes that, and it lands after this one precisely so the modal is already
+    // sending the field when it does.
+    bankAccountId: string;
 };
 
 // The subset of DiscountPolicyResource (app/Finance/Http/Resources/DiscountPolicyResource.php) that
@@ -387,4 +408,20 @@ export type SelectablePolicy = {
     name: string;
     requires_approval: boolean;
     status: 'active' | 'superseded' | 'retired';
+};
+
+// The subset of BankAccountController::present() (it has no Resource class) that choosing a
+// DESTINATION at invoice time needs. A PROJECTION, named for its use exactly as SelectablePolicy is,
+// and deliberately narrower than the shape pages/admin/finance/bank-accounts.tsx carries — that
+// screen renders account numbers and deactivation timestamps because it manages accounts; this one
+// only has to name them.
+//
+// `id` IS THE UUID. BankAccountController::present() serialises `'id' => $account->uuid`; the
+// integer primary key never reaches the wire (U8 commit 1), and the generate request translates the
+// uuid back to an id server-side.
+export type SelectableBankAccount = {
+    id: string;
+    label: string;
+    bank_name: string;
+    is_active: boolean;
 };

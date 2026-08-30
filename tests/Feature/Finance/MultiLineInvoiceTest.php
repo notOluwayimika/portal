@@ -59,12 +59,26 @@ function slice2Enrollment(School $school, Student $student): StudentCurriculum
     ]);
 }
 
-/** Three distinct, non-round amounts. 12345 + 67891 + 250003 = 330239. */
-const SLICE2_LINES = [
-    ['description' => 'Tuition', 'amount_minor' => 12345],
-    ['description' => 'Boarding', 'amount_minor' => 67891],
-    ['description' => 'PTA levy', 'amount_minor' => 250003],
-];
+/**
+ * Three distinct, non-round amounts. 12345 + 67891 + 250003 = 330239.
+ *
+ * A FUNCTION AND NOT A `const` SINCE S11 COMMIT 2. Every charge line now has to name a destination
+ * (`finance_invoice_lines_destination_guard`), the account's uuid is a row that must exist first, and
+ * a `const` initialiser may not call anything — PHP rejects the file outright with "Constant
+ * expression contains invalid operations". The amounts are what this file is about and they are
+ * unchanged; only the shape that carries them moved.
+ *
+ * @return list<array<string, mixed>>
+ */
+function slice2Lines(): array
+{
+    return [
+        ['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 12345],
+        ['bank_account_id' => testBankAccountUuid(), 'description' => 'Boarding', 'amount_minor' => 67891],
+        ['bank_account_id' => testBankAccountUuid(), 'description' => 'PTA levy', 'amount_minor' => 250003],
+    ];
+}
+
 const SLICE2_TOTAL = 330239;
 
 // ---------------------------------------------------------------- F6
@@ -76,7 +90,7 @@ it('F6 — derives the invoice total as the exact SUM of multiple distinct lines
     $response = $this->actingAs($admin)->withSession(['school_id' => $school->id])
         ->postJson('/api/v1/finance/invoices', [
             'enrollment_id' => $enrollment->uuid,
-            'lines' => SLICE2_LINES,
+            'lines' => slice2Lines(),
         ])->assertCreated();
 
     $response->assertJsonPath('total.amount_minor', SLICE2_TOTAL)
@@ -102,7 +116,7 @@ it('F6 — the wire has no total field to supply: a client-sent total is ignored
     $this->actingAs($admin)->withSession(['school_id' => $school->id])
         ->postJson('/api/v1/finance/invoices', [
             'enrollment_id' => $enrollment->uuid,
-            'lines' => SLICE2_LINES,
+            'lines' => slice2Lines(),
             'total_minor' => 1,          // hostile input
             'total' => ['amount_minor' => 1, 'currency' => 'NGN'],
         ])->assertCreated()
@@ -114,7 +128,7 @@ it('F6 BITE-PROOF — the snapshotted total cannot be hand-edited afterwards (DB
     $enrollment = slice2Enrollment($school, $student);
 
     $this->actingAs($admin)->withSession(['school_id' => $school->id])
-        ->postJson('/api/v1/finance/invoices', ['enrollment_id' => $enrollment->uuid, 'lines' => SLICE2_LINES])
+        ->postJson('/api/v1/finance/invoices', ['enrollment_id' => $enrollment->uuid, 'lines' => slice2Lines()])
         ->assertCreated();
 
     $id = DB::table('finance_invoices')->value('id');
@@ -136,7 +150,7 @@ it('F6 — the status transition is still allowed (the trigger freezes money, no
     $enrollment = slice2Enrollment($school, $student);
 
     $uuid = $this->actingAs($admin)->withSession(['school_id' => $school->id])
-        ->postJson('/api/v1/finance/invoices', ['enrollment_id' => $enrollment->uuid, 'lines' => SLICE2_LINES])
+        ->postJson('/api/v1/finance/invoices', ['enrollment_id' => $enrollment->uuid, 'lines' => slice2Lines()])
         ->assertCreated()->json('id');
 
     // If the immutability trigger were too broad it would block voiding entirely. Void is now
@@ -162,7 +176,7 @@ it('rejects an invoice with no lines, and a line with a non-positive amount (For
     $this->actingAs($admin)->withSession(['school_id' => $school->id])
         ->postJson('/api/v1/finance/invoices', [
             'enrollment_id' => $enrollment->uuid,
-            'lines' => [['description' => 'Bad', 'amount_minor' => 0]],
+            'lines' => [['bank_account_id' => testBankAccountUuid(), 'description' => 'Bad', 'amount_minor' => 0]],
         ])->assertStatus(422);
 
     expect(DB::table('finance_invoices')->count())->toBe(0);
@@ -196,8 +210,8 @@ it('makes a mixed-currency invoice impossible — refused at the edge, with Mone
         ->postJson('/api/v1/finance/invoices', [
             'enrollment_id' => $enrollment->uuid,
             'lines' => [
-                ['description' => 'NGN line', 'amount_minor' => 1000, 'currency' => 'NGN'],
-                ['description' => 'USD line', 'amount_minor' => 1000, 'currency' => 'USD'],
+                ['bank_account_id' => testBankAccountUuid(), 'description' => 'NGN line', 'amount_minor' => 1000, 'currency' => 'NGN'],
+                ['bank_account_id' => testBankAccountUuid(), 'description' => 'USD line', 'amount_minor' => 1000, 'currency' => 'USD'],
             ],
             // 422 AT THE EDGE, and this line used to assert 500. Both refuse the invoice and both
             // leave nothing persisted, so the claim this test makes is unchanged — what changed is
@@ -226,11 +240,11 @@ it('VOID GATE — a voided invoice leaves the balance unchanged, drops out of de
     $act = fn () => $this->actingAs($admin)->withSession(['school_id' => $school->id]);
 
     $voidedUuid = $act()->postJson('/api/v1/finance/invoices', [
-        'enrollment_id' => $voided->uuid, 'lines' => [['description' => 'Voided', 'amount_minor' => 150000]],
+        'enrollment_id' => $voided->uuid, 'lines' => [['bank_account_id' => testBankAccountUuid(), 'description' => 'Voided', 'amount_minor' => 150000]],
     ])->assertCreated()->json('id');
 
     $act()->postJson('/api/v1/finance/invoices', [
-        'enrollment_id' => $live->uuid, 'lines' => [['description' => 'Live', 'amount_minor' => 75000]],
+        'enrollment_id' => $live->uuid, 'lines' => [['bank_account_id' => testBankAccountUuid(), 'description' => 'Live', 'amount_minor' => 75000]],
     ])->assertCreated();
 
     $balanceBefore = (int) DB::table('finance_ledger_transactions')->where('student_id', $student->id)->sum('amount_minor');
@@ -281,7 +295,7 @@ it('ISOLATION — an enrollment from another School cannot be billed from this o
     $this->actingAs($adminA)->withSession(['school_id' => $schoolA->id])
         ->postJson('/api/v1/finance/invoices', [
             'enrollment_id' => $enrollmentB->uuid,
-            'lines' => SLICE2_LINES,
+            'lines' => slice2Lines(),
         ])->assertStatus(422);
 
     expect(DB::table('finance_invoices')->count())->toBe(0)
@@ -295,10 +309,10 @@ it('DUPLICATE GUARD — a second active invoice for the same enrollment is rejec
     $enrollment = slice2Enrollment($school, $student);
     $act = fn () => $this->actingAs($admin)->withSession(['school_id' => $school->id]);
 
-    $act()->postJson('/api/v1/finance/invoices', ['enrollment_id' => $enrollment->uuid, 'lines' => SLICE2_LINES])
+    $act()->postJson('/api/v1/finance/invoices', ['enrollment_id' => $enrollment->uuid, 'lines' => slice2Lines()])
         ->assertCreated();
 
-    $act()->postJson('/api/v1/finance/invoices', ['enrollment_id' => $enrollment->uuid, 'lines' => SLICE2_LINES])
+    $act()->postJson('/api/v1/finance/invoices', ['enrollment_id' => $enrollment->uuid, 'lines' => slice2Lines()])
         ->assertStatus(422);
 
     expect(DB::table('finance_invoices')->count())->toBe(1);
@@ -309,7 +323,7 @@ it('DUPLICATE GUARD — after voiding, the enrollment can be billed fresh (polic
     $enrollment = slice2Enrollment($school, $student);
     $act = fn () => $this->actingAs($admin)->withSession(['school_id' => $school->id]);
 
-    $first = $act()->postJson('/api/v1/finance/invoices', ['enrollment_id' => $enrollment->uuid, 'lines' => SLICE2_LINES])
+    $first = $act()->postJson('/api/v1/finance/invoices', ['enrollment_id' => $enrollment->uuid, 'lines' => slice2Lines()])
         ->assertCreated()->json('id');
 
     voidInvoiceViaApproval($school->id, $first, 'wrong fees');
@@ -317,7 +331,7 @@ it('DUPLICATE GUARD — after voiding, the enrollment can be billed fresh (polic
     // The voided row still exists (append-only) — a naive UNIQUE(school_id,
     // student_curriculum_id) would forbid this re-bill. The NULL-ing generated
     // key is exactly what permits it.
-    $act()->postJson('/api/v1/finance/invoices', ['enrollment_id' => $enrollment->uuid, 'lines' => SLICE2_LINES])
+    $act()->postJson('/api/v1/finance/invoices', ['enrollment_id' => $enrollment->uuid, 'lines' => slice2Lines()])
         ->assertCreated();
 
     expect(DB::table('finance_invoices')->count())->toBe(2)
@@ -329,7 +343,7 @@ it('DUPLICATE GUARD BITE-PROOF — the DB unique index rejects it even when the 
     $enrollment = slice2Enrollment($school, $student);
 
     $this->actingAs($admin)->withSession(['school_id' => $school->id])
-        ->postJson('/api/v1/finance/invoices', ['enrollment_id' => $enrollment->uuid, 'lines' => SLICE2_LINES])
+        ->postJson('/api/v1/finance/invoices', ['enrollment_id' => $enrollment->uuid, 'lines' => slice2Lines()])
         ->assertCreated();
 
     $existing = DB::table('finance_invoices')->first();

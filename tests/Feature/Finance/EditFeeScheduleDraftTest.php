@@ -455,7 +455,7 @@ it('refuses an invoice line citing ANOTHER School’s fee item', function () {
         ->withSession(['school_id' => $mine->id])
         ->postJson('/api/v1/finance/invoices', [
             'enrollment_id' => $enrollment->uuid,
-            'lines' => [['description' => 'Tuition', 'amount_minor' => 100000, 'fee_item_id' => $theirItemUuid]],
+            'lines' => [['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000, 'fee_item_id' => $theirItemUuid]],
         ])
         ->assertStatus(422)
         ->assertJsonValidationErrors('lines.0.fee_item_id');
@@ -495,7 +495,7 @@ it('refuses an invoice line citing a DRAFT’s fee item, and accepts a SUPERSEDE
 
     $post = fn () => $this->postJson('/api/v1/finance/invoices', [
         'enrollment_id' => $enrollment->uuid,
-        'lines' => [['description' => 'Tuition', 'amount_minor' => 100000, 'fee_item_id' => $item->uuid]],
+        'lines' => [['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000, 'fee_item_id' => $item->uuid]],
     ]);
 
     $post()->assertStatus(422)->assertJsonValidationErrors('lines.0.fee_item_id');

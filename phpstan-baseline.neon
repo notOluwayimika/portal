@@ -1268,24 +1268,6 @@ parameters:
 			path: app/Http/Resources/PsychomotorSkillResource.php
 
 		-
-			message: '#^Access to an undefined property App\\Http\\Resources\\ScholarshipResource\:\:\$id\.$#'
-			identifier: property.notFound
-			count: 1
-			path: app/Http/Resources/ScholarshipResource.php
-
-		-
-			message: '#^Access to an undefined property App\\Http\\Resources\\ScholarshipResource\:\:\$name\.$#'
-			identifier: property.notFound
-			count: 1
-			path: app/Http/Resources/ScholarshipResource.php
-
-		-
-			message: '#^Access to an undefined property App\\Http\\Resources\\ScholarshipResource\:\:\$uuid\.$#'
-			identifier: property.notFound
-			count: 1
-			path: app/Http/Resources/ScholarshipResource.php
-
-		-
 			message: '#^Access to an undefined property App\\Http\\Resources\\SessionResource\:\:\$is_current\.$#'
 			identifier: property.notFound
 			count: 1

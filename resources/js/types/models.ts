@@ -212,10 +212,19 @@ export interface SportHouse {
     name: string;
 }
 
+/** Mirrors App\Enums\ScholarshipKind. `null` is the unconfigured backfill state, not a third scheme. */
+export type ScholarshipKind = 'discount' | 'sponsored';
+
 export interface Scholarship {
     id: number;
     uuid: string;
     name: string;
+    /**
+     * `null` means nobody has said which scheme this is. It is not a default: the bulk invoice run
+     * REFUSES a cohort holding one, and a discount award cannot be made against one, so the screen
+     * has to render it as its own visible state rather than as a blank cell.
+     */
+    kind: ScholarshipKind | null;
 }
 
 export interface Student {

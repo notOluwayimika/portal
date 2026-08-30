@@ -425,7 +425,7 @@ it('PROOF 5 — a posted credit is CONSUMED by the next invoice: applyCreditForw
 
         $invoice = app(GenerateInvoice::class)->handle(
             $enrollment->uuid,
-            [new InvoiceLineSpec('Tuition', Money::fromKobo(1200000))],
+            [new InvoiceLineSpec('Tuition', Money::fromKobo(1200000), bankAccountId: testBankAccountId())],
             InvoiceKind::Scheduled,
         );
 

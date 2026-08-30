@@ -1,9 +1,116 @@
-# Open findings — 24–25 August 2026
+# Open findings — 24–25 August 2026, revised 29 August
 
-Everything here was found while doing other work and is real. None is fixed. Each carries its
-evidence so nobody has to rediscover it.
+Everything here was found while doing other work and is real. Each carries its evidence so nobody
+has to rediscover it.
 
 Ordered by consequence, not by effort.
+
+**Where this file sits.** `docs/handoff/tickets/` is the repository's per-finding registry, one file
+per finding, and it is the primary record — roughly a hundred of them. This file is the ordered
+summary a reader starts from; where a ticket exists it is named, and the ticket is longer and more
+current. **Eleven** were added on 27 August:
+
+From the discount-base arc —
+
+- `the-catalog-single-writer-arch-arm-cannot-see-a-raw-insert.md`
+- `nothing-proves-the-discount-base-control-reaches-the-request.md`
+- `a-caller-supplied-percent-base-survives-when-no-line-cites-a-policy.md`
+- `award-student-discount-has-no-caller-and-therefore-no-gate.md`
+- `half-the-boundary-lint-baseline-has-no-expiry-condition.md`
+- `the-base-radios-have-no-machine-readable-value.md`
+- `a-relative-reference-is-a-citation-with-nothing-behind-it.md`
+
+From the `scholarships.kind` writer and its drive —
+
+- `scholarship-controller-does-not-follow-the-house-request-pattern.md`
+- `model-log-name-is-declared-as-a-static-property-spatie-never-reads.md`
+- `a-permission-refusal-renders-a-dead-end.md`
+- `an-error-handler-logs-the-raw-axios-error-to-the-console.md`
+
+An earlier revision of this list said seven and omitted four. A count in a document is a fact that
+rots the moment anyone adds to what it counts; if this list and `ls docs/handoff/tickets/` disagree,
+the directory is right.
+
+**Two more on 29 August**, and the registry now holds **111** files:
+
+- `a-negated-expectation-can-be-narrowed-by-an-argument-the-gate-does-not-count.md` — **CLOSED the
+  same day.** `->not->toThrow(X::class, $sentence)` puts the sentence in `$exceptionMessage`, not
+  `$message`, narrowing the negation instead of describing the failure; an S11 arm in that shape
+  scored 8 of 8 green against a trigger mutated to refuse the rows it named. The gate could not see
+  it — it flagged `supplied > messageIndex` and `toThrow` puts `$message` at index 2. Widened to an
+  `isOptional()`-derived threshold (`4ae7bee`). Third instance of the vacuous-negation family.
+- `the-drive-fixture-cannot-reach-a-school-with-no-bank-account.md` — **open**, and it inverts the
+  usual shape. The other instances were fixtures too EMPTY to drive a screen; this one is too
+  HEALTHY. `accounts.length === 0` in the new-invoice modal has never rendered in a browser, and it
+  is the state production is in.
+
+**`model-log-name-…` is the widest of the eleven and belongs beside finding 2 below.** Sixteen models
+declare `protected static $logName = 'academics'`, six declare `'results'` and one `'setup'`, and
+spatie reads none of them — `getLogNameToUse()` (`vendor/spatie/laravel-activitylog`) reads
+`$this->activitylogOptions->logName`, set only by `LogOptions::useLogName()`. The production copy
+holds no row under any of those three names; every model-trait entry the platform has written is in
+`default`.
+
+That is the same failure as finding 2, one layer along. Finding 2 is a log that **did not record**
+something and so could not answer a question. This is a log that **records into a bucket nobody
+queries**, so filtering the activity log by module returns an empty result *that reads like an
+answer*. "Nothing was changed in academics" and "this filter has never matched anything" are the
+same screen. Six models — `Teacher`, `Guardian`, `Student`, `Role`, `Permission` and now
+`Scholarship` — use the working call and do land where they say, which is what makes the other
+twenty-four look deliberate.
+
+---
+
+## 0. Staging is 20 commits and four migrations ahead of `main`
+
+**Severity: this is the time-critical one, and it is operational rather than a defect. It is also
+the gate on everything else: nothing in the BSS scholarship chain can happen on production until
+this promotion does.**
+
+**Re-measured 29 August, and the previous revision of this entry was wrong in BOTH directions —
+which is worse than being merely out of date.** It said 44 commits and six migrations and listed the
+six. Five of those six have since shipped to `main`; three that had not yet been written are now
+pending. Anyone planning the promotion off that list would have deployed the wrong set. Re-measure,
+always, and never read the list below as current either:
+
+```
+git rev-list --count origin/main..origin/staging
+git diff --name-only origin/main origin/staging -- database/migrations
+```
+
+`main` is at `2488d35` (PR #321), `staging` at `bf073cc` (PR #328). Four migrations have not run on
+production:
+
+```
+2026_08_21_110000_finance_allocation_not_over_payment_amount
+2026_08_29_100000_finance_school_settings_settlement_bank_account
+2026_08_29_110000_finance_invoice_lines_destination_account
+2026_08_29_120000_finance_invoice_lines_require_destination
+```
+
+**The three S11 migrations travel together and are ORDERED.** `110000` adds
+`finance_invoice_lines.bank_account_id` as nullable and makes both writers populate it; `120000`
+makes it required on charge lines via `finance_invoice_lines_destination_guard`. Running `120000`
+without `110000` is not a partial deploy, it is a broken one. `100000` is the settlement-account
+column Developer 2 asked for and is independent of the other two.
+
+**`120000` is BEFORE INSERT only, deliberately, and that is what makes it safe to run against
+existing data.** Every line issued before the column existed carries NULL legitimately; an UPDATE arm
+would retro-refuse all of them. Verified in the migration's own docblock and pinned by a test that
+reads the trigger set from `information_schema`.
+
+**`2026_08_21_110000_finance_allocation_not_over_payment_amount` is still the odd one out, and it has
+now been sitting for eight days.** A constraint stopping an allocation from exceeding its payment,
+unrelated to the destination work, and it still does not deserve to share that blast radius.
+
+**Promote in more than one step**, and put the allocation constraint in its own.
+
+Term 1 goes `active` on 5 September and the first bulk run follows it.
+
+**And read `the-release-gate-cannot-see-a-pull-request-merge.md` before promoting.** Every merge to
+`main` in this repository's history has been a PR merge, which runs no local hook and reads no
+`.quality-promote-ok` stamp. A green `bin/quality` is the per-push floor; it is not the release
+gate, and the release gate has never run on a release that reached `main`.
 
 ---
 
@@ -24,11 +131,16 @@ Being a parent elevates a staff member.
 **The fix is a parent-portal permission set** — `result.view.own` and siblings — with the staff
 grants removed from the guardian role. It is the only change that stops the next one.
 
+Deliberately deferred until after cutover: changing live authorisation for 1039 enabled accounts in
+the week before launch is the wrong timing. That is a decision with a date on it, not a decision to
+live with it.
+
 ---
 
-## 2. Result views are not recorded in the activity log
+## 2. Result views were not recorded in the activity log
 
-**Severity: high, and it is a disclosure problem before it is an engineering one.**
+**Severity: was high. The logging is built and on `main` (`3d9e37f`); the disclosure question it was
+built to answer stays answered "cannot be determined" for the period before it.**
 
 The system has an activity log with an admin screen. It did not record result views. So when the
 guardian IDOR was found — 1039 enabled parent accounts, any of whom could read any child's records
@@ -38,8 +150,8 @@ Brookstone is that it cannot be determined.
 Under section 40 of the Nigeria Data Protection Act 2023, notification to the NDPC is triggered by
 a breach *likely to pose a risk*, not by proof of access. Not knowing does not put you outside it.
 
-**Log result and record views**, so the next time this question is asked it is a query rather than
-a shrug.
+The engineering half is closed. **The disclosure half is a decision Brookstone has to make, and it
+has not been recorded anywhere that it was made.**
 
 ---
 
@@ -67,6 +179,15 @@ identical.
 `bin/quality:305-315` already records the same shape on 9 August: PASS, then FAIL with 23 unrelated
 permission/seed failures, then PASS on byte-identical code, unreproduced across eleven further
 runs.
+
+**Third datapoint, 27 August:** three runs of comparable work took **33s, 160s and 500s** on an
+otherwise idle machine — a 15× spread, captured before re-running rather than after, and not
+investigated. Machine load was not measured that time, which is the gap: on 25 August "otherwise
+idle" was wrong and invisibly so. `ps aux | grep -c codegraph` before a run costs two seconds and is
+the difference between a datapoint and a mystery.
+
+The value of this entry is the **count**. One slow run is weather; three recorded instances of the
+same shape is a property of the harness.
 
 **Make a timeout say so distinctly, or raise the ceiling.** Both investigations were the same
 investigation.
@@ -98,6 +219,8 @@ column, not a behavioural assertion. `migrate:fresh` and a serial re-run cleared
 
 The next person to hit this will reasonably believe they have broken something.
 
+Related ticket: `quality-gate-is-not-safe-to-run-from-two-trees.md`.
+
 ---
 
 ## 7. The route-middleware baseline has drifted, and does not require entries for new guarded routes
@@ -114,22 +237,49 @@ what it appears to track.
 
 **Severity: low, but the fix is cheap and there is a pattern for it.**
 
-`CurrentTerm` step 1 is `->first()` with no ordering. The unique key is
-`(academic_session_id, order)`, not status, so two active terms are representable and would resolve
-arbitrarily. `orderBy('order')` would make a broken state resolve predictably, which is a plaster.
+**Still fully open.** `CurrentTerm.php:116` remains `->where('status', ACTIVE)->first()` with no
+ordering. The fix that shipped changed the FALLBACK chain — active, else the last `completed` by
+`order`, else the first by `order` — and left the active query exactly as it was. A reader who knows
+"the term resolution was fixed" will reasonably believe this went with it. It did not.
+
+The unique keys are `(academic_session_id, slug)` and `(academic_session_id, order)`, neither of
+which mentions status, so two active terms are representable and would resolve arbitrarily.
 
 **Make it unrepresentable**, following `2026_08_19_100000_add_guardian_live_identity_uniqueness.php`
 — a generated column that is the session id when the status is active and NULL otherwise, with a
 unique index on it.
 
+Ticket: `current-term-resolution-is-unordered.md`.
+
 ---
 
-## 9. `fee-schedules.tsx:445` ships `amount_minor: minor ?? 0`
+## 9. `fee-schedules.tsx:445` ships `amount_minor: minor ?? 0` — CHECKED 29 August, NOT a live defect
 
-**Severity: unassessed — check before dismissing.**
+**Severity: closed. The entry below is kept rather than deleted, because "nobody has checked" was
+the finding and the check is the answer.**
 
-A string that `nairaToMinor` rejected still travels as **zero**. It also records a per-row error, so
-whether this is a real defect depends on whether that error blocks submission. Nobody has checked.
+The concern was that a string `nairaToMinor` rejected would still travel as **zero**. It does get
+built as zero at `:445` — and it never leaves the browser. `:456-460`, immediately after the map and
+before any request:
+
+```js
+if (Object.keys(rejected).length > 0) {
+    setErrors({ fields: {}, items: rejected, message: null });
+
+    return;
+}
+```
+
+Every rejected row is recorded during the same map that produces the zero, and this returns before
+`axios` is reached on all three paths (create, edit-draft, supersede). **The zero is constructed and
+discarded.**
+
+**The residual, stated so the close is honest: the safety here is POSITIONAL, not structural.**
+Nothing binds the fallback to the guard. Move that `return`, or add a fourth submit path that skips
+it, and `amount_minor: 0` ships silently — a fee item priced at ₦0.00, on a screen where it would sit
+in a list of plausible-looking rows. The value-fabricating `?? 0` is what makes that possible, and
+building the payload only after validation would make it unrepresentable instead of merely
+unreachable. Not urgent; worth doing the next time that function is opened.
 
 ---
 
@@ -148,23 +298,52 @@ fix**, not an edit — but a reader arriving from `git blame` currently lands on
 
 Related: a baselined citation in `app/Support/CurrentTerm.php:61` still carries the old
 bare-basename form. Silent today; the day someone edits that line they get a violation for a style
-problem that predates them.
+problem that predates them. Ticket:
+`a-baselined-citation-can-go-stale-and-no-lint-notices.md`.
 
 ---
 
-## 11. Two things unmeasured on production's MySQL
+## 11. The case-collation question on 5.7 — MEASURED 29 August, and it holds
 
-**Severity: low, but they are the quiet kind.**
+**Severity: was the quiet kind. Two of the three arms are now measured on production and pass.**
 
-Production is Percona **5.7.23**; everything here was measured on 8.0.43.
+Production is Percona **5.7.23**; everything else in this file was measured on 8.0.43. The open
+question was whether `COLLATE utf8mb4_bin` inside a trigger body takes effect there — flagged in
+`2026_08_17_100000`'s own docblock as *documented, not measured*. If it did not, a guard would admit
+`'Gateway'`, `'Total'`, `'Discount'` while every other arm still bit, so it would look alive and be
+dead.
 
-- `COLLATE utf8mb4_bin` inside a trigger body is *documented*, not measured, on 5.7 — flagged in
-  `2026_08_17_100000`'s own docblock and inherited by the new `gateway` arm. If it does not take
-  effect there, the guard admits `'Gateway'` while every other arm still bites, so it looks alive.
-- The `MESSAGE_TEXT` 1648 behaviour above carries the same caveat.
+**It takes effect.** Run against `portaa10_portal` on 29 August, each inside a transaction that was
+rolled back:
 
-**After the payment-origin migration runs on staging, attempt an insert with `origin = 'Gateway'`,
-capital G, and confirm it is refused.** Two minutes, and it is the only way to know.
+```
+INSERT INTO scholarships (…, kind, …) VALUES (…, 'Discount', …);
+  #1644 - scholarships: kind must be discount or sponsored, or null when it is not
+          configured yet.
+
+INSERT INTO finance_discount_policy_changes (…, base, …) VALUES (…, 'Total', …);
+  #1644 - finance_discount_policy_changes: base must be discountable or total, or null.
+```
+
+Both refused, and refused with the **trigger's own prose** — `#1644` is the `SIGNAL` raised from
+inside the body, not a schema or column error. That distinction is the whole measurement: an INSERT
+that fails for the wrong reason would have read as a pass.
+
+Note the code: **1644**, with the message intact. Finding 10 records 1648 on 8.0.43 for an
+over-length `MESSAGE_TEXT`; that is a different path and is not what these raise.
+
+**Still unmeasured, and it is the same mechanism:**
+
+- `origin = 'Gateway'`, capital G, on `finance_payments`. It could not be constructed on 29 August
+  because production had **no bank accounts and no invoices** — the row has nothing to reference.
+  Run it on the day Section 0.3 creates the first account. The evidence above makes a failure
+  unlikely, since it is the same clause in the same migration family, but "unlikely" is not
+  "measured" and this entry exists because that distinction has cost this project before.
+
+Also still true: 68 triggers exist in `portaa10_portal`, confirmed the same day. An earlier query
+returning empty was a client artifact, not a missing schema — and note there are **seventeen** dated
+copies of this database on the same hosting account, so confirm `SELECT DATABASE()` before running
+anything by hand.
 
 ---
 
@@ -181,4 +360,7 @@ last** — it is the only one whose state must be reshaped rather than its eleme
 that contract.
 
 No test renders `MoneyInput`. Its pure mappings are covered in the node environment; the DOM
-environment was deliberately not added at two call sites. **Revisit that around five.**
+environment was deliberately not added at two call sites — now three, with the discount base
+control. **Revisit that around five**, and see
+`nothing-proves-the-discount-base-control-reaches-the-request.md`, which is the same gap with money
+behind it.

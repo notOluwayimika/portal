@@ -40,7 +40,7 @@ function pcgInvoice(School $s, Student $student): object
     return ActiveSchool::runFor($s->id, function () use ($s, $student) {
         $e = StudentCurriculum::create(['student_id' => $student->id, 'curriculum_id' => Curriculum::factory()->create(['school_id' => $s->id])->id, 'status' => 'active']);
 
-        return app(GenerateInvoice::class)->handle($e->uuid, [new InvoiceLineSpec('Tuition', Money::fromKobo(100000))], InvoiceKind::Scheduled);
+        return app(GenerateInvoice::class)->handle($e->uuid, [new InvoiceLineSpec('Tuition', Money::fromKobo(100000), bankAccountId: testBankAccountId())], InvoiceKind::Scheduled);
     });
 }
 

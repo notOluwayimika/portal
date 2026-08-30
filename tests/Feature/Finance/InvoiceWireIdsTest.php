@@ -128,7 +128,7 @@ it('refuses an INTEGER fee_item_id — the id that used to be valid is now a 422
     $item = wireFeeItem($school);
 
     wirePost($this, $school, $admin, $enrollment, [
-        ['description' => 'Tuition', 'amount_minor' => 100000, 'fee_item_id' => $item->id],
+        ['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000, 'fee_item_id' => $item->id],
     ])->assertStatus(422)->assertJsonValidationErrors('lines.0.fee_item_id');
 
     expect(DB::table('finance_invoices')->count())->toBe(0)
@@ -140,7 +140,7 @@ it('refuses an INTEGER discount_policy_id — the id that used to be valid is no
     $policy = wirePolicy($school);
 
     wirePost($this, $school, $admin, $enrollment, [
-        ['description' => 'Tuition', 'amount_minor' => 100000],
+        ['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000],
         ['description' => 'Sibling discount', 'amount_minor' => -10000, 'kind' => 'discount', 'discount_policy_id' => $policy->id],
     ])->assertStatus(422)->assertJsonValidationErrors('lines.1.discount_policy_id');
 
@@ -160,10 +160,10 @@ it('gives a foreign School’s fee item uuid BYTE-IDENTICAL bytes to a nonexiste
     $theirItem = wireFeeItem($theirs);
 
     $foreign = wirePost($this, $mine, $admin, $enrollment, [
-        ['description' => 'Tuition', 'amount_minor' => 100000, 'fee_item_id' => $theirItem->uuid],
+        ['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000, 'fee_item_id' => $theirItem->uuid],
     ]);
     $absent = wirePost($this, $mine, $admin, $enrollment, [
-        ['description' => 'Tuition', 'amount_minor' => 100000, 'fee_item_id' => (string) Str::uuid()],
+        ['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000, 'fee_item_id' => (string) Str::uuid()],
     ]);
 
     expect($foreign->status())->toBe(422)
@@ -182,7 +182,7 @@ it('gives a foreign School’s discount policy uuid BYTE-IDENTICAL bytes to a no
     $theirPolicy = wirePolicy($theirs);
 
     $lines = fn (string $uuid) => [
-        ['description' => 'Tuition', 'amount_minor' => 100000],
+        ['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000],
         ['description' => 'Discount', 'amount_minor' => -10000, 'kind' => 'discount', 'discount_policy_id' => $uuid],
     ];
 
@@ -211,7 +211,7 @@ it('resolves each uuid to the correct integer id on the stored line', function (
     expect($second->id)->not->toBe($first->id); // the fixture is only a probe if the ids differ
 
     wirePost($this, $school, $admin, $enrollment, [
-        ['description' => 'Transport', 'amount_minor' => 100000, 'fee_item_id' => $second->uuid],
+        ['bank_account_id' => testBankAccountUuid(), 'description' => 'Transport', 'amount_minor' => 100000, 'fee_item_id' => $second->uuid],
         ['description' => 'Sibling discount', 'amount_minor' => -10000, 'kind' => 'discount', 'discount_policy_id' => $policy->uuid],
     ])->assertCreated();
 
@@ -238,13 +238,13 @@ it('keeps a DISTINCT message for an item whose schedule is Draft or PendingAppro
         $item = wireFeeItem($school, status: $status, description: 'Tuition '.$status);
 
         $response = wirePost($this, $school, $admin, $enrollment, [
-            ['description' => 'Tuition', 'amount_minor' => 100000, 'fee_item_id' => $item->uuid],
+            ['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000, 'fee_item_id' => $item->uuid],
         ])->assertStatus(422)->assertJsonValidationErrors('lines.0.fee_item_id');
 
         $message = $response->json('errors')['lines.0.fee_item_id'][0];
 
         $absentMessage ??= wirePost($this, $school, $admin, $enrollment, [
-            ['description' => 'Tuition', 'amount_minor' => 100000, 'fee_item_id' => (string) Str::uuid()],
+            ['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000, 'fee_item_id' => (string) Str::uuid()],
         ])->json('errors')['lines.0.fee_item_id'][0];
 
         // BOTH HALVES ARE POSITIVE ASSERTIONS, and the second one deliberately so: a custom message
@@ -280,9 +280,9 @@ it('treats an EMPTY STRING on either id as no provenance, exactly as an explicit
     [$school, $admin, $enrollment] = wireSetup();
 
     wirePost($this, $school, $admin, $enrollment, [
-        ['description' => 'Empty string', 'amount_minor' => 100000, 'fee_item_id' => ''],
-        ['description' => 'Explicit null', 'amount_minor' => 100000, 'fee_item_id' => null],
-        ['description' => 'Key absent', 'amount_minor' => 100000],
+        ['bank_account_id' => testBankAccountUuid(), 'description' => 'Empty string', 'amount_minor' => 100000, 'fee_item_id' => ''],
+        ['bank_account_id' => testBankAccountUuid(), 'description' => 'Explicit null', 'amount_minor' => 100000, 'fee_item_id' => null],
+        ['bank_account_id' => testBankAccountUuid(), 'description' => 'Key absent', 'amount_minor' => 100000],
     ])->assertCreated();
 
     $stored = DB::table('finance_invoice_lines')->pluck('fee_item_id', 'description');
@@ -311,7 +311,7 @@ it('still refuses a REDUCTION line whose discount policy went empty — now as a
     [$school, $admin, $enrollment] = wireSetup();
 
     $response = wirePost($this, $school, $admin, $enrollment, [
-        ['description' => 'Tuition', 'amount_minor' => 100000],
+        ['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000],
         ['description' => 'Discount', 'amount_minor' => -10000, 'kind' => 'discount', 'discount_policy_id' => ''],
     ])->assertStatus(422)->assertJsonValidationErrors('lines.1.discount_policy_id');
 
@@ -353,7 +353,7 @@ it('resolves a foreign School’s uuid for a super_admin with NO active School �
     // No `withSession(['school_id' => …])` — that absence IS the condition under test.
     $response = $this->actingAs($super)->postJson('/api/v1/finance/invoices', [
         'enrollment_id' => $theirEnrollment->uuid,
-        'lines' => [['description' => 'Tuition', 'amount_minor' => 100000, 'fee_item_id' => $theirItem->uuid]],
+        'lines' => [['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000, 'fee_item_id' => $theirItem->uuid]],
     ]);
 
     expect($response->status())->toBe(422)

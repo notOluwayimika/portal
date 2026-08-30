@@ -136,7 +136,7 @@ it('CONCURRENCY — two racing GenerateInvoice for one enrollment yield exactly 
         // ── A creates the invoice and COMMITS.
         ActiveSchool::runFor($school->id, fn () => app(GenerateInvoice::class)->handle(
             $enrollment->uuid,
-            [new InvoiceLineSpec('Tuition', Money::fromKobo(150000))],
+            [new InvoiceLineSpec('Tuition', Money::fromKobo(150000), bankAccountId: testBankAccountId())],
             InvoiceKind::Scheduled,
         ));
         expect((int) DB::table('finance_invoices')->count())->toBe(1);
@@ -197,7 +197,7 @@ it('CONCURRENCY — approving a void racing another void is REFUSED, so no secon
     [$invoice, $request] = ActiveSchool::runFor($school->id, function () use ($enrollment, $maker) {
         $inv = app(GenerateInvoice::class)->handle(
             $enrollment->uuid,
-            [new InvoiceLineSpec('Tuition', Money::fromKobo(150000))],
+            [new InvoiceLineSpec('Tuition', Money::fromKobo(150000), bankAccountId: testBankAccountId())],
             InvoiceKind::Scheduled,
         );
 

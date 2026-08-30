@@ -73,7 +73,7 @@ function apxInvoice(School $school, Student $student, int $kobo, ?array $lines =
 
     return app(GenerateInvoice::class)->handle(
         $enrollment->uuid,
-        $lines ?? [new InvoiceLineSpec('Tuition', Money::fromKobo($kobo, $currency))],
+        $lines ?? [new InvoiceLineSpec('Tuition', Money::fromKobo($kobo, $currency), bankAccountId: testBankAccountId())],
         InvoiceKind::Scheduled,
     );
 }
@@ -200,12 +200,12 @@ it('PROOF 4 — the bank-account destination is THREE-VALUED: matches / differs 
         $itemThere = apxFeeItem($school, $other, 'Transport');
 
         // Same account the money lands in.
-        apxInvoice($school, $student, 1000, [new InvoiceLineSpec('Tuition', Money::fromKobo(1000), $itemHere->id)]);
+        apxInvoice($school, $student, 1000, [new InvoiceLineSpec('Tuition', Money::fromKobo(1000), $itemHere->id, bankAccountId: (int) $itemHere->bank_account_id)]);
         // A DIFFERENT account — cut brief line 307's ordinary term-one occurrence.
-        apxInvoice($school, $student, 1000, [new InvoiceLineSpec('Transport', Money::fromKobo(1000), $itemThere->id)]);
+        apxInvoice($school, $student, 1000, [new InvoiceLineSpec('Transport', Money::fromKobo(1000), $itemThere->id, bankAccountId: (int) $itemThere->bank_account_id)]);
         // Free text, no fee item behind it: the shape EVERY line has today, because line entry is
         // manual with no catalog (new-invoice-modal.tsx). This must NOT read as agreement.
-        apxInvoice($school, $student, 1000, [new InvoiceLineSpec('Textbooks', Money::fromKobo(1000))]);
+        apxInvoice($school, $student, 1000, [new InvoiceLineSpec('Textbooks', Money::fromKobo(1000), bankAccountId: testBankAccountId())]);
 
         $payment = app(RecordAccountPayment::class)->handle(
             $student->id, Money::fromKobo(3000), 'Parent', $officer, SchoolDay::today(), $landed->id,
@@ -250,8 +250,8 @@ it('PROOF 4b — an invoice resolving to TWO accounts names only the DIFFERING o
         // ONE invoice, TWO charge lines, two different destinations — one of them the account the
         // money lands in.
         apxInvoice($school, $student, 2000, [
-            new InvoiceLineSpec('Tuition', Money::fromKobo(1000), $itemHere->id),
-            new InvoiceLineSpec('Transport', Money::fromKobo(1000), $itemThere->id),
+            new InvoiceLineSpec('Tuition', Money::fromKobo(1000), $itemHere->id, bankAccountId: (int) $itemHere->bank_account_id),
+            new InvoiceLineSpec('Transport', Money::fromKobo(1000), $itemThere->id, bankAccountId: (int) $itemThere->bank_account_id),
         ]);
 
         $payment = app(RecordAccountPayment::class)->handle(

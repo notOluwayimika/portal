@@ -87,7 +87,7 @@ function byStudentSchool(string $roleName): array
 /** @return array<int, array<string, mixed>> one ordinary charge line — the payload is not what is under test */
 function byStudentLines(): array
 {
-    return [['description' => 'Tuition', 'amount_minor' => 100000, 'kind' => 'charge']];
+    return [['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 100000, 'kind' => 'charge']];
 }
 
 test('GET billable-enrollment refuses a foreign student, and serves its own', function () {

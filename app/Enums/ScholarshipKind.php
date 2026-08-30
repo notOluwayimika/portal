@@ -17,10 +17,18 @@ use App\Finance\Jobs\ProcessBulkInvoiceRun;
  * TWO VALUES, AND NULL IS A THIRD STATE THAT IS NOT A VALUE.
  *
  *   Discount  — the school reduces the bill. The parent still pays, less. These students ARE in the
- *               cohort and ARE billed by the run from the standard fee schedule. The reduction
- *               itself does not exist yet: no award, no policy link, no percentage. So today a
- *               `discount` scholarship changes NOTHING about what its holders are billed, and that
- *               is the honest state of it rather than an oversight.
+ *               cohort and ARE billed by the run from the standard fee schedule, MINUS a percentage
+ *               reduction where they hold a standing award — a row in
+ *               `finance_student_discount_awards`. NAMED IN PROSE AND NOT AS A `{@see}`, for the
+ *               reason stated below about where this enum lives: resolving that tag needs a
+ *               `use App\Finance\Models\...` at the top of this file, which is a COMPILE-TIME
+ *               Kernel-to-Module reference and is what `Finance models are private to the Finance
+ *               module` (tests/Arch/ArchitectureBoundaryTest.php) exists to refuse. The award is
+ *               what carries the reduction; `kind = discount` only says the child is on a scheme
+ *               that may have one.
+ *               A discount-scholarship holder with NO award is billed the standard schedule in full,
+ *               exactly as before — which is the honest state of a scheme that has been declared but
+ *               not yet priced, not an oversight.
  *
  *   Sponsored — an outside organisation pays, on a different fee basis, once a session, by hand and
  *               off platform. These students are EXCLUDED from the bulk run. Billing them the

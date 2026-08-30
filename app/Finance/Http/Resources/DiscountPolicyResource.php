@@ -19,6 +19,11 @@ class DiscountPolicyResource extends JsonResource
             'value_minor' => $this->value_minor,
             'value_currency' => $this->value_currency,
             'percent' => $this->percent,
+            // Inert on an `amount` basis (nothing to take a percentage of) and never null — the
+            // catalog column is NOT NULL with a default. Exposed so the catalog reads the same way
+            // the change queue does; a policy list that cannot tell "half the tuition" from "half
+            // the bill" is a list of amounts nobody can check.
+            'base' => $this->base->value,
             'requires_approval' => $this->requires_approval,
             'status' => $this->status->value,
         ];

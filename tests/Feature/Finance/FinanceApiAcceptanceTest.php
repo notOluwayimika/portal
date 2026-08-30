@@ -179,7 +179,7 @@ it('GENERATE BY STUDENT — the bursar bills a student (no enrollment_id); the i
     mcApi($token)
         ->postJson("/api/v1/finance/students/{$studentUuid}/invoices", [
             'lines' => [
-                ['description' => 'Tuition', 'amount_minor' => 50000, 'kind' => 'charge'],
+                ['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 50000, 'kind' => 'charge'],
                 ['description' => 'Sibling discount', 'amount_minor' => -5000, 'kind' => 'discount', 'discount_policy_id' => $policy->uuid],
             ],
         ])
@@ -198,7 +198,7 @@ it('GENERATE BY STUDENT — the bursar bills a student (no enrollment_id); the i
         ->assertJsonPath('already_invoiced', true);
     mcApi($token)
         ->postJson("/api/v1/finance/students/{$studentUuid}/invoices", [
-            'lines' => [['description' => 'Tuition', 'amount_minor' => 10000]],
+            'lines' => [['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 10000]],
         ])
         ->assertStatus(422);
 });
@@ -246,7 +246,7 @@ it('F7 PREVIEW IS SCHEDULED-ONLY — a supplementary invoice does NOT make an ep
     // Everything ASSERTED below still goes over HTTP.
     $supplementary = ActiveSchool::runFor($school->id, fn () => app(GenerateInvoice::class)->handle(
         $enrollment->uuid,
-        [new InvoiceLineSpec('Damaged locker door', Money::fromKobo(12345))],
+        [new InvoiceLineSpec('Damaged locker door', Money::fromKobo(12345), bankAccountId: testBankAccountId())],
         InvoiceKind::Supplementary,
     ));
 
@@ -264,7 +264,7 @@ it('F7 PREVIEW IS SCHEDULED-ONLY — a supplementary invoice does NOT make an ep
     // And the preview told the truth: the term bill generates.
     mcApi($token)
         ->postJson("/api/v1/finance/students/{$student->uuid}/invoices", [
-            'lines' => [['description' => 'Tuition', 'amount_minor' => 50000]],
+            'lines' => [['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 50000]],
         ])
         ->assertCreated();
 
@@ -278,7 +278,7 @@ it('F7 PREVIEW IS SCHEDULED-ONLY — a supplementary invoice does NOT make an ep
 
     mcApi($token)
         ->postJson("/api/v1/finance/students/{$student->uuid}/invoices", [
-            'lines' => [['description' => 'Tuition', 'amount_minor' => 50000]],
+            'lines' => [['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 50000]],
         ])
         ->assertStatus(422);
 
@@ -295,7 +295,7 @@ it('NO ENROLLMENT — a student with no active enrollment cannot be billed (422 
         ->assertStatus(422);
     mcApi($token)
         ->postJson("/api/v1/finance/students/{$student->uuid}/invoices", [
-            'lines' => [['description' => 'Tuition', 'amount_minor' => 1000]],
+            'lines' => [['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 1000]],
         ])
         ->assertStatus(422);
 });
@@ -307,7 +307,7 @@ it('PAYMENTS — appear on the statement read as their own history (Piece B)', f
 
     $invoiceUuid = mcApi($token)
         ->postJson("/api/v1/finance/students/{$studentUuid}/invoices", [
-            'lines' => [['description' => 'Tuition', 'amount_minor' => 10000]],
+            'lines' => [['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 10000]],
         ])->assertCreated()->json('id');
 
     mcApi($token)
@@ -334,7 +334,7 @@ it('COMPOSES — the full bursar lifecycle through the real API: generate → pa
     $invoiceUuid = mcApi($maker)
         ->postJson('/api/v1/finance/invoices', [
             'enrollment_id' => $enrollment,
-            'lines' => [['description' => 'Tuition', 'amount_minor' => 10000]],
+            'lines' => [['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 10000]],
         ])
         ->assertCreated()
         ->assertJsonPath('total.amount_minor', 10000)
@@ -392,7 +392,7 @@ it('CONTRACT — a pure token client (no session) resolves its own school contex
     mcApi($token)
         ->postJson('/api/v1/finance/invoices', [
             'enrollment_id' => $enrollment,
-            'lines' => [['description' => 'Tuition', 'amount_minor' => 5000]],
+            'lines' => [['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 5000]],
         ])
         ->assertCreated();
 });
@@ -426,7 +426,7 @@ function mcInvoice(string $token, string $enrollment, int $amount = 10000): stri
 {
     return mcApi($token)->postJson('/api/v1/finance/invoices', [
         'enrollment_id' => $enrollment,
-        'lines' => [['description' => 'Tuition', 'amount_minor' => $amount]],
+        'lines' => [['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => $amount]],
     ])->assertCreated()->json('id');
 }
 
@@ -779,7 +779,7 @@ it('ISOLATION — a bursar cannot bill an enrollment in another School (cross-sc
     mcApi($tokenA)
         ->postJson('/api/v1/finance/invoices', [
             'enrollment_id' => $enrollmentB,
-            'lines' => [['description' => 'Tuition', 'amount_minor' => 10000]],
+            'lines' => [['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 10000]],
         ])
         ->assertStatus(422);
 
@@ -858,7 +858,7 @@ it('VOID PROOF 1 — a pending void request leaves the invoice ACTIVE, so the ep
     // The invoice is still 'issued', so a SECOND invoice for the same episode is F7-rejected.
     mcApi($maker)->postJson('/api/v1/finance/invoices', [
         'enrollment_id' => $enrollment,
-        'lines' => [['description' => 'Tuition', 'amount_minor' => 5000]],
+        'lines' => [['bank_account_id' => testBankAccountUuid(), 'description' => 'Tuition', 'amount_minor' => 5000]],
     ])->assertStatus(422);
 
     $episodeId = DB::table('student_curricula')->where('uuid', $enrollment)->value('id');
@@ -993,7 +993,7 @@ it('VOID PROOF 7 — the F7 slot frees only after approval, letting the episode 
 
     mcApi($maker)->postJson('/api/v1/finance/invoices', [
         'enrollment_id' => $enrollment,
-        'lines' => [['description' => 'Re-bill', 'amount_minor' => 5000]],
+        'lines' => [['bank_account_id' => testBankAccountUuid(), 'description' => 'Re-bill', 'amount_minor' => 5000]],
     ])->assertCreated();
 
     // Two invoice rows for the episode (append-only), exactly one ACTIVE (non-void).

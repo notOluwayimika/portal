@@ -126,6 +126,20 @@ free database, always. A busy-only bite-proof passes that gate. Only asserting *
 alongside **busy → exit 1** caught it. Every gate you write gets both arms, and the free arm is the
 one that matters.
 
+**AND A BITE-PROOF MUST SURVIVE THE FIXTURE'S OWN SETUP, or it tested the erasure.** The newest
+shape, and it is not an instrument blind to its axis — it is a *proof destroyed by the thing it was
+proving against*. Measured 2026-08-30: a collation tripwire was bite-proven by planting a bare
+comparison with `CREATE TRIGGER` before the run. It passed 4/4 — because the file uses
+`RefreshDatabase`, which runs `migrate:fresh` and had dropped the planted trigger before the first
+assertion. **The gate had never been shown to fire, and the passing bite-proof said it had.**
+
+The general fix: plant *inside the thing the fixture rebuilds from*, not on top of what it rebuilds.
+For a schema gate that means **mutating the migration**, so the refresh re-creates the defect. Ask of
+any bite-proof: what does `beforeEach` do to my plant?
+
+This is the same family as *a green is not a pass when it was measured against a base that has
+moved* — a result measured against a state that no longer existed by the time the assertion ran.
+
 **The fix has been identical every time: turn the sentence into an assertion.** Enumerate the exact
 set instead of naming members. Run the matcher over a case it must find *and* one it must not flag.
 Count errors as kills. Put the missing axis in the loop. Read both trigger bodies. Pin that the bare

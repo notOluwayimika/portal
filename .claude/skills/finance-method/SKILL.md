@@ -114,6 +114,18 @@ That is the same move as reading trigger bodies back out of `information_schema`
 the migration that claims to install them: check the artifact, not the intent. It is crude, and crude
 beats a sentence with nothing behind it.
 
+**A GATE NEEDS THE KNOWN NEGATIVE MORE THAN A TEST DOES**, and this is the one asymmetry in the
+table worth stating separately. A test that is broken-closed goes red and somebody looks. **A gate
+that is broken-closed refuses everything — and refusing everything is indistinguishable from
+strictness until someone bypasses it, then disables it, and you are left with neither the gate nor
+the knowledge that it is gone.** The failure is silent compliance rather than a red.
+
+Measured: `bin/db-exclusive` was written to refuse concurrent suite runs, and its first version
+matched the invoking shell — whose command line contains the script's own text — so it refused on a
+free database, always. A busy-only bite-proof passes that gate. Only asserting **free → exit 0**
+alongside **busy → exit 1** caught it. Every gate you write gets both arms, and the free arm is the
+one that matters.
+
 **The fix has been identical every time: turn the sentence into an assertion.** Enumerate the exact
 set instead of naming members. Run the matcher over a case it must find *and* one it must not flag.
 Count errors as kills. Put the missing axis in the loop. Read both trigger bodies. Pin that the bare

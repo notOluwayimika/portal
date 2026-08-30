@@ -65,6 +65,16 @@ operational facts an agent needs most often.
   should.
 - Tests alone are not verification — migrate the dev DB and drive the affected
   flows in the running app.
+- **ONE CONSUMER OF `portal_testing` AT A TIME — and a `git push` IS a suite run.** `bin/quality`
+  runs the full suite; `.githooks/pre-push` runs `bin/quality`. So every push holds the test database
+  for ~18 minutes, and anything started beside it collides. The collision does not look like a
+  collision: it produces `1213 Deadlock ... update roles set name = ...` and `1452` foreign-key
+  violations on `role_has_permissions`, spread across nearly every file — **798 reds in one run**,
+  indistinguishable at a glance from a catastrophic regression. It also silently breaks the push,
+  because the poisoned `bin/quality` fails and a failing pre-push hook aborts the push while the
+  surrounding shell still exits 0. Three false signals from this on 2026-08-30 alone, each of which
+  read as a real finding. Before starting a suite, check nothing else is running:
+  `ps -eo command | grep -c '[p]hp.*vendor/bin/pest'`.
 - **`Http::fake()` ACCUMULATES stubs and the FIRST match wins — re-faking the same URL inside a
   loop does nothing.** Every iteration after the first receives the FIRST iteration's response, so a
   `foreach` over six provider statuses tests one status six times and reports six passes. Bit once
@@ -126,6 +136,12 @@ operational facts an agent needs most often.
   branch that touches no Finance code — a stale Vite manifest after a `staging` pull
   that added new pages, so every Inertia test rendering them 500'd. The check is
   cheap: run the failing files on the base branch with none of your work present.
+  **AND THE STALE MANIFEST IS INVISIBLE TO EVERY REVIEW**, which is why it recurs. `public/build`
+  is gitignored, so a stale manifest appears in no diff, survives no code review, and is never fixed
+  *for* anybody — it breaks independently on every machine that pulls, and each person diagnoses it
+  from scratch. Bit again 2026-08-30 merging `staging` into a branch that adds an Inertia page: the
+  page's own tests 500'd with `Unable to locate file in Vite manifest`, which reads as a broken page
+  rather than a stale artifact.
   **Rebuild the frontend after any `staging` pull that touches it**, and note the
   worse cousin — a manifest that is stale but still *resolvable* passes against the
   wrong bundle instead of erroring.

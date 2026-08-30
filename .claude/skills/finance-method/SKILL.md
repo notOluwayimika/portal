@@ -65,7 +65,7 @@ common: a **description** — a name, a docblock, a comment — that asserts a p
 not actually have. Nothing is missing; something is *claimed*. And because the claim reads as
 verification, it stops anyone looking.
 
-Nine instances across three days and four branches, which is why it earns a section:
+Twelve instances across four days, which is why it earns a section:
 
 | The description | What it claimed | What was true |
 |---|---|---|
@@ -78,6 +78,22 @@ Nine instances across three days and four branches, which is why it earns a sect
 | a test fixture: *"holds exactly the abilities named"* | exactly those | its helper assigned `admin`, making every negative arm vacuous |
 | a 502 fixture, under a test named *"a 5xx is UNAVAILABLE"* | that the 5xx branch works | its body was not JSON, so it passed through the UNREADABLE-BODY branch — deleting the 5xx check left it green |
 | a docblock claiming the comparison is `hash_equals` and never `===` | timing-safety | true, and **unverifiable by any behavioural test** — see below |
+| two true measurements about a branch (*"lacks migration X"*, *"list lacks constraint Y"*) | *"so it will break"* | neither branch **reaches** the guard — no test there creates an invoice |
+| `git push` exiting 0 | the remote moved | the pre-push hook had aborted it; the remote was 4 commits behind |
+| `grep -c` returning `0` | the content is absent | the pattern was case-mismatched; the content was there |
+
+**A TRUE MEASUREMENT CAN CARRY AN UNMEASURED INFERENCE, and its credibility transfers.** The
+branch row above is the sharpest form in this table, because nothing in it is false. Both
+measurements were real, both outputs were real — and the conclusion drawn from them was never
+measured at all. It reads as solid precisely *because* the checking was genuine; the inference
+arrives wearing the evidence's clothes.
+
+The discriminator is **reachability**. A check that establishes a hazard is PRESENT licenses
+*"this branch could hit X"*. It never licenses *"this branch will break."* Those are different
+claims and only the first was measured. The same word had been used correctly about a finding one
+turn earlier — *reachability not established, so ticketed rather than claimed* — and then not
+applied to the next one. **Presence is not reachability**, and the gap between them is where a
+confident wrong conclusion lives.
 
 **Two of those rows are worse than the others and are worth separating out.**
 

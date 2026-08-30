@@ -94,6 +94,28 @@ review of a `<Can>` wrapper and it should take a minute.
 Cheap exits are part of the design. If a change earns a light pass, take it —
 that is what keeps attention available for the migration next week.
 
+### Depth does not carry forward from the last branch
+
+The tier is a property of **the change in front of you**, not of the standard the
+previous one was held to. This needs saying because the drift only runs one way:
+having just worked something at full depth, the next change feels like it
+deserves the same, and refusing depth feels like lowering standards. It is not.
+Applying a migration's bar to a React page is how a schedule is spent — the cost
+lands on the deadline, and it lands invisibly, because nobody ever reports
+"the review was too thorough".
+
+The concrete case this was written for: `feat/gateway-transaction-table` earned
+three adversarial passes — six triggers, two tables, money, append-only data,
+`school_id` isolation, payer PII. **The parent portal screens that follow it do
+not.** A React page reading a live, frozen, already-tested endpoint is a
+**targeted** review — the boundary, the authorization, the scoping, whether the
+screen shows the right guardian's wards — and then it exits. Three passes on that
+is not rigour, it is the date.
+
+**So state the tier and the reason before starting**, in one line, and let it be
+argued with. A tier chosen out loud can be corrected by whoever disagrees; a tier
+absorbed from the last branch is invisible and therefore permanent.
+
 ## Attack order
 
 Go where the defects have actually been, in this order:

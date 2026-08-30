@@ -1,8 +1,10 @@
 # Scholarships and the September cutover — decisions taken
 
 **Date:** 25 August 2026
-**Revision:** 3 — Brookstone's clarifications. Rev 1 proposed a single scholarship-to-policy FK;
-rev 2 removed the C2C fee schedule; rev 3 restores it as the *target* and settles scope.
+**Revision:** 4 — rev 3 was Brookstone's clarifications of 25 August (rev 1 proposed a single
+scholarship-to-policy FK; rev 2 removed the C2C fee schedule; rev 3 restored it as the *target*
+and settled scope). Rev 4 adds §11, Brookstone's 29 August ruling on mid-term charges, and §12,
+the fee-item catalog direction.
 Superseded decisions are marked so nobody re-proposes them.
 **Status:** Decisions are settled unless marked OPEN.
 **Purpose:** So nobody re-derives this from the code, and nobody asks Brookstone the same question
@@ -241,6 +243,9 @@ Brookstone the window exists and how long it lasts.
   collective figure to the sponsoring organisation, paid off platform.
 - The already-issued bills for BSS students **already show the discount**.
 - ~70 C2C students.
+- **(29 August)** A scholarship covers the **termly school fees**. It does **not** apply to a
+  mid-term extra charge. See §11 — this is already the behaviour, and §11 says why that is a
+  liability rather than a comfort.
 
 **Answered from the code, so nobody asks again:**
 
@@ -286,3 +291,127 @@ supersede, not an edit. That sits *before* the dry-run comparison, which sits *b
 - A rule without a lint, a gate or a database constraint is decoration.
 - Prove a guard by breaking it. A bite-proof that comes back green is a non-discriminating test, not
   a passing guard — say so rather than recording it as a pass.
+
+---
+
+## 11. A scholarship covers the termly fees, not a mid-term extra charge
+
+**Brookstone, 29 August 2026.** A scholarship reduces the **term's school fees**. A charge raised
+mid-term — a trip, a replacement item, an optional service taken up after the term bill went out —
+is **not** reduced by it. The family pays that in full whatever their award.
+
+**This is already what the code does, and it is not done by a rule.** It falls out of which writer
+handles which invoice:
+
+- The **bulk run** applies awards. `ProcessBulkInvoiceRun::reductionSpecFor()` appends the reduction
+  per student to a copy of the mapper's lines.
+- **`GenerateInvoice` contains no reference to `StudentDiscountAward` at all** — measured, zero
+  occurrences. Every ad-hoc invoice, and every supplementary one, therefore prices at full rate.
+
+And the two paths carry exactly the split Brookstone described. `FeeScheduleLineMapper::linesFor()`
+bills **mandatory items only**, because `is_mandatory` is a property of the price list and nothing in
+the schema records which child takes the bus. Its docblock states the consequence plainly: optional
+items are *"added per child afterwards, singly through the generate modal or as a supplementary
+invoice."* Those are the mid-term charges, and they go through the writer that cannot see an award.
+
+**Why this section exists, and it is the whole point of writing it down: the ruling is enforced by an
+absence.** Nothing asserts that `GenerateInvoice` ignores awards. It ignores them because nobody
+wired them in. A later change that makes the generate modal "helpfully" apply a student's award would
+contradict a decision Brookstone has taken, would look like a bug fix in review, and **not one test
+would go red**. An absence is not a guard.
+
+- [ ] **Pin it.** A test that a supplementary invoice for a student holding an active 50% award
+      carries no reduction line, naming this section as the reason. Block is with the implementer;
+      it is not landed at the time of writing.
+
+Do not treat "no code change needed" as the end of this item. The code change needed is the one that
+makes the ruling breakable-with-a-red.
+
+---
+
+## 12. Fee items become a catalog with templates, not free text
+
+**THE DECISION IS SEGUN'S AND IT IS RECORDED FIRST, SEPARATELY FROM MY DISAGREEMENT, BECAUSE AN
+EARLIER REVISION OF THIS SECTION BLENDED THEM AND THAT IS HOW A DIRECTION QUIETLY BECOMES ITS
+ADVISOR'S OPINION.** Rev 4 of this document recorded "not before cutover" as though it were the
+agreed order. It was not. The order given was *"1. Mandatory Fee Catalog (Templates) First. 2.
+Immediate Survey Check. 3. Step 0 Execution"* — catalog first. The substitution was mine and was not
+flagged when it was made.
+
+### 12.1 The decision, 29 August
+
+Fee items become a **school-level catalog of templates** that fee schedules draw from, replacing the
+free-text invoice line as the normal way a charge is described.
+
+**Sequenced: Section 0 lands first on the existing schema to secure the 5 September cutover; the
+catalog is built immediately after the first bulk run.** Section 0's fee-item entries must be
+structured so they backfill into the catalog without re-entry — see 12.3, which is a condition of
+this decision rather than advice.
+
+### 12.2 The disagreement, and how it was settled
+
+I argued for deferring, on three grounds: Section 0 would otherwise wait on new code in the seven
+days before term; Finding 0 had just been rewritten to warn that four migrations landing in cutover
+week is the shape that goes wrong, and a catalog is a fifth; and the survey has not returned, so the
+catalog's scope is unknown and one that cannot express a real charge sends people back to free text.
+
+The counter-argument is real and was accepted: every mid-term charge raised between September and
+December is a free-text line with no fee item, so `is_discountable` falls to its default of **true**
+(`app/Finance/DTOs/InvoiceLineSpec.php:74`) and the line sits in the discount base unclassified.
+Waiting accrues that cost rather than avoiding it.
+
+Settled on the middle path: bill Term 1 on the current path, build the catalog while mid-term
+charges are still few. **The cost of waiting is a few weeks of free-text lines, not a term.**
+
+### 12.3 What "backfills without re-entry" requires, and why it is a data rule
+
+`finance_fee_items` (`2026_07_26_130001:31-44`) holds `description` as a plain `string`. **There is
+no unique index, no code, no slug.** A catalog backfill will have nothing to group by except that
+string, so two spellings of the same fee become two templates and there is no later repair that does
+not involve a human deciding which rows meant the same thing.
+
+Four rules for Section 0 entry. They cost nothing at typing time and cannot be recovered afterwards:
+
+1. **One spelling per item, everywhere.** Identical string across every class level and both
+   schools — same case, same spacing, no trailing space. `Tuition` and `Tuition Fee` are two
+   catalog items.
+2. **Never encode the class level or term in the description.** `JSS 1 Tuition` makes every level a
+   separate template. The level is already the schedule's own coordinate.
+3. **Same description ⇒ same `is_discountable`, same `is_mandatory`, same destination account.**
+   **Amounts may differ per class level; the flags must not.** A description whose flags disagree
+   across schedules cannot become one template. If two things genuinely differ in flags, they are
+   two items and need two names.
+4. **Type both schools from one agreed sheet**, not from each school's own list.
+
+### 12.4 The check, because a rule without one is wallpaper
+
+Run after entry and before approving anything. Any row returned is a description that will not
+backfill cleanly:
+
+```sql
+SELECT description,
+       COUNT(DISTINCT is_discountable) AS discountable_variants,
+       COUNT(DISTINCT is_mandatory)    AS mandatory_variants,
+       COUNT(*)                        AS rows_with_this_description
+FROM finance_fee_items
+GROUP BY description
+HAVING discountable_variants > 1 OR mandatory_variants > 1;
+```
+
+And, for spelling drift, which no query can judge for you:
+
+```sql
+SELECT DISTINCT description FROM finance_fee_items ORDER BY description;
+```
+
+Read that list for near-duplicates. `Transport` beside `Transport Fee` is the defect.
+
+**Both queries are UNVERIFIED — written from the schema, not run.** There are no fee items on
+production to run them against yet, which is the whole reason this section exists.
+
+### 12.5 Still open until the survey returns
+
+Whether free text is removed outright or kept behind an explicit "uncatalogued charge" affordance
+that forces the two fields the catalog would have supplied. Removing it outright is cleaner and is
+the reason to ask rather than assume — a school that cannot bill an unforeseen charge on the day
+bills it off the platform, and that is worse than a messy line.

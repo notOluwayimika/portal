@@ -47,7 +47,7 @@ use Illuminate\Support\Facades\DB;
  * 5000 NGN of genuine room. Naira were added to dollars and the answer was reported as a
  * total. The schema permits that state to exist: `applyCreditForward` selects a student's
  * payments with NO currency filter and stamps the INVOICE's currency on the allocation
- * (app/Finance/Actions/GenerateInvoice.php:479 (applyCreditForward)), so before this
+ * (app/Finance/Actions/GenerateInvoice.php:583 (applyCreditForward)), so before this
  * trigger existed nothing stopped it, and on 5.7 no `CHECK` ever ran.
  *
  * WHY BOTH ARMS, AND WHAT EACH ONE ALONE WOULD COST:
@@ -154,10 +154,10 @@ use Illuminate\Support\Facades\DB;
  *         payment axis is vacuous for it — it is safe by exclusivity, not by a lock.
  *       * `GenerateInvoice::applyCreditForward` is a genuine read-then-write with NO lock
  *         on the payment row: it sums that payment's allocations, subtracts, and inserts —
- *         app/Finance/Actions/GenerateInvoice.php:479 (applyCreditForward). It
+ *         app/Finance/Actions/GenerateInvoice.php:583 (applyCreditForward). It
  *         is nevertheless serialised, because `GenerateInvoice`'s FIRST statement is a
  *         locking read of the student's account row —
- *         app/Finance/Actions/GenerateInvoice.php:256 (lockForUpdate) — held for the whole
+ *         app/Finance/Actions/GenerateInvoice.php:263 (lockForUpdate) — held for the whole
  *         transaction, and every payment it can draw from belongs to that one student. So
  *         the account row is a strictly COARSER serialisation point than the payment row,
  *         and it covers this axis. The ticket recorded this as never established; PROOF f1

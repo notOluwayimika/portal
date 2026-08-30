@@ -7,7 +7,9 @@ use App\Finance\DTOs\InvoiceLineSpec;
 use App\Finance\Enums\FeeScheduleStatus;
 use App\Finance\Enums\InvoiceKind;
 use App\Finance\Enums\InvoiceLineKind;
+use App\Finance\Jobs\ProcessBulkInvoiceRun;
 use App\Finance\Models\FeeSchedule;
+use App\Finance\Models\StudentDiscountAward;
 use App\Support\ActiveSchool;
 
 /**
@@ -35,11 +37,23 @@ use App\Support\ActiveSchool;
  * ({@see InvoiceKind::Supplementary}). Do not "fix" this into billing everything.
  *
  * CHARGE LINES ONLY. Every line is {@see InvoiceLineKind::Charge}; `discountPolicyId` and `percent` are
- * never set. U8's discount AWARD (which student gets which policy) does not exist, so there is no fact
- * from which a bulk reduction line could be justified — and keeping reductions out means the
- * finance_invoice_lines_reduction_guard trigger, which refuses a reduction whose policy is absent /
- * non-active / cross-School, is never reached from this path at all rather than being reached and
- * satisfied by accident.
+ * never set. THE ORIGINAL REASON HAS EXPIRED AND THE RULE HAS NOT: the discount AWARD (which student
+ * gets which policy) now exists — {@see StudentDiscountAward} — so there IS a
+ * fact from which a reduction line can be justified. It is just not a fact about a PRICE LIST. This
+ * method is handed a schedule and a School and no student, deliberately (see the paragraph below on
+ * why it takes a FeeSchedule), so it has nothing to resolve an award against and must not acquire a
+ * student in order to. The bulk run appends the reduction per student, to a COPY of what this
+ * returns; see {@see ProcessBulkInvoiceRun::reductionSpecFor()}.
+ *
+ * Keeping reductions out of THIS method still means the finance_invoice_lines_reduction_guard
+ * trigger is never reached from the mapper's own output — a schedule cannot produce a policy
+ * citation, so it cannot produce one that is absent, non-active or cross-School.
+ *
+ * IT SNAPSHOTS THE DESTINATION (S11). Each line carries the fee item's `bank_account_id` as it stands
+ * at issue, so `finance_invoice_lines` states where the money was destined instead of the reader
+ * re-joining to the catalog row later and getting today's answer to a question about the past. That is a SNAPSHOT and never a lookup, in the same sense
+ * `description` and `amount` already were — and it is why this method is one of the two writers S11
+ * commit 1 touches, the other being the bursar's generate modal.
  *
  * `isDiscountable` is read from the ITEM, never left to the DTO's `true` default — GenerateInvoice
  * re-resolves it server-side anyway (S1 3.6), so a wrong value here would be silently corrected there
@@ -163,6 +177,20 @@ final class FeeScheduleLineMapper
             feeItemId: $item->id,
             kind: InvoiceLineKind::Charge,
             isDiscountable: $item->is_discountable,
+            // THE DESTINATION, SNAPSHOTTED (S11) — the entire point of the field. What is written is
+            // the item's account AS IT IS AT ISSUE; repointing the fee item afterwards moves nothing
+            // on any line already billed, which is precisely what the live lookup through
+            // `fee_item_id` could not promise.
+            //
+            // ALWAYS PRESENT: `finance_fee_items.bank_account_id` is NOT NULL with no default
+            // (2026_08_10_120000:108-110), so there is no absent case to handle and no fallback to
+            // invent. A schedule cannot produce a charge line with no destination, which is what
+            // makes the S11 commit-2 trigger safe to require one.
+            //
+            // THE RAW ATTRIBUTE, NOT `$item->bankAccount`. The relation is nullable in PHP because
+            // BankAccount carries SchoolScope; reading the integer column takes the fact off the row
+            // this method already loaded, with no second query and no scope in the path.
+            bankAccountId: (int) $item->bank_account_id,
         ))->all());
     }
 }

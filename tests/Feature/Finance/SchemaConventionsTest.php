@@ -69,7 +69,7 @@ function schemaMoneyRows(): array
         ]);
         $invoice = app(GenerateInvoice::class)->handle(
             $enrollment->uuid,
-            [new InvoiceLineSpec('Tuition', Money::fromKobo(50000))],
+            [new InvoiceLineSpec('Tuition', Money::fromKobo(50000), bankAccountId: testBankAccountId())],
             InvoiceKind::Scheduled,
         );
         app(RecordPayment::class)->handle(

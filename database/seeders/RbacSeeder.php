@@ -423,6 +423,20 @@ class RbacSeeder extends Seeder
                 // finance_lead does not hold fee-schedule.change.submit either. The CHECKER side is on
                 // `executive_director` (2026-08-04), never on a maker seat.
                 PermissionEnum::FINANCE_OPENING_BALANCE_SUBMIT->value,
+                // BSS per-student discount awards (the award import). The bursar office holds the
+                // scholarship list Brookstone keeps outside the system and is who uploads it, so the
+                // ability sits on the same seat as the opening-balance maker directly above.
+                //
+                // AO ONLY, and the omissions are the decision. NOT `admin`: admin holds
+                // finance.invoice.reduction.apply — one reduction on one invoice they are looking at —
+                // and this is a STANDING price for a named child, a different act. NOT
+                // `accounts_supervisor`, `head_of_school` or `executive_director`: all three are frozen
+                // by 2026_08_06_100000_move_head_of_school_finance_to_executive_director, so a grant
+                // there would be written by this seeder and revoked on the next deploy.
+                // `accounts_officer` is ungoverned (that migration's docblock names the three it
+                // freezes), so this lands AND survives — obligation 3 in Permission's checklist,
+                // checked rather than assumed.
+                PermissionEnum::FINANCE_DISCOUNT_AWARD_MANAGE->value,
             ],
             // Executive Director (ED) — new 2026-08-04. Brookstone: "The executive director approves
             // scholarships and discounts, concessions, refunds, write offs and other high impact

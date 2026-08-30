@@ -67,7 +67,7 @@ function payAxisSetup(int $invoiceKobo, int $paymentKobo, string $paymentCurrenc
 
     $invoice = ActiveSchool::runFor($school->id, fn () => app(GenerateInvoice::class)->handle(
         $enrollment->uuid,
-        [new InvoiceLineSpec('Tuition', Money::fromKobo($invoiceKobo))],
+        [new InvoiceLineSpec('Tuition', Money::fromKobo($invoiceKobo), bankAccountId: testBankAccountId())],
         InvoiceKind::Scheduled,
     ));
 
@@ -308,7 +308,7 @@ it('NO REGRESSION — the ordinary RecordPayment path still writes its allocatio
 //   IF NEW.allocation_rule = 'payment_against_named_invoice' AND v_already + NEW.amount_minor > v_amount THEN
 //
 // It disables the ceiling for exactly `credit_applied_forward_oldest_first` — the rule
-// `applyCreditForward` stamps (app/Finance/Actions/GenerateInvoice.php:479 (applyCreditForward)),
+// `applyCreditForward` stamps (app/Finance/Actions/GenerateInvoice.php:583 (applyCreditForward)),
 // the writer with
 // no payment-row lock — and before these arms existed it left all 676 Finance tests green.
 // ─────────────────────────────────────────────────────────────────────────────────────────

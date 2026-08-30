@@ -49,10 +49,35 @@ APP_ENV=drive php artisan finance:seed-drive-fixture
 # 4. Serve it on 8001 alongside the running vite dev server (5173).
 APP_ENV=drive php artisan serve --port=8001
 #   Open http://localhost:8001 — vite (npm run dev) serves the assets.
+
+# 5. A QUEUE WORKER, in a second terminal, if your screen dispatches a job.
+APP_ENV=drive php artisan queue:work --tries=1
 ```
 
 Re-run step 3 any time — it is idempotent (it `migrate:fresh`-es first), so you always get the same
 fixture with no duplication.
+
+### Step 5 is not optional for any screen that queues, and its absence looks exactly like a bug
+
+`.env.drive.example` sets `QUEUE_CONNECTION=database`, so a dispatched job is a ROW and nothing runs
+it until a worker does. Every import screen in this application does its work off the request —
+guardian, opening balances, bulk invoice runs, and the BSS discount-award import — and every one of
+them polls a status endpoint until the record leaves `queued`/`processing`.
+
+With no worker the upload succeeds, the row is inserted, the screen enters its in-flight state and
+polls **forever**. That is indistinguishable from a poll whose terminal set is wrong, which is one of
+the few defects only a browser can find — so the drive that hits this spends its time investigating
+the feature instead of the environment. Measured on the discount-award drive (2026-08-28): 21 polls,
+no transition, `imports.status = 'queued'` and one row in `jobs`.
+
+**Tell the two apart with one query before suspecting the screen:**
+
+```bash
+APP_ENV=drive php artisan tinker --execute="echo DB::table('jobs')->count();"
+```
+
+Non-zero means the job is waiting for a worker you have not started. Zero, with the record still
+`queued`, is a real finding.
 
 ## The cast (password for every user: `drive-password`)
 

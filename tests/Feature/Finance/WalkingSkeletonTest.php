@@ -67,7 +67,7 @@ function ledgerBalance(int $studentId): int
 /** One-line invoice payload — the skeleton's shape, expressed as a single line. */
 function oneLine(int $amountMinor, string $description = 'Tuition'): array
 {
-    return [['description' => $description, 'amount_minor' => $amountMinor]];
+    return [['bank_account_id' => testBankAccountUuid(), 'description' => $description, 'amount_minor' => $amountMinor]];
 }
 
 it('generates an invoice bound to the enrollment, with a Money wire shape and a ledger charge', function () {

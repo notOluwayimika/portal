@@ -223,18 +223,8 @@ Do this every time, as the last thing you do:
    `references/report-template.md`. Not to the chat only. The reviewer needs a
    path, and a file is also the record of what you claimed at the moment you
    claimed it.
-2. **Spawn the `finance-reviewer` subagent in its OWN GIT WORKTREE** —
-   `isolation: "worktree"` — passing it **only** the report
-   path and the branch name. Nothing else.
-
-   **The worktree is not optional and it is not tidiness.** Twice now a reviewer has found the
-   implementing session's artifacts on its own path — saved-good copies, suite logs, message drafts,
-   a repository clone, probe scripts — reported the exposure as a finding, and declined to open them.
-   Both times the separation held because the reviewer chose to let it, which is a courtesy, not a
-   control. On 2026-08-28 a reviewer additionally could not make its own clone, because the path was
-   already occupied by the previous session's, and had to describe its isolation as *"observed, not
-   engineered"*. A worktree is a separate checkout, costs nothing, and is auto-removed if unchanged.
-   See `docs/handoff/tickets/reviewer-can-see-implementer-scratchpad.md`. Not a summary, not your reasoning,
+2. **Spawn the `finance-reviewer` subagent**, passing it **only** the report
+   path and the branch name. Nothing else. Not a summary, not your reasoning,
    not "the risky part is the migration", not "I already checked the oracles".
    Every one of those narrows the reviewer toward your own blind spot, and a
    reviewer wearing your frame is a more confident version of you, not a check

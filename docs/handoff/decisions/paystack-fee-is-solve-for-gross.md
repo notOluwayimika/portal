@@ -62,9 +62,46 @@ bill ₦2,462.00  ->  charge ₦2,499.49
 bill ₦2,462.50  ->  charge ₦2,601.52     <-- +50 kobo of bill, +₦102.03 of charge
 ```
 
-That is arithmetically correct and will still look like a bug to whoever meets it first. **It is a
-product question, not only an implementation detail**: a parent paying a bill a few kobo either side
-of that line sees a materially different charge. Flagging it rather than deciding it.
+That is arithmetically correct and will still look like a bug to whoever meets it first.
+
+**The cliff is not ours.** Paystack's ₦100 waiver is a STEP rather than a taper; charging gross
+merely makes the parent see it. Nothing in our arithmetic created it and no formula removes it.
+
+### The shape of the decision, so it takes five minutes rather than becoming a ticket nobody opens
+
+**There is a ₦102.03 dead band: no bill produces a charge between ₦2,499.49 and ₦2,601.52.**
+
+**How often can it be reached?** Term bills are in the hundreds of thousands, so the band is
+unreachable from a full bill. It is reachable **only by part-payment**, which §11 decision 3 has just
+made legal — so "rare" rather than "never", and the frequency is entirely a function of how small a
+part-payment a parent may make.
+
+**The exposure if the school smooths it is bounded and small.** Cap the charge just under the
+threshold (₦2,499.99, the most that still attracts no flat fee) and the school receives ₦2,462.49:
+
+| bill | school absorbs |
+|---|---|
+| ₦2,462.50 | ₦0.01 |
+| ₦2,500.00 | ₦37.51 |
+| ₦2,550.00 | ₦87.51 |
+| **₦2,562.49** | **₦100.00** — break-even with the step |
+| ₦2,600.00 | ₦137.51 — worse than the step; charge gross instead |
+
+So a smoothing rule is: **for bills in `(₦2,462.50, ₦2,562.49]`, cap the charge at ₦2,499.99 and
+absorb the difference — never more than ₦100 per transaction.** Above ₦2,562.49, charging gross is
+cheaper for the school and the step is simply passed on.
+
+**Three options, and any is defensible:**
+
+1. **Do nothing** — the parent sees a ₦102 step on a narrow band of part-payments. Zero code.
+2. **Smooth it** — the bounded rule above, at most ₦100 per transaction, on transactions that will be
+   uncommon. One branch in the gross calculation.
+3. **Set a minimum part-payment above ₦2,562.49** — the band becomes unreachable by construction and
+   no money is absorbed. One validation rule, and it constrains parents rather than the school.
+
+**Recommendation: (3) if a minimum part-payment is acceptable to the business, otherwise (1).**
+Option 2 puts a special case inside money arithmetic to solve a cosmetic problem, and money
+arithmetic is where special cases are most expensive.
 
 ## 4 · The rounding direction is a DECISION, and the default is wrong
 
@@ -128,11 +165,22 @@ rather than an unexamined guess.
 
 ## 7 · The one step only Segun can take
 
-**Run a single sandbox transaction and report the `fees` field.** That settles the formula
-empirically, against the account we will actually use, at today's pricing — and it is the
-measure-rather-than-recall step the credential boundary correctly stopped me from taking. `.env` is
-not mine to read and nothing in the client's tests touches a live key.
+**Run a single sandbox transaction and paste the ENTIRE `verify` response** — not just the `fees`
+field. That settles the formula empirically, against the account we will actually use, at today's
+pricing, and it is the measure-rather-than-recall step the credential boundary correctly stopped me
+from taking. `.env` is not mine to read and nothing in the client's tests touches a live key.
 
-With one real `fees` value at a known amount, every row of §3 becomes checkable in a minute:
-recompute `f(G)` for that `G` and compare.
+**Why the whole payload rather than one field.** `fees` alone settles §3. It does **not** settle
+§5's premise, and §5 is the guard that makes the whole design safe:
+
+> The divergence guard compares *what we charged* against *what they took*. That comparison is only
+> valid if we know **what their `fees` is measured against** — the gross we charged, the net settled,
+> or something else again. If `fees` turns out to be reported against a different base than we
+> assume, the guard silently compares two unlike numbers and reports drift that is not there, or
+> misses drift that is.
+
+One transaction answers the formula **and** the guard's premise together, and it is the difference
+between a guard that works and a guard that looks like it works. Alongside `fees`, the fields that
+matter are `amount`, `requested_amount` if present, `currency`, `status`, `paid_at` and `id` — but
+paste all of it, because the useful field is often the one nobody thought to ask for.
 

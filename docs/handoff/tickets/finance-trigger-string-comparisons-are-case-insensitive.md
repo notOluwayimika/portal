@@ -5,6 +5,30 @@
 **Not fixed here.** The gateway tables are fixed on that branch and pinned by a tripwire; everything
 below is other people's tables and belongs in its own change.
 
+## READ THIS FIRST: open-findings §11 does NOT close this ticket
+
+`docs/handoff/open-findings.md` §11 (*"The case-collation question on 5.7 — MEASURED 29 August, and
+it holds"*) measured, on production's Percona 5.7.23, that **`COLLATE utf8mb4_bin` inside a trigger
+body takes effect there**. Two arms, both refused with `#1644` and the trigger's own prose. That
+result is real, it is valuable, and it closes a question that had been documented-not-measured since
+`2026_08_17_100000`.
+
+**It answers a different question from this ticket, and the two are easy to conflate.**
+
+| | question | answer |
+|---|---|---|
+| §11 | where `COLLATE utf8mb4_bin` **is written**, does it take effect on 5.7? | **Yes — measured.** |
+| this ticket | 29 comparisons across 10 triggers where it was **never written at all** | still case- and accent-insensitive |
+
+§11 makes this ticket **more** urgent rather than less. Before it, someone could have hoped the
+clause was inert on 5.7 and that its absence therefore changed nothing. §11 removes that hope: the
+mechanism works, so the comparisons that lack the clause are genuinely comparing case-insensitively
+on production right now.
+
+Nothing in §11 was measured against any of the 29 — its two arms are `scholarships.kind` and
+`finance_discount_policy_changes.base`, both of which **do** carry the clause. That is why they
+passed.
+
 ## The class
 
 Every `finance_` table is `utf8mb4_unicode_ci`, which is case- **and accent**-insensitive. So inside a

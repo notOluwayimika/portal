@@ -1,6 +1,31 @@
 # Decision request → Developer 1 — settlement account, and the 6 September milestone
 
-**Raised:** 2026-08-28. **Answer needed by: 31 August 2026.**
+**Raised:** 2026-08-28. **SUPERSEDED IN PART, 2026-08-30 — see the banner below.**
+**Answer needed by: 31 August 2026** for what remains.
+
+> ## ⚠️ MOST OF §1 AND §2 ARE ANSWERED. Verified on `origin/staging` @ `1921cb7e`, 2026-08-30.
+>
+> Developer 1 landed the settlement work on 29 August. **Do not action §1 or §2 below as written** —
+> they are kept for the record of what was asked and why, not as live requests.
+>
+> | asked | landed | verified by |
+> |---|---|---|
+> | a settlement account datum | `2026_08_29_100000_finance_school_settings_settlement_bank_account.php` | `git ls-tree` on staging |
+> | somewhere to resolve it from | `app/Finance/Services/SettlementBankAccount.php` + its test | file read on staging |
+> | the ability name for recording | `finance.payment.record` in `app/Enums/Permission.php` | `git grep` on staging |
+> | production readiness owner | Section 0 of the cutover runbook | — |
+> | invoice-line destination | `2026_08_29_110000` + `..._120000` (nullable, then required) | migration names on staging |
+>
+> **The resolver's real contract, since I will be calling it and got it wrong in my own plan:** it is
+> `final class SettlementBankAccount` with an **instance** method
+> `public function forSchool(int $schoolId): int` — not static, so it is injected — and it throws
+> `BusinessRuleException` when the school has no settlement account configured. Its message names the
+> school **by id and never by name**, which is the cross-school-leak rule holding in an error string.
+> **My `SettlementAccount::forSchool` stub is deleted; step 4 calls his class.**
+>
+> **What is still open is §3 and §5 below**, plus the three business questions.
+
+
 **Blocks:** §6 step 4 (the webhook handler) entirely. Steps 2, 3, 6 and 7 proceed without it.
 
 **Why the 31st and not "when you get to it".** The definition of done is 6 September. The 31st leaves
@@ -222,6 +247,26 @@ branch's `down()` was verified by re-deriving the rollback depth from `migrate:s
 trusting `--step=1`, and `--step=1` counts from the branch's latest migration — so once another
 migration sits on top, a rollback audit that trusts the step count reverts the wrong thing and passes
 having tested nothing. That is a documented bite in this repository, not a hypothetical.
+
+## 5 · What is actually still open, as of 2026-08-30
+
+Kept short deliberately: a list that re-asks answered questions is a list that stops being read.
+
+1. **The 29 collation-degenerate comparisons** (§3). **Not closed by open-findings §11** — that
+   measured the clause takes effect where it is written; these are 29 places it was never written.
+   §11 makes them more urgent, not less, because it removes the possibility that their absence was
+   harmless. The ticket now opens with that distinction.
+2. **Ability names for the gateway ROUTES.** `finance.payment.record` covers recording a payment;
+   the webhook, the verify-on-return and the pay-initiation endpoints still need theirs, and the
+   grants-convergence lint bites on merge if we each invent our own.
+3. **The three §11 business questions** — who bears the gateway fee, whether partial payment is
+   permitted, and what happens to a payment against an invoice voided in between. I searched staging
+   and could not find any of them answered. All three change the screen or the ledger.
+4. **The payment-received notification's name**, so it is registered once rather than twice.
+5. **Two policy defaults that are mine to raise and not to set:** how long a raw gateway payload is
+   retained before redaction (`docs/handoff/tickets/gateway-payload-retention.md`), and how long a
+   `pending` transaction is re-verified before a human is told
+   (`docs/handoff/decisions/webhook-arrives-but-verify-is-unreachable.md`).
 
 ## If the 31st passes with no answer
 

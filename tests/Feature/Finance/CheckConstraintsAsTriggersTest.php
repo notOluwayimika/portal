@@ -127,9 +127,16 @@ it('the set of CHECK constraints on finance_ tables is EXACTLY this list — a n
     // 8.0.43 it is real but evaluated AFTER every BEFORE trigger, so where a trigger already carries
     // the rule it is unreachable. Inert on one server, shadowed on the other.
     //
-    // The sixteen below are the ones that predate that measurement and stay by decision (see the
-    // test beneath this one). Adding to this list is allowed; doing it SILENTLY is not — and a
-    // migration that trips this should ask whether a trigger is what it wanted.
+    // Sixteen of the seventeen below predate that measurement and stay by decision (see the test
+    // beneath this one). Adding to this list is allowed; doing it SILENTLY is not — and a migration
+    // that trips this should ask whether a trigger is what it wanted.
+    //
+    // `finance_manual_invoice_run_lines_amount_currency_shape` is the one that does NOT predate it:
+    // 2026_08_30_100000 added it deliberately, in the same class as 2026_08_01_120000's ten. It is
+    // NOT trigger-backed — that migration's own docblock says so in as many words: `Money`'s
+    // constructor is the real guard and the CHECK is the belt behind it on 8.0, inert on 5.7. It
+    // tripped this test, which is the test working: it is named here now rather than arriving
+    // unannounced. A trigger, not a CHECK, is what the rule above would have asked for.
     $actual = collect(DB::select(
         "SELECT CONSTRAINT_NAME AS name FROM information_schema.TABLE_CONSTRAINTS
           WHERE CONSTRAINT_SCHEMA = DATABASE() AND CONSTRAINT_TYPE = 'CHECK'
@@ -147,6 +154,7 @@ it('the set of CHECK constraints on finance_ tables is EXACTLY this list — a n
         'finance_invoice_lines_amount_currency_shape',
         'finance_invoices_total_currency_shape',
         'finance_ledger_transactions_amount_currency_shape',
+        'finance_manual_invoice_run_lines_amount_currency_shape',
         'finance_payment_allocations_amount_currency_shape',
         'finance_payments_amount_currency_shape',
         'finance_student_accounts_balance_currency_shape',

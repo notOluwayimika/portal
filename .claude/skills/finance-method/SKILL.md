@@ -140,6 +140,43 @@ any bite-proof: what does `beforeEach` do to my plant?
 This is the same family as *a green is not a pass when it was measured against a base that has
 moved* — a result measured against a state that no longer existed by the time the assertion ran.
 
+## A rule with no local failure signal has no adoption gradient
+
+Its own section, because it explains a distribution rather than an incident, and because the fix is
+structural rather than a habit.
+
+> **A correctness rule whose violation produces no red propagates by memory alone — and memory does
+> not propagate. Not across developers, not across a week, not to the file next door. So its uptake
+> looks like NOISE, not like a date. Writing it down is not propagation; only a gate is.**
+
+**Measured, and it began as a wrong hypothesis.** The collation rule — every string comparison in a
+finance trigger under `COLLATE utf8mb4_bin` — was recorded in `2026_08_17_100000`'s docblock and
+corrected under #95. The natural theory was a **dated cohort**: the bare comparisons are the ones
+written before the correction, so a dated sweep fixes them.
+
+That is **false, measured**. Six of the ten affected triggers POSTDATE the correction, and one is
+`2026_07_26_140001` — the same-day SIBLING of the migration that recorded it. The adjacent file, the
+same afternoon, did not pick it up.
+
+**The absence needed an explanation and this is it.** Nothing fails when you omit the clause. There
+is no red, no lint, no failing test — so the only transmission mechanism is somebody remembering, and
+the observed distribution is exactly what random recall produces: not a date, not a gradient, noise.
+The list then grew from 29 to 31 *during the two days a gate for it was being written*, which is the
+same fact demonstrating itself.
+
+**The generalisation, which is why this is here and not in the ticket:** ANY rule whose violation is
+silent at write time is in this class. Currency shape before the CHECKs. Citation format before
+`citation-lint`. `COLLATE utf8mb4_bin` before this. The docblock version of such a rule is not a
+weaker gate — **it is not a gate at all**, and its apparent adoption is sampling noise.
+
+Two operational consequences:
+
+- **Do not infer a cohort from an undated defect.** If violations are silent, their distribution
+  carries no information about when the rule was written, and a dated sweep will miss most of them.
+- **When you write a rule of this shape, the gate is the deliverable.** The sentence is documentation
+  of the gate, not a substitute for it. If a gate is genuinely too expensive today, say the rule is
+  currently unpropagated rather than recording it as practice.
+
 **The fix has been identical every time: turn the sentence into an assertion.** Enumerate the exact
 set instead of naming members. Run the matcher over a case it must find *and* one it must not flag.
 Count errors as kills. Put the missing axis in the loop. Read both trigger bodies. Pin that the bare

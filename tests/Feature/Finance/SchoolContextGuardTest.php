@@ -107,7 +107,7 @@ function scgFixture(): array
         ]);
 
         $invoice = app(GenerateInvoice::class)->handle($enrollment->uuid, [
-            new InvoiceLineSpec('Tuition', Money::fromKobo(500000)),
+            new InvoiceLineSpec('Tuition', Money::fromKobo(500000), bankAccountId: testBankAccountId()),
         ], InvoiceKind::Scheduled);
 
         // Built through their REAL submit actions rather than by hand: a credit note carries a

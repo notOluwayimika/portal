@@ -1,8 +1,13 @@
 # The cold reviewer is handed the implementing session's scratchpad
 
-**Status:** OPEN, partially mitigated. **The remaining half is a harness question for
-the project lead, not a repo change** — and it is not closable from inside this
-repository.
+**Status:** MITIGATED IN PRACTICE, 2026-08-28, by spawning every review in its own **git worktree**
+(`isolation: "worktree"` on the Agent tool). The remaining half was still open on 2026-08-28 and
+**it did not stay theoretical** — see § "It happened again, 2026-08-28" below.
+
+The worktree does not make the scratchpad private; it makes the reviewer's *working tree* a separate
+checkout, so nothing the implementing session leaves in the repository directory is on the path the
+reviewer reads. Combined with the standing `mktemp -d` rule for implementer scratch, that is the
+engineered form of an isolation that has twice been merely observed.
 
 **Raised by:** the sixth cold review of `fix/subledger-single-clock-frame`, 2026-08-12. The reviewer
 found the files while writing its own junit into the directory it had been given, reported the
@@ -115,3 +120,44 @@ is not rediscovered as a novel observation.
   concern: what leaks from implementer to reviewer through the artifacts, rather than through the
   filesystem. **Separate ticket, separate rule, still open — do not merge the two.** That one
   governs report *content*; this one governs file *isolation*.
+
+
+## It happened again, 2026-08-28 — the second cold review of `feat/gateway-transaction-table`
+
+The reviewer reported, unprompted, in its own "What I did not check":
+
+> *The scratchpad I was handed already contained another session's artifacts — a full repository
+> clone and four files matching `probe*.php`, timestamped some hours before this review. I did not
+> open any of them and worked in a subdirectory of my own.*
+
+Same shape as 2026-08-12 and the same honourable outcome: the reviewer named the exposure and
+declined to look. **That is the second time the control has been the reviewer's good faith rather
+than a mechanism**, which is precisely what this repository refuses everywhere else — a stated rule
+with nothing behind it is a wish, and one that has now survived two demonstrations is a wish being
+relied upon.
+
+It also attempted a fresh clone **and could not make one**, because the target path was already
+occupied by the earlier session's clone. So its isolation was, in its own words, *"observed, not
+engineered"* — and the review that found two real regressions was one where the reviewer could not
+establish the conditions its own value depends on.
+
+### The fix taken
+
+Spawn reviews with `isolation: "worktree"`. The agent gets its own git worktree — a separate checkout
+of the branch — so:
+
+- the implementing session's untracked files, planted-mutation backups and saved logs are not on the
+  reviewer's path at all, rather than being present-and-not-opened;
+- a clone is unnecessary, so the "target path already occupied" failure cannot recur;
+- the worktree is cleaned up automatically if unchanged, so it leaves no residue to become the next
+  session's contamination.
+
+`.claude/skills/finance-execute/SKILL.md` § "The hand-off" now specifies it.
+
+### What this still does not close
+
+The scratchpad directory itself is handed down by the harness and a worktree does not change that.
+If a future review is spawned WITHOUT the worktree flag, the exposure returns in full — so this is
+mitigated by a documented instruction, not by a mechanism that cannot be bypassed. **Closing it
+properly is still the harness question the top of this ticket describes.** The honest status is
+therefore "mitigated, not closed", and the mitigation is one forgotten parameter away from absent.

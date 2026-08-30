@@ -3,6 +3,7 @@
         "finance.access",
         "finance.bank-account.manage",
         "finance.credit-note.submit",
+        "finance.discount-award.manage",
         "finance.discount-policy.change.submit",
         "finance.fee-schedule.change.submit",
         "finance.fee-schedule.manage",

@@ -233,6 +233,36 @@ enum Permission: string
     case FINANCE_OPENING_BALANCE_SUBMIT = 'finance.opening-balance.submit';
     case FINANCE_OPENING_BALANCE_APPROVE = 'finance.opening-balance.approve';
     case FINANCE_OPENING_BALANCE_REJECT = 'finance.opening-balance.reject';
+    // Putting ONE student on ONE already-approved discount policy — the write side of
+    // `finance_student_discount_awards`, whose first request-borne caller is the BSS award import.
+    //
+    // WHY A NEW ABILITY AND NOT AN ADJACENT `finance.*` ONE. An award decides what a named family
+    // pays, every term, until someone changes it. `finance.access` is the door onto the finance
+    // pages; `finance.invoice.reduction.apply` is a ONE-OFF line on ONE invoice a bursar is looking
+    // at. Neither is the authority to set a child's standing price, and borrowing either would mean
+    // the seat that can read a statement, or discount a single bill, can also re-price a cohort.
+    //
+    // WHY `manage` AND NOT A MAKER-CHECKER TRIPLE, stated here so the next reader does not add the
+    // chain. Brookstone's approval is on the VALUE — which percentages, off which part of the bill,
+    // exist at all — and that is `finance.discount-policy.change.*`, already built, with the ED as
+    // checker. This ability only says WHICH of those approved policies a student sits on, and the
+    // catalog's single writer (ApproveDiscountPolicyChange) means there is nothing here to approve
+    // that has not been approved already. A second chain would ask the ED to re-sign their own
+    // decision once per child.
+    //
+    // THE TERMINAL SEGMENT IS LOAD-BEARING IN THE NEGATIVE. `manage` is deliberately not
+    // submit/approve/reject: those names make DutySeparation::pairs() derive a checker, take the
+    // ability out of the super_admin Gate::before bypass (ADR 0040), and — for a finance `*_SUBMIT`
+    // — oblige bin/ci-boundary-lint.php's approval-seam-count to find a matching
+    // app/Finance/Actions/Submit*.php. Naming this `…award.submit` would silently enlist all three
+    // for a flow that has no second signature. Same shape, and the same reasoning, as
+    // finance.bank-account.manage and finance.fee-schedule.manage above.
+    //
+    // GRANTED TO `accounts_officer` ONLY (obligation 3, checked rather than assumed): the bursar
+    // office holds the BSS list and runs the import. That role is NOT governed by
+    // 2026_08_06_100000_move_head_of_school_finance_to_executive_director, whose docblock names the
+    // three roles it freezes, so this grant lands via rbac:sync AND survives the next deploy.
+    case FINANCE_DISCOUNT_AWARD_MANAGE = 'finance.discount-award.manage';
     case ACADEMIC_DATA_VIEW = 'academic_data.view';
     case SCORE_MANAGE = 'score.manage';
     case STUDENT_STATUS_VIEW = 'student_status.view';

@@ -160,14 +160,64 @@ export type ApprovalConfirmation = {
     confirmLabel: string;
 };
 
-/** `10%`, or a fixed amount through the single money renderer. Null when the change states neither. */
+/**
+ * WHAT the percentage applies to, in the checker's words. Read from `effective_base` and NEVER from
+ * `base`: the raw proposed term is null on the ordinary amend — a rate raised, the base unmentioned
+ * — which is precisely the case where the checker cannot otherwise tell the two apart. The server
+ * resolves it through the same method that stamps the catalog, so this string names the term that
+ * will actually be written.
+ *
+ * THE ONE COPY OF THE TWO PHRASES, which is why it is exported. The maker states a base on the
+ * catalog screen, the ED approves it here, and it is read back on the policy list — all three
+ * through this function (discount-policies.tsx imports it for both its control and valueLabel), so
+ * the phrase cannot be re-worded in one place and quietly differ in the others. It was two copies
+ * held in agreement by a comment until the maker's own control needed a third; two was defensible
+ * and three was not.
+ *
+ * TWO SIGNATURES, AND THE NARROW ONE IS NOT DECORATION. The catalog's `base` is NOT NULL on every
+ * policy row, so its callers get a `string` and need no dead branch for a null that cannot arrive;
+ * the approvals side passes `effective_base`, which IS null on a retire — an act that approves no
+ * policy and so states no base — and gets the nullable return that fact deserves.
+ */
+export function baseLabel(base: 'discountable' | 'total'): string;
+export function baseLabel(
+    base: DiscountPolicyChangeApproval['effective_base'],
+): string | null;
+export function baseLabel(
+    base: DiscountPolicyChangeApproval['effective_base'],
+): string | null {
+    if (base === 'total') {
+        return 'of the whole bill';
+    }
+
+    if (base === 'discountable') {
+        return 'of discountable charges';
+    }
+
+    return null;
+}
+
+/**
+ * `10% of the whole bill`, or a fixed amount through the single money renderer. Null when the change
+ * states neither.
+ *
+ * THE BASE IS PART OF THE RATE, not a detail beside it. "50%" is not a term a checker can approve:
+ * half the tuition and half the whole bill are different amounts of money, and this queue's Subject
+ * column is the only place the discount type says what it does. An unlabelled percentage here is the
+ * checker-visibility hole, and it stayed open while the Resource emitted a key nothing rendered.
+ *
+ * Only on the percent side: an `amount` policy has no percentage to take of anything, so its base is
+ * inert and printing it would invent a distinction the money does not have.
+ */
 function discountValue(row: DiscountPolicyChangeApproval): string | null {
     if (
         row.basis === 'percent' &&
         row.percent !== null &&
         row.percent !== undefined
     ) {
-        return `${row.percent}%`;
+        const of = baseLabel(row.effective_base);
+
+        return of === null ? `${row.percent}%` : `${row.percent}% ${of}`;
     }
 
     if (

@@ -149,7 +149,7 @@ it('PROOF 2 — #94 untouched: the INVOICE-ROW lock still serialises allocations
 
         return app(GenerateInvoice::class)->handle(
             $enrollment->uuid,
-            [new InvoiceLineSpec('Tuition', Money::fromKobo(100000))],
+            [new InvoiceLineSpec('Tuition', Money::fromKobo(100000), bankAccountId: testBankAccountId())],
             InvoiceKind::Scheduled,
         );
     });

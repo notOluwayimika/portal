@@ -86,6 +86,9 @@ upstream of that — the message is the delivery, and the document is only the d
 > **And one review ask:** `feat/gateway-transaction-table` is pushed — eight commits, two cold review
 > passes. Flagging it because the discrepancy report can't branch until the table is on `staging`, so
 > it's on my critical path rather than just in the queue. Whenever you have a window.
+>
+> *(Merged as #330 on 30 August — and it left two staging reds, both in test files I wrote. See §4's
+> postscript.)*
 
 ---
 
@@ -226,9 +229,12 @@ Full write-up, the scan, and why the scan under-reported its first time:
 
 ---
 
-## 4 · A review request, because it is now on the critical path rather than in the queue
+## 4 · ~~A review request~~ — DONE. Merged as PR #330 on 30 August.
 
-**`feat/gateway-transaction-table` is pushed** — eight commits, two cold review passes, both worked
+**Nothing is being asked for here any more.** Kept as the record of the ask and, more usefully, of
+what the merge cost — see the postscript at the end of this section.
+
+**`feat/gateway-transaction-table` was pushed** — eight commits, two cold review passes, both worked
 and re-mutated, plus the MySQL 5.7.23 measurements on `docs/mysql-5-7-measured`.
 
 **Why it is being flagged rather than left in the queue:** the §6 step 7 discrepancy report **cannot
@@ -267,6 +273,39 @@ Kept short deliberately: a list that re-asks answered questions is a list that s
    retained before redaction (`docs/handoff/tickets/gateway-payload-retention.md`), and how long a
    `pending` transaction is re-verified before a human is told
    (`docs/handoff/decisions/webhook-arrives-but-verify-is-unreachable.md`).
+
+### Postscript — the merge left two staging reds, both in test files I wrote
+
+Repaired by #339. Recording it here rather than letting it sit only in a commit message, because one
+of the two is a process failure of mine and the other is a cost worth knowing about in advance.
+
+**1 · `GatewayTransactionSchemaTest`'s fixture — my miss, and the interesting one.** `gtxSchool()`
+built its invoice with a charge line carrying no destination. **S11 (`2026_08_29_120000`) had already
+made a destination REQUIRED on charge lines — it landed on 29 August, the day BEFORE I pushed.** So
+every one of the 22 arms in that file died in setUp against current `staging`, having been green
+against the base the branch was cut from.
+
+The branch was based on `origin/staging` @ `6f54a18a`. By the time I pushed, staging was at
+`1921cb7e`. **I never merged staging in, and never re-ran the suite against it** — every green I
+reported was measured against a base that had moved. That is the mirror of the rule this repo already
+has: *a red is not a regression until you have seen the same code green somewhere.* The converse is
+just as true and I did not apply it — **a green is not a pass when it was measured against a base
+that has moved.**
+
+Worse, I wrote in the PR body that *"reviewing this before the next migration lands is safer than
+after"* — while the migration that broke it had **already landed**. I asserted a state of `staging`
+I had not checked at the moment I wrote the sentence. Same class as everything else on the taxonomy.
+
+**2 · `CheckConstraintsAsTriggersTest`'s exact-set arm — not a defect; the gate doing its job.**
+#338 added a seventeenth `finance_%` CHECK and the enumeration refused it, exactly as designed:
+*adding to this list is allowed, doing it silently is not.* The repair names it and records that it is
+not trigger-backed.
+
+**But the coordination cost I flagged when writing it arrived within one day**, which is worth
+knowing: an exact-set gate over shared schema fires on legitimate additions too, in a test whose name
+mentions nobody's table. That is the intended trade — silent addition is what the named lists could
+not see — and it is a real tax on whoever adds the next CHECK. It should be widened to
+`finance\_%` only when the 29 are fixed, not before.
 
 ## If the 31st passes with no answer
 

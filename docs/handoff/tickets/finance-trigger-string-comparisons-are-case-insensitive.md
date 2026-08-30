@@ -174,9 +174,9 @@ writing it this way.
 - `database/migrations/2026_08_17_100000_maker_checker_and_payment_origin_as_triggers.php` — where
   this class was first written down, for domain arms only. **On `staging`, readable now.**
 
-**The following two are on `feat/gateway-transaction-table`, which is NOT merged and NOT pushed** at
-the time this ticket was raised. They are named so the reference is honest rather than dangling — if
-you want them before that branch lands, ask and they will be pushed:
+**Both landed on `staging` with PR #330 on 30 August**, so these links resolve. (They were on an
+unmerged branch when this ticket was written; the note is kept because the reference was honest about
+it at the time rather than dangling.)
 
 - `database/migrations/2026_08_27_100000_create_finance_gateway_transactions.php` — the BINARY
   COLLATION rule in the class docblock, and the two guards that follow it.

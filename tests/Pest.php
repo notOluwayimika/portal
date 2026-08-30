@@ -26,6 +26,7 @@ use App\Services\Rollover\RolloverBatchName;
 use App\Services\Rollover\RolloverPlan;
 use App\Support\ActiveSchool;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -223,6 +224,66 @@ function testBankAccountUuid(?int $schoolId = null): string
 
     return (string) BankAccount::withoutGlobalScopes()
         ->where('id', testBankAccountId($schoolId))->value('uuid');
+}
+
+/**
+ * Run $body with the named database trigger temporarily absent, then put it back EXACTLY as it was.
+ *
+ * WHAT IT IS FOR, and the only thing it should be used for: writing a row the way it could be
+ * written BEFORE a guard existed. Some guards are `BEFORE INSERT` by design — they constrain what
+ * may be written from now on and say nothing about history — and the only way to test that history
+ * is still readable is to produce a historical row. `finance_invoice_lines` is append-only, so such
+ * a row cannot be reached by inserting a legal one and editing it afterwards.
+ *
+ * THE DEFINITION IS CAPTURED FROM information_schema AND REPLAYED, rather than re-typed here. A
+ * hand-written CREATE TRIGGER in a test file is a second copy of a migration's rule: it drifts, and
+ * when it drifts it drifts SILENTLY into a weaker guard that the rest of the suite then runs
+ * against. Replaying what was actually there cannot drift, and it also means this helper works for
+ * any trigger without knowing anything about it.
+ *
+ * `finally`, so a failing assertion inside $body cannot leave the schema without its guard for every
+ * test that follows — the same discipline `2026_08_26_100000`'s migration audit arm uses.
+ *
+ * DDL COMMITS IMPLICITLY, so RefreshDatabase's transaction does not survive the drop. Callers must
+ * therefore treat everything they wrote before calling this as potentially permanent and must not
+ * assume a rollback will tidy up; measure, do not assume.
+ *
+ * @template T
+ *
+ * @param  Closure(): T  $body
+ * @return T
+ */
+function withoutDatabaseTrigger(string $trigger, Closure $body): mixed
+{
+    $definition = DB::selectOne(
+        'SELECT ACTION_TIMING, EVENT_MANIPULATION, EVENT_OBJECT_TABLE, ACTION_STATEMENT
+           FROM information_schema.TRIGGERS
+          WHERE TRIGGER_SCHEMA = DATABASE() AND TRIGGER_NAME = ?',
+        [$trigger],
+    );
+
+    if ($definition === null) {
+        throw new RuntimeException(
+            "withoutDatabaseTrigger({$trigger}): no such trigger in this schema. A renamed or removed "
+            .'trigger must not read as "temporarily dropped" — that would silently turn the arm below '
+            .'into a test of nothing.'
+        );
+    }
+
+    DB::unprepared('DROP TRIGGER '.$trigger);
+
+    try {
+        return $body();
+    } finally {
+        DB::unprepared(sprintf(
+            'CREATE TRIGGER %s %s %s ON %s FOR EACH ROW %s',
+            $trigger,
+            $definition->ACTION_TIMING,
+            $definition->EVENT_MANIPULATION,
+            $definition->EVENT_OBJECT_TABLE,
+            $definition->ACTION_STATEMENT,
+        ));
+    }
 }
 
 /*

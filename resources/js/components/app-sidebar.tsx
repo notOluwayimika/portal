@@ -539,6 +539,20 @@ export function AppSidebar() {
                 });
             }
 
+            // BSS discount awards — bringing the scholarship list in. Keyed on
+            // `finance.discount-award.manage`, the ability the page route and all four of its API
+            // routes carry, and NOT on the discount-policy abilities beside it: putting a named child
+            // on an already-approved figure is a different authority from authoring the figure, and
+            // the seeded grants map puts this one on accounts_officer alone. An item keyed on either
+            // of its neighbours would offer a screen that 403s on click.
+            if (can('finance.discount-award.manage')) {
+                financeItems.push({
+                    title: 'Discount awards',
+                    href: '/finance/discount-award-imports',
+                    icon: GraduationCap,
+                });
+            }
+
             groups.push({ label: 'Finance', items: financeItems });
         }
 

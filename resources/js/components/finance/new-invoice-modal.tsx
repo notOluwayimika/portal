@@ -2,6 +2,7 @@ import axios from 'axios';
 import { Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'react-toastify';
+import { index as bankAccountsIndex } from '@/actions/App/Finance/Http/Controllers/BankAccountController';
 import {
     billableEnrollment,
     generateForStudent,
@@ -23,6 +24,7 @@ import type {
     BillableEnrollmentInfo,
     DraftLine,
     InvoiceKind,
+    SelectableBankAccount,
     SelectablePolicy,
 } from '@/types/finance';
 
@@ -38,6 +40,10 @@ const EMPTY_LINE: DraftLine = {
     amount: '',
     kind: 'charge',
     discountPolicyId: '',
+    // Unselected, and NOT defaulted to the school's only account even when it has exactly one.
+    // A default here would be a destination nobody chose — the fabrication
+    // 2026_08_10_120000 refused this column for, arriving through the front door instead.
+    bankAccountId: '',
 };
 
 // The one shape a native <select> needs here. fee-schedules.tsx:133-134 and discount-policies.tsx
@@ -79,6 +85,33 @@ export function selectablePolicies(
         (policy) =>
             policy.status === 'active' && policy.requires_approval !== true,
     );
+}
+
+/**
+ * Which accounts this form will offer as a DESTINATION.
+ *
+ * CONVENIENCE, NOT ENFORCEMENT — the same distinction selectablePolicies draws above, and it has to
+ * be drawn again here because the thing this filters on is enforced NOWHERE ELSE. `deactivated_at`
+ * withdraws an account from CHOICE (BankAccount::isActive()'s own comment — "a deactivated account
+ * stays readable; it is only withdrawn from choice"); nothing in the schema
+ * forbids billing to a retired account, GenerateInvoiceRequest's rule deliberately does not filter
+ * on it, and `finance_fee_items.bank_account_id` carries no such predicate either — so a fee item
+ * may already point at a deactivated account and FeeScheduleLineMapper will snapshot it. That is a
+ * ruling recorded in the request's rule, not an oversight: refusing here and snapshotting there
+ * would make the two writers disagree about the same account.
+ *
+ * What this list is therefore for is not offering a bursar an account the school has stopped using.
+ * A reader who takes it for a guard will look for a server-side one and not find it.
+ *
+ * The endpoint does NOT filter — BankAccountController::index returns every account in display
+ * order, active first (scopeInDisplayOrder), with no query parameters — so unlike the `?status=active`
+ * on the policy fetch, this filter is the ONLY thing narrowing the list and is not redundant with
+ * anything.
+ */
+export function selectableBankAccounts(
+    accounts: SelectableBankAccount[],
+): SelectableBankAccount[] {
+    return accounts.filter((account) => account.is_active);
 }
 
 /**
@@ -130,9 +163,26 @@ export function termBillLabel(alreadyInvoiced: boolean): string {
  * Re-selecting on a flip BACK to a reduction is intended, not an oversight. Remembering the previous
  * choice would leave a policy silently attached to a line whose meaning changed twice, and an
  * unnoticed stale selection on a reduction is worse than one extra click.
+ *
+ * THE DESTINATION IS THE SAME RULE MIRRORED (S11 commit 1). A reduction sends money nowhere, so
+ * flipping a line TO a reduction discards the account the operator picked while it was a charge.
+ * The two fields are now exclusive by construction and this function is the one place that is true:
+ * `kind === 'charge'` clears the policy, anything else clears the destination, and no line can ever
+ * hold both.
+ *
+ * WHAT THIS PREVENTS TODAY IS SMALLER THAN THE POLICY HALF, AND THE ASYMMETRY IS WORTH STATING
+ * rather than leaving for someone to discover as an inconsistency. wireLine() already omits the
+ * destination on a reduction, so a retained value cannot reach the server whatever this does, and
+ * nothing yet refuses a destination on a reduction line — whether a waiver may cite the account of
+ * the charge it offsets is unmodelled and unanswered, which is exactly why the S11 commit-2 trigger
+ * permits null on non-charge lines instead of deciding. So this half is defence in depth for a
+ * question that is still open, and it is written that way on purpose: if the answer ever turns out
+ * to be "a reduction may not name one", nothing here has to change.
  */
 export function patchForKind(kind: DraftLine['kind']): Partial<DraftLine> {
-    return kind === 'charge' ? { kind, discountPolicyId: '' } : { kind };
+    return kind === 'charge'
+        ? { kind, discountPolicyId: '' }
+        : { kind, bankAccountId: '' };
 }
 
 /**
@@ -148,6 +198,27 @@ export function patchForKind(kind: DraftLine['kind']): Partial<DraftLine> {
  * designed path and not a gap: `''` is rewritten to null by ConvertEmptyStringsToNull before any
  * rule sees it, and the pre-check answers with a field error naming that line. Blocking the request
  * client-side instead would hide whether the server still names it.
+ *
+ * `bank_account_id` GOES ONLY ON CHARGE LINES (S11 commit 1) — the exact mirror of the rule above,
+ * because a reduction has no destination: it reduces a bill rather than sending money anywhere.
+ * patchForKind() has already cleared the field in state by the time a line stops being a charge;
+ * this is the second statement of the same rule, kept for the same reason the policy half is —
+ * DraftLine is a plain object and a future edit path could set the field without passing through
+ * the kind select.
+ *
+ * AND `''` IS SENT AS IS HERE TOO, for the same reason and with a DIFFERENT consequence that must
+ * not be glossed. The empty string becomes null before any rule sees it, and the request is then
+ * REFUSED: GenerateInvoiceRequest::assertDestinationsChosen() (S11 commit 2) answers 422 with a
+ * FIELD error keyed to `lines.N.bank_account_id` on the ORIGINAL wire index, and
+ * finance_invoice_lines_destination_guard (2026_08_29_120000) is the authority behind it. Sending
+ * `''` rather than refusing client-side is exactly what makes that refusal reach the operator as a
+ * ROW NUMBER — the server cannot name a line it was never sent.
+ *
+ * MEASURED, not read (drive 2026-08-29, docs/handoff/drives/2026-08-29-new-invoice-destination):
+ * one charge line with the select untouched came back "Line 1 — Select the account this charge is
+ * destined for. A charge line has to record where its money is going."; the form kept every value
+ * the bursar had typed; and nothing was written — the refusal lands before the Action's
+ * transaction, so the append-only table is never reached.
  */
 export function wireLine(
     line: DraftLine,
@@ -161,6 +232,8 @@ export function wireLine(
 
     if (line.kind !== 'charge') {
         wire.discount_policy_id = line.discountPolicyId;
+    } else {
+        wire.bank_account_id = line.bankAccountId;
     }
 
     return wire;
@@ -242,6 +315,17 @@ function errorLinesFrom(data: unknown): string[] {
  * the preview MIRRORS the server's F6 total. Submit posts to the student-scoped generate
  * endpoint; no-enrollment / already-invoiced (F7) / negative-total come back as 422 inline.
  *
+ * A CHARGE NAMES ITS DESTINATION (S11 commit 1). Every charge line carries the bank account its
+ * money is destined for, chosen by the operator and SNAPSHOTTED onto finance_invoice_lines at issue
+ * — not looked up later through the mutable fee catalog, which could only ever answer "where would
+ * this go today". The catalog is fetched on open and narrowed by selectableBankAccounts; the select
+ * appears only on a charge line and the id is CLEARED when a line flips to a reduction. NOTHING IN
+ * THIS FILE REFUSES A MISSING ONE, AND NOTHING HERE NEEDS TO: since S11 commit 2 the request is
+ * refused server-side — assertDestinationsChosen() names EVERY offending line in one response and
+ * finance_invoice_lines_destination_guard is the authority behind it. What this file still owes the
+ * operator is the ROW NUMBER, and errorLinesFrom() is where that is supplied. The empty-catalog
+ * branch below is a separate statement about a school that can offer no destination at all.
+ *
  * A REDUCTION CITES A POLICY (U8 commit 4). Until this commit the modal offered `waiver` and
  * `discount` in its Kind select and sent no `discount_policy_id` at all, so every reduction the
  * running UI could submit was refused — by the pre-check since U8 commit 3, and by
@@ -251,11 +335,12 @@ function errorLinesFrom(data: unknown): string[] {
  * REFUSES ANYTHING — the refusals are GenerateInvoiceRequest::assertDiscountPoliciesUsable() and
  * finance_invoice_lines_reduction_guard, both named in selectablePolicies' docblock above.
  *
- * FOUR FUNCTIONS AND ONE TYPE ARE EXPORTED WITH NO IMPORTER — selectablePolicies, termBillLabel,
- * patchForKind and wireLine, plus the InvoiceKindChoice type. (`termBillLabel` and
- * `InvoiceKindChoice` arrived with U7's invoice-kind select; the count read THREE until then, and
- * is re-derived here rather than incremented — `grep -n '^export ' ` on this file, minus
- * NewInvoiceModal, which statement.tsx:20 does import.)
+ * FIVE FUNCTIONS AND ONE TYPE ARE EXPORTED WITH NO IMPORTER — selectablePolicies,
+ * selectableBankAccounts, termBillLabel, patchForKind and wireLine, plus the InvoiceKindChoice type.
+ * (`termBillLabel` and `InvoiceKindChoice` arrived with U7's invoice-kind select and
+ * `selectableBankAccounts` with S11; the count read THREE, then FOUR, and is re-derived here rather
+ * than incremented — `grep -c '^export ' ` on this file, minus NewInvoiceModal, which
+ * statement.tsx:20 does import.)
  * That is deliberate and it is a cost paid on purpose. This module's only importer is statement.tsx,
  * which takes `NewInvoiceModal` alone, so nothing in the bundle reaches them and neither tsc nor
  * eslint will tell you if one becomes dead. They are exported because they are the only pure,
@@ -288,6 +373,13 @@ export function NewInvoiceModal({
     const [policies, setPolicies] = useState<SelectablePolicy[]>([]);
     const [policiesLoading, setPoliciesLoading] = useState(true);
     const [policiesFailed, setPoliciesFailed] = useState(false);
+    // The destination catalog, already narrowed by selectableBankAccounts. The same three states
+    // told apart for the same reason as the policies above: loading, loaded-and-empty (the school
+    // has configured no active account — said in words, never as an empty select), and
+    // loaded-but-the-request-failed.
+    const [accounts, setAccounts] = useState<SelectableBankAccount[]>([]);
+    const [accountsLoading, setAccountsLoading] = useState(true);
+    const [accountsFailed, setAccountsFailed] = useState(false);
 
     const loadEnrollment = useCallback(async () => {
         setEnrollment(null);
@@ -345,6 +437,51 @@ export function NewInvoiceModal({
         }
     }, []);
 
+    /**
+     * The destination catalog the account select is built from (S11 commit 1).
+     *
+     * NO QUERY PARAMETERS, unlike the policy fetch above, and that is a property of the endpoint
+     * rather than a choice made here: BankAccountController::index reads none — it returns every
+     * account in `inDisplayOrder()` (active first, then by label) and the shape is
+     * `{bank_accounts: [...]}`. bank-accounts.tsx:81-86 records the same fact about the same endpoint,
+     * and pins the consequence it has there (client-side filtering is sound only while the endpoint
+     * does not paginate) — the day it paginates, this fetch needs the same look.
+     * So selectableBankAccounts() is the ONLY narrowing, which is why it is not redundant the way
+     * selectablePolicies' status filter is.
+     *
+     * THE ROUTE COMES FROM WAYFINDER, not a hand-written string. The policy fetch above predates
+     * that habit on this file and still carries a literal; a new call site does not need to inherit
+     * it, and the generated action fails at build time if the route moves.
+     *
+     * THE PERMISSION HOLDS, checked rather than assumed: `GET /api/v1/finance/bank-accounts` is
+     * gated on `finance.bank-account.manage` (routes/endpoints/finance.php), and both roles that
+     * hold `finance.invoice.generate` — admin and accounts_officer — also hold it (RbacSeeder:248
+     * and :252, :407 and :411). A principal who can raise an invoice on this screen can therefore
+     * read the list it offers. If that ever stops being true this fetch 403s and the failure branch
+     * below is what the bursar sees.
+     *
+     * A FAILED FETCH IS NOT AN EMPTY CATALOG, same as the policies: an empty list after a network
+     * error would tell the bursar their school has no accounts, which is a different and possibly
+     * false statement, and here it is the more dangerous one — it points at the Bank accounts screen
+     * for a problem that is not there.
+     */
+    const loadBankAccounts = useCallback(async () => {
+        setAccountsLoading(true);
+        setAccountsFailed(false);
+
+        try {
+            const { data } = await axios.get<{
+                bank_accounts: SelectableBankAccount[];
+            }>(bankAccountsIndex.url());
+            setAccounts(selectableBankAccounts(data?.bank_accounts ?? []));
+        } catch {
+            setAccounts([]);
+            setAccountsFailed(true);
+        } finally {
+            setAccountsLoading(false);
+        }
+    }, []);
+
     useEffect(() => {
         if (isOpen) {
             // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -358,8 +495,9 @@ export function NewInvoiceModal({
             // OPPOSITE outcome, because once that screen grew an error state the rule started firing
             // there and it carries the disable. Re-derive a cross-file citation or do not make one.
             void loadPolicies();
+            void loadBankAccounts();
         }
-    }, [isOpen, loadEnrollment, loadPolicies]);
+    }, [isOpen, loadEnrollment, loadPolicies, loadBankAccounts]);
 
     const setLine = (index: number, patch: Partial<DraftLine>) =>
         setLines((prev) =>
@@ -614,6 +752,134 @@ export function NewInvoiceModal({
                                             <Trash2 className="h-4 w-4" />
                                         </Button>
                                     </div>
+
+                                    {/*
+                                     * WHERE THIS CHARGE'S MONEY IS DESTINED (S11 commit 1) — shown
+                                     * only for a CHARGE, because a reduction sends money nowhere and
+                                     * carries null. patchForKind() has already cleared the stored
+                                     * uuid by the time this stops rendering, and wireLine() omits
+                                     * the field on a reduction regardless, so nothing hidden here
+                                     * rides along on the next submit.
+                                     *
+                                     * PER LINE, NOT PER INVOICE, and that follows the READ path
+                                     * rather than this form's convenience: AllocationProposal
+                                     * already treats an invoice as possibly multi-destination — its
+                                     * `accounts` has always been a list, and the mismatch banner it
+                                     * drives exists to show money landing in one account settling
+                                     * lines destined for another. A per-invoice selector would
+                                     * narrow what the reader already supports, and tuition and
+                                     * transport routing to different accounts is the case the
+                                     * column was added for.
+                                     *
+                                     * A NATIVE <select> for the same reason the policy one below is:
+                                     * Radix's SelectItem cannot take `value=""`, and unselected is a
+                                     * reachable state here. Since S11 commit 2 it is a REFUSED one,
+                                     * which is why it must stay REACHABLE: the empty value is what
+                                     * the server reads as "no destination on this line", and it is
+                                     * what lets the 422 name the row.
+                                     */}
+                                    {line.kind === 'charge' && (
+                                        <div className="pl-1">
+                                            <Label
+                                                htmlFor={`ni-destination-${index}`}
+                                                className="text-xs"
+                                            >
+                                                Destination account
+                                            </Label>
+                                            {accountsLoading ? (
+                                                <p className="text-xs text-muted-foreground">
+                                                    Loading the bank accounts…
+                                                </p>
+                                            ) : accountsFailed ? (
+                                                <p className="text-xs text-destructive">
+                                                    The bank accounts could not
+                                                    be loaded, so this charge
+                                                    cannot record where its
+                                                    money is destined. Close the
+                                                    dialog and reopen it to try
+                                                    again.
+                                                </p>
+                                            ) : accounts.length === 0 ? (
+                                                /*
+                                                 * NEVER AN EMPTY SELECT — same rule as the policy
+                                                 * block below, and here the sentence still has to
+                                                 * carry the consequence. THE CONSEQUENCE CHANGED
+                                                 * WITH S11 COMMIT 2 and the new one is not the old
+                                                 * one weakened. It is no longer "nothing refuses
+                                                 * this, so the invoice is raised and the line is
+                                                 * permanently silent about where its money went":
+                                                 * assertDestinationsChosen() refuses it and
+                                                 * finance_invoice_lines_destination_guard is the
+                                                 * authority. It is that the invoice cannot be
+                                                 * raised AT ALL until this school has an active
+                                                 * account — every charge line must name a
+                                                 * destination, this select is the only place to
+                                                 * choose one, and a school with none can offer
+                                                 * nothing to choose. Without this sentence the
+                                                 * bursar meets a 422 they cannot act on from this
+                                                 * screen. The warning stays; only its reason
+                                                 * moved.
+                                                 *
+                                                 * THIS BRANCH HAS NEVER BEEN DRIVEN. No school in
+                                                 * the drive fixture has zero bank accounts, so
+                                                 * `accounts.length === 0` is unreachable there and
+                                                 * the sentence below has not been read off a
+                                                 * screen by anybody. It is DERIVED — from the
+                                                 * 2026-08-29 drive's arm 1, where the 422 and the
+                                                 * non-write were both measured, plus the fact that
+                                                 * this branch renders no select at all, so there
+                                                 * is nothing on it the bursar could choose. That
+                                                 * is a sound derivation and it is not a rendering,
+                                                 * and it is the state production ships in:
+                                                 * docs/handoff/tickets/the-drive-fixture-cannot-reach-a-school-with-no-bank-account.md
+                                                 */
+                                                <p className="text-xs text-amber-700 dark:text-amber-400">
+                                                    This school has no active
+                                                    bank account. Every charge
+                                                    line has to record where its
+                                                    money is going, so this
+                                                    invoice cannot be raised
+                                                    until one exists. Add one on
+                                                    the Bank accounts screen,
+                                                    then come back.
+                                                </p>
+                                            ) : (
+                                                <select
+                                                    id={`ni-destination-${index}`}
+                                                    className={SELECT_CLASS}
+                                                    value={line.bankAccountId}
+                                                    onChange={(e) =>
+                                                        setLine(index, {
+                                                            bankAccountId:
+                                                                e.target.value,
+                                                        })
+                                                    }
+                                                >
+                                                    {/*
+                                                     * NO DEFAULT SELECTION, not even when the school
+                                                     * has exactly one account. Preselecting would
+                                                     * record a destination the operator never chose
+                                                     * — the fabrication 2026_08_10_120000 refused
+                                                     * this whole column for, reintroduced as a
+                                                     * convenience. One extra click, and the value on
+                                                     * the row is a choice.
+                                                     */}
+                                                    <option value="">
+                                                        Choose an account…
+                                                    </option>
+                                                    {accounts.map((account) => (
+                                                        <option
+                                                            key={account.id}
+                                                            value={account.id}
+                                                        >
+                                                            {account.label} —{' '}
+                                                            {account.bank_name}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            )}
+                                        </div>
+                                    )}
 
                                     {/*
                                      * THE POLICY THIS REDUCTION CITES — shown only for a reduction,

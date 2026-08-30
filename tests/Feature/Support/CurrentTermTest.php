@@ -31,6 +31,16 @@
  * "The last completed term in this school" and "the first upcoming term in this school" are both
  * wrong answers that a session-blind resolver would give, so each arm is only satisfiable by going
  * through `academic_sessions.is_current` first.
+ *
+ * THE TWO-ACTIVE-TERMS ARM BUILDS ITS FIXTURE BY HAND rather than through ct_terms(), because the
+ * scramble that file-wide helper applies is the wrong one for it. That arm needs `terms.id`
+ * ascending and `terms.order` ascending to disagree in ONE SPECIFIC DIRECTION: the LOWER-ordered
+ * active term must be inserted FIRST. MySQL will often return rows in primary-key order for an
+ * unordered `first()`, so a fixture that seeds the higher-ordered term first would be answered
+ * correctly BY ACCIDENT and would pass with and without the `orderByDesc` under test — a
+ * non-discriminating arm that reads as a guard. Seeding low-then-high makes the unordered query
+ * naturally return the wrong row, so the assertion has something to fail on. Bite-proved by
+ * removing the `orderByDesc('order')` from step 2 and watching this arm, and only this arm, red.
  */
 
 use App\Models\AcademicSession;
@@ -225,4 +235,36 @@ it('resolves identically from a School already in hand', function () {
 
 it('returns null for a school id that does not exist', function () {
     expect(CurrentTerm::forSchool(PHP_INT_MAX))->toBeNull();
+});
+
+it('returns the HIGHEST-ORDERED active term when a session somehow has two', function () {
+    // NOT A CORRECTNESS ARM. Two active terms in one session is a state that should not exist and
+    // nothing prevents it (docs/handoff/tickets/two-active-terms-in-one-session-has-no-constraint.md).
+    // What is pinned here is that the resolver is DETERMINISTIC in that state rather than returning
+    // whichever row MySQL felt like, and which of the two it settles on.
+    $w = ct_world();
+
+    // INSERTION ORDER IS THE WHOLE FIXTURE. The LOWER-ordered term is created first, so `terms.id`
+    // ascending and `terms.order` ascending point at different rows. An unordered `first()` takes
+    // the low-ordered row — the wrong answer — instead of arriving at the right one by primary-key
+    // accident. Reverse these two statements and the arm passes without the fix.
+    $lowerOrderedFirst = ct_term($w['current'], 1, 'active');
+    $higherOrderedSecond = ct_term($w['current'], 2, 'active');
+
+    // A third term, not active, above both — so "last by order" is also not the right answer here.
+    $upcoming = ct_term($w['current'], 3, 'upcoming');
+
+    // Decoy: an active term in the school's OTHER session, at the highest `order` of all, so a
+    // session-blind resolver that DOES order by `order` descending answers this one.
+    $decoy = ct_term($w['past'], 3, 'active');
+
+    $resolved = ct_resolve($w['school']);
+
+    expect($resolved?->id)->toBe($higherOrderedSecond->id,
+        'Two terms in the current session are active. Somebody activated the NEXT term without '
+        .'completing the current one, so the later term by `order` is the intended one — and, '
+        .'whatever the right answer is, the resolver must not leave it to MySQL to pick a row.');
+    expect($resolved?->id)->not->toBe($lowerOrderedFirst->id);
+    expect($resolved?->id)->not->toBe($upcoming->id);
+    expect($resolved?->id)->not->toBe($decoy->id);
 });

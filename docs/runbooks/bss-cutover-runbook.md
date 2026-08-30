@@ -217,10 +217,40 @@ gap has to be closed with accounts. It is the column the import cannot default.
 
 ## 2.4 — Term 1 active, 5 September
 
-- [ ] Set Term 1 `active`, and make sure the previous term is not left active alongside it.
+- [ ] Set Term 1 `active`, and make sure no other term in the same session is left active.
 
-`CurrentTerm.php:116` still resolves the active term with **no ordering**, so two active terms in one
-session resolve arbitrarily. Ticket: `current-term-resolution-is-unordered.md`.
+**THERE IS NO SCREEN FOR THIS, AND WHOEVER DOES IT MUST KNOW THAT BEFORE 5 SEPTEMBER.** Measured
+29 August: every reference to `terms.status` in `app/` is a **read** — guards, comparisons, the model
+cast on `Term.php:33`. `TermController` does not write it. The only writers in the whole tree are
+seeders.
+
+So activating a term on production is a **direct database change, made by hand**, to the column that
+decides which term the bulk run bills and which fee schedule prices it. No maker-checker. No activity
+log entry. Nothing confirms it afterwards. An earlier revision of this runbook said "set Term 1
+active" as though a person could click it; they cannot.
+
+- [ ] **Do it before the run, not during it**, and have a second person read the statement before it
+      executes. That is the only checker this step gets.
+- [ ] **Complete the outgoing term in the same breath.** Two active terms in one session is a state
+      nothing in the database prevents — no constraint exists, deliberately deferred until after
+      cutover (`docs/handoff/tickets/two-active-terms-in-one-session-has-no-constraint.md`).
+- [ ] **Read it back. Do not assume the UPDATE did what you meant:**
+
+      ```sql
+      SELECT id, name, `order`, status
+      FROM terms
+      WHERE academic_session_id = <the current session's id>
+      ORDER BY `order`;
+      ```
+
+      **Exactly one row reads `active`.** Two is the failure this step exists to prevent, and it is
+      silent — nothing errors, the run simply prices against whichever term the resolver picks.
+      *(UNVERIFIED — written from the schema, not run against production.)*
+
+`CurrentTerm.php:143` now orders its ACTIVE step by `order` descending, so two active terms resolve
+deterministically to the later one. **That is determinism, not correctness** — and a second resolver,
+`ResolvesTermFilter.php:34-40`, falls back to `latest('id')`, which is a different ordering and can
+disagree with it in the same request.
 
 ## 2.5 — The first bulk run
 

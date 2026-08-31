@@ -29,9 +29,11 @@
  *   4. A SECOND RUN IS A FRIENDLY 422 NAMING THE ONE IN FLIGHT. The guard is the database (1062 on
  *      the generated column); left alone it reaches a bursar as "Duplicate entry detected."
  *   5. A SPONSORED STUDENT IS BILLED. This feature exists partly to bill them.
- *   6. THE SELECTION IS RESOLVED IN ONE READ. The Action's reads are flat in the size of the
- *      selection; only its writes grow. That is the shape a re-introduced per-student resolver
- *      breaks, and it is asserted as a shape rather than as a query total — see section 7.
+ *   6. THE SELECTION IS RESOLVED IN ONE READ AND WRITTEN IN ONE INSERT. Neither the Action's reads
+ *      nor its writes grow with the size of the selection — the shape a re-introduced per-student
+ *      resolver or a re-introduced per-row create() breaks, asserted as a shape rather than as a
+ *      query total. And because a batched insert fires no model events, the rows it writes are
+ *      checked column by column against what the per-row write produced — see section 7.
  *
  * THE QUEUE IS `sync` IN TESTS (phpunit.xml), so a POST runs the job inline and the report an arm
  * reads back is the finished one. That is deliberate rather than convenient: it exercises the job's
@@ -45,6 +47,7 @@ use App\Enums\ScholarshipKind;
 use App\Enums\StudentStatusEnum;
 use App\Enums\TermStatusEnum;
 use App\Finance\Actions\StartManualInvoiceRun;
+use App\Finance\Contracts\BillableEnrollmentProvider;
 use App\Finance\Enums\ManualInvoiceRunOutcome;
 use App\Finance\Enums\ManualInvoiceRunStatus;
 use App\Finance\Jobs\ProcessManualInvoiceRun;
@@ -70,6 +73,7 @@ use App\Support\ActiveSchool;
 use App\Support\Money;
 use Database\Seeders\DatabaseSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Spatie\Permission\PermissionRegistrar;
@@ -913,41 +917,50 @@ it('6a — two ACTIVE episodes for one student are ADMITTED by the schema, and r
 });
 
 /*
- * ── 7 · THE ACTION RESOLVES THE SELECTION IN ONE READ ─────────────────────────────────────────
+ * ── 7 · THE SELECTION IS RESOLVED IN ONE READ AND WRITTEN IN ONE INSERT ───────────────────────
  *
- * The regression this section exists to catch is a specific edit, not a slow query: somebody putting
- * `currentForStudent()` back inside the target loop. It reads as obviously correct — it is what the
- * Action did until this commit, and the Action's own docblock defended it — so nothing about the
- * diff would look wrong, every arm above would stay green, and the only symptom would be a bursar
- * waiting.
+ * Two regressions live here, both of them the same edit in spirit: somebody restoring a per-student
+ * call inside the loop. `currentForStudent()` for the read, `ManualInvoiceRunTarget::create()` for
+ * the write. Either reads as obviously correct — both are what this Action did until recently, and
+ * its own docblock once defended the first — so nothing in the diff would look wrong and the only
+ * symptom would be a bursar waiting.
  *
  * WHY NOT A LITERAL QUERY COUNT, which is the obvious shape. A total drifts every time an eager load
  * is added to the adapter's snapshot relations, and the fix for a drifted total is to raise the
  * number — which is indistinguishable from raising it to accommodate a re-introduced N+1. The
- * property that does not drift is the SHAPE: the Action's reads are flat in the size of the
- * selection while its writes are exactly one per target. A loop breaks the first half; nothing legal
- * does.
+ * property that does not drift is the SHAPE: **neither the reads nor the writes grow with the size
+ * of the selection**. Both halves are now flat, which they were not before the batched insert: the
+ * write side used to be one statement per target and the arm pinned that growth deliberately.
  *
- * The absolute read count is pinned in CohortEnrollmentPortTest ("the BATCH student read costs the
- * same EIGHT"), which is where it belongs — that is a fact about the port, and it is the number that
- * legitimately moves when SNAPSHOT_RELATIONS does.
+ * THE NON-VACUITY GUARD HAD TO MOVE WITH IT. While writes grew one per target, "writes grew by 27"
+ * was the proof that the two measured windows really differed by 27 students. Now that nothing in
+ * the query counts moves with N, that proof has to come from the ROWS: the two runs are asserted to
+ * have produced 3 and 30 targets. Without it, two runs that both did nothing would pass.
  *
- * ONE CLASS OF READ IS EXCLUDED, AND IT IS NAMED RATHER THAN QUIETLY FILTERED. `BelongsToSchool`
- * calls `Schema::hasColumn()` in bootBelongsToSchool (app/Concerns/BelongsToSchool.php:21) — an
- * uncached `information_schema.columns` query on EVERY insert of EVERY school-owned model in this
- * codebase. So schema-catalogue reads are already one-per-write and therefore linear in the
- * selection, for a reason this Action does not own, did not introduce and must not be made to carry.
- * MEASURED at 611 targets: 613 of the Action's 1234 queries are that hook. Counting them here would
- * make the arm assert a defect elsewhere in the framework layer instead of the property it is about,
- * and it would go red the day that hook is fixed. It is excluded by FROM-clause, its magnitude is
- * left unasserted (pinning a defect's size is how a defect gets preserved), and it is written up in
- * the branch report as its own finding.
+ * NO READ CLASS IS EXCLUDED ANY MORE, and the exclusion that used to be here is worth recording
+ * rather than deleting. `BelongsToSchool` calls `Schema::hasColumn()` in its `creating` hook —
+ * bootBelongsToSchool (app/Concerns/BelongsToSchool.php:21) — an uncached `information_schema` query
+ * on every model insert in this codebase, so while the targets went through `create()` those reads
+ * grew one per target and had to be filtered out by FROM-clause for this arm to be about the Action
+ * rather than about the trait. The batched insert fires no model events, so they are gone from this
+ * path: MEASURED at 611 targets, 613 of them before and 2 after — the two that remain belong to the
+ * run row and the line row, which are still written through `create()`. Nothing is filtered now, and
+ * the arm is simpler for it.
+ *
+ * 7b IS THE OTHER HALF AND IT IS NOT OPTIONAL. A batched insert can be perfectly flat and quietly
+ * wrong, because it skips the model events — see the Action's docblock for which two traits do their
+ * work there. 7a would stay green on rows with no uuid and no timestamps.
  */
 
 /**
- * $count students in $ctx's School, every third of them UN-ENROLLED, as `students.id` in a stable
- * order. The un-enrolled are load-bearing at both sizes: they are the ids the batch map has no key
- * for, so the Action's `?? null` runs in both measured windows rather than only in the large one.
+ * $count students in $ctx's School, every third of them UN-ENROLLED, as `students.id`.
+ *
+ * The un-enrolled are load-bearing: they are the ids the batch map has no key for, so the Action's
+ * `?? null` runs in every window rather than only in the large one.
+ *
+ * REVERSED, so the payload order is NOT the students' own id order. Both arms below are about order
+ * surviving — 7a incidentally, 7b as its subject — and with the payload in creation order a target
+ * table that ignored the payload entirely and sorted by `student_id` would satisfy them both.
  *
  * @return list<int>
  */
@@ -959,12 +972,11 @@ function mirsSelection(array $ctx, int $count): array
         $ids[] = (int) mirsStudent($ctx, enrolled: $i % 3 !== 2)->id;
     }
 
-    return $ids;
+    return array_reverse($ids);
 }
 
 /**
- * One call to the Action, with its DATA reads and its writes counted separately. Schema-catalogue
- * reads are excluded — see the section preamble for whose they are and why they are not this arm's.
+ * One call to the Action, with its reads and its writes counted separately, and the run it produced.
  *
  * The line spec and the destination account are resolved BEFORE the log is enabled, and the run key
  * is released AFTER it is taken, so neither lands in a measurement. Releasing it is not optional:
@@ -972,7 +984,7 @@ function mirsSelection(array $ctx, int $count): array
  * measurement against the same School is refused 1062 without it.
  *
  * @param  list<int>  $studentIds
- * @return array{0: int, 1: int} [dataReads, writes]
+ * @return array{0: int, 1: int, 2: ManualInvoiceRun} [reads, writes, run]
  */
 function mirsQueryShape(array $ctx, array $studentIds): array
 {
@@ -1002,15 +1014,21 @@ function mirsQueryShape(array $ctx, array $studentIds): array
     );
 
     $statements = array_map(fn (array $entry) => strtolower(ltrim((string) $entry['query'])), $log);
+    $reads = array_filter($statements, fn (string $sql) => str_starts_with($sql, 'select'));
 
-    $selects = array_filter($statements, fn (string $sql) => str_starts_with($sql, 'select'));
-
-    $dataReads = array_filter($selects, fn (string $sql) => ! str_contains($sql, 'from information_schema.'));
-
-    return [count($dataReads), count($statements) - count($selects)];
+    return [count($reads), count($statements) - count($reads), $run];
 }
 
-it('7a — the Action READS do not grow with the selection, while its WRITES grow one per target', function () {
+/** The run's targets, in id order — which is the order the job walks them and the report prints them. */
+function mirsTargetsInIdOrder(ManualInvoiceRun $run): Collection
+{
+    return ManualInvoiceRunTarget::withoutGlobalScopes()
+        ->where('run_id', $run->id)
+        ->orderBy('id')
+        ->get();
+}
+
+it('7a — neither the Action\'s reads NOR its writes grow with the size of the selection', function () {
     $ctx = mirsSchool();
 
     /*
@@ -1021,33 +1039,91 @@ it('7a — the Action READS do not grow with the selection, while its WRITES gro
      */
     mirsQueryShape($ctx, mirsSelection($ctx, 2));
 
-    [$smallReads, $smallWrites] = mirsQueryShape($ctx, mirsSelection($ctx, 3));
-    [$largeReads, $largeWrites] = mirsQueryShape($ctx, mirsSelection($ctx, 30));
+    [$smallReads, $smallWrites, $smallRun] = mirsQueryShape($ctx, mirsSelection($ctx, 3));
+    [$largeReads, $largeWrites, $largeRun] = mirsQueryShape($ctx, mirsSelection($ctx, 30));
 
     /*
-     * THE WRITES ARE THE NON-VACUITY GUARD, and they are asserted first for that reason. `reads
-     * identical` is satisfied by two runs that both did nothing; a write delta of exactly 27 — one
-     * target row per additional student, and nothing else — is what proves the two windows really
-     * differed by 27 students and that the larger one wrote a target for every one of them.
+     * THE ROWS ARE THE NON-VACUITY GUARD, and they are asserted first for that reason. Nothing in
+     * the query counts moves with N any more, so "the counts are identical" is also satisfied by two
+     * runs that both did nothing. These two numbers are what prove the windows differed by 27
+     * students while the statement count did not.
      */
-    expect($largeWrites - $smallWrites)->toBe(27);
+    expect(mirsTargetsInIdOrder($smallRun))->toHaveCount(3)
+        ->and(mirsTargetsInIdOrder($largeRun))->toHaveCount(30);
 
     /*
-     * AND THE DATA READS ARE FLAT. This is the whole arm. A `currentForStudent()` restored inside
-     * the loop makes this difference 27 × the adapter's per-student cost (eight) instead of zero;
-     * no legitimate change to the Action makes it anything but zero, because the selection is
-     * resolved once.
+     * READS FLAT. A `currentForStudent()` restored inside the loop makes this 27 × the adapter's
+     * per-student cost instead of zero.
      */
     expect($largeReads - $smallReads)->toBe(0);
 
-    // The resolution itself still happened and still split the selection: 30 targets, 20 placed,
-    // 10 un-enrolled and therefore NULL. A flat read count over a run that resolved nobody would be
-    // flat for the wrong reason.
-    $run = ManualInvoiceRun::withoutGlobalScopes()->latest('id')->first();
-    $targets = ManualInvoiceRunTarget::withoutGlobalScopes()->where('run_id', $run->id);
+    /*
+     * WRITES FLAT. A `ManualInvoiceRunTarget::create()` restored inside the loop makes this 27
+     * instead of zero. Ten times that selection would make it 270; the chunk size is far above any
+     * of these, so the honest property is "does not grow", not "is one".
+     */
+    expect($largeWrites - $smallWrites)->toBe(0);
+});
 
-    expect($targets->clone()->count())->toBe(30)
-        ->and($targets->clone()->whereNotNull('enrollment_id')->count())->toBe(20)
-        ->and($targets->clone()->whereNull('enrollment_id')->count())->toBe(10)
-        ->and($targets->clone()->distinct()->count('enrollment_id'))->toBe(20);
+it('7b — the batched write produces exactly the rows the per-row write did: order, ids, NULLs, uuids and stamps', function () {
+    /*
+     * THE ARM THE BATCH EARNED. `ManualInvoiceRunTarget::query()->insert()` fires no model events, so
+     * `AddUuid` does not mint a uuid and `BelongsToSchool` does not fill `school_id`; `insert()` also
+     * does not stamp `created_at` / `updated_at`. Every one of those is a column that goes quietly
+     * empty rather than loudly wrong, on a table whose count IS what the bursar ticked.
+     *
+     * EVERY EXPECTATION BELOW IS DERIVED BY THE OTHER CODE PATH OR FROM THE PAYLOAD — never from the
+     * batch's own rule. The enrollment each row should name comes from calling
+     * `currentForStudent()` per student, which is the single-student resolver the batch replaced.
+     */
+    $ctx = mirsSchool();
+    $studentIds = mirsSelection($ctx, 12);   // 8 enrolled, 4 un-enrolled, in reverse creation order
+
+    [, , $run] = mirsQueryShape($ctx, $studentIds);
+
+    $targets = mirsTargetsInIdOrder($run);
+
+    // ── the count is the selection, and the ORDER is the payload's, not the students' own id order
+    expect($targets)->toHaveCount(count($studentIds))
+        ->and($targets->pluck('student_id')->map(fn ($id) => (int) $id)->all())->toBe($studentIds)
+        ->and($studentIds)->not->toBe(collect($studentIds)->sort()->values()->all());
+
+    // ── the episode each row names, decided by the OTHER resolver, one student at a time
+    $port = app(BillableEnrollmentProvider::class);
+    $placed = 0;
+
+    foreach ($targets as $target) {
+        $expected = ActiveSchool::runFor(
+            $ctx['school']->id,
+            fn () => $port->currentForStudent((int) $target->student_id),
+        );
+
+        if ($expected === null) {
+            expect($target->enrollment_id)->toBeNull()
+                ->and($target->enrollment_uuid)->toBeNull();
+
+            continue;
+        }
+
+        $placed++;
+
+        expect((int) $target->enrollment_id)->toBe($expected->enrollmentId)
+            ->and($target->enrollment_uuid)->toBe($expected->enrollmentUuid);
+    }
+
+    // NOT VACUOUS: the fixture really did contain both halves, so neither branch above was skipped.
+    expect($placed)->toBe(8)
+        ->and($targets->whereNull('enrollment_id'))->toHaveCount(4);
+
+    // ── every column the skipped model events would have filled
+    foreach ($targets as $target) {
+        expect($target->uuid)->toBeString()
+            ->and(Str::isUuid((string) $target->uuid))->toBeTrue()
+            ->and((int) $target->school_id)->toBe($ctx['school']->id)
+            ->and($target->created_at)->not->toBeNull()
+            ->and($target->updated_at)->not->toBeNull();
+    }
+
+    // A SHARED uuid would satisfy every per-row check above and break the route key for eleven rows.
+    expect($targets->pluck('uuid')->unique())->toHaveCount(count($studentIds));
 });

@@ -276,10 +276,43 @@ Nothing will compile without a choice being made somewhere a human can see it. A
 exactly the shape this project keeps paying for: not a decision anyone took, becoming one the moment
 the first real transaction is written.
 
-**What is needed:** confirmation that "the parent bears it" is the answer for *every* case, including
-a payment landing against an invoice cancelled in between — where the money banks as account credit
-(already decided) but it is not yet stated whether the credit is the gross or the net. Both arms are
-being built; only the policy is missing.
+### It may not need a decision — here is the derivation, please confirm rather than choose
+
+Gross-or-net falls out of the fee ruling plus a rule already in force, so this is a **yes/no**, not a
+fork:
+
+> **Credit banked against a cancelled invoice = THE AMOUNT RECORDED AS THE PAYMENT.**
+> Which is the **bill portion** under parent-bears, and the **full bill** under school-absorbs.
+
+**Both alternatives break in exactly one regime, which is what makes this a derivation:**
+
+| candidate rule | parent-bears | school-absorbs |
+|---|---|---|
+| credit *what the payer paid* | ✗ school banks credit for money it never received (the fee went to Paystack) | ✓ |
+| credit *what the school received* | ✓ | ✗ parent loses a fee they were told they would not bear |
+| **credit the invoice-settling amount** | **✓** | **✓** |
+
+The third is correct in both, and it is **already what `RecordPayment` writes** — so the ledger needs
+no new concept, no new column and no new branch. That is the tell that it is the right rule rather
+than a convenient one.
+
+**Please confirm the derivation holds.** If it does, decision 4 is closed and step 4's call site is
+unblocked. Both fee-bearer arms are being built regardless, behind a required explicit input with no
+default.
+
+### The residual, which will surface at a counter rather than in code
+
+Under **parent-bears**, a cancellation leaves the payer out the gateway fee **with no trace in our
+books** — the fee was never the school's money, so it never entered the ledger, so there is nothing to
+refund and nothing recording that they paid it.
+
+Making that payer whole is therefore a **goodwill credit**: a different instrument from a refund,
+requiring somebody with the ability to issue one. **Nobody on production has that ability until
+Section 0.1 creates the approvals accounts.**
+
+Raising it now as a known consequence rather than letting the first affected parent discover it. It
+needs no code today; it needs to be a sentence somebody has read before a bursar is asked the
+question at a desk.
 
 ## 5 · What is actually still open, as of 2026-08-30
 

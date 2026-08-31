@@ -22,7 +22,17 @@
 #    became "so don't push it", which is a non sequitur that costs backups and reviewability.
 #    Push freely. Propose deliberately.
 #
-# 2. IT SWEEPS ONE WORKING COPY — THIS ONE. A clean board means "nothing unpushed HERE", never
+# 2. IT READS REFS, SO IT IS BLIND TO UNCOMMITTED WORK. The honest scope is not "nothing unpushed
+#    here" — it is "nothing COMMITTED-but-unpushed here". Uncommitted work has no ref, so the
+#    instrument built to stop status coming from recall cannot see it at all.
+#    Not hypothetical: on 2026-08-31 the artisan command that produced the Paystack fee calibration
+#    was written, run against the live sandbox, used to settle the formula — and never committed. It
+#    rode the working tree across four branch switches, one `git checkout -f` from gone, and the
+#    board printed a clean table throughout. That is why the dirty-tree check below is LOUD rather
+#    than informational: a true report about refs, silent about the thing actually at risk, is the
+#    same failure this tool exists to prevent, one layer down.
+#
+# 3. IT SWEEPS ONE WORKING COPY — THIS ONE. A clean board means "nothing unpushed HERE", never
 #    "nothing unpushed". The same condition can hold on a colleague's machine and no ref in this
 #    repository would show it. That is not hypothetical: this tool's first run found a nine-commit
 #    branch, two weeks old, that had never appeared in any hand-written board — so the class is
@@ -35,6 +45,19 @@ cd "$(git rev-parse --show-toplevel)"
 git fetch -q origin 2>/dev/null || { echo "fetch failed — cannot report on refs I could not read" >&2; exit 2; }
 
 base="${1:-origin/staging}"
+
+# LOUD, NOT INFORMATIONAL — see caveat 2. A clean table over a dirty tree is the failure this
+# tool lived through; reporting it quietly at the bottom would reproduce it.
+dirty=$(git status --porcelain | grep -v '^??' || true)
+untracked=$(git status --porcelain | grep '^??' || true)
+
+if [ -n "$dirty" ] || [ -n "$untracked" ]; then
+    printf '\033[33m⚠  UNCOMMITTED WORK IN THIS WORKING COPY — no ref, so nothing below describes it.\033[0m\n'
+    [ -n "$dirty" ]     && printf '%s\n' "$dirty"     | sed 's/^/    modified: /'
+    [ -n "$untracked" ] && printf '%s\n' "$untracked" | sed 's/^/    untracked: /'
+    printf '\n'
+fi
+
 printf '%-42s %-9s %-9s %-14s %s\n' BRANCH LOCAL REMOTE STATE 'AHEAD OF BASE'
 printf '%.0s─' {1..96}; printf '\n'
 

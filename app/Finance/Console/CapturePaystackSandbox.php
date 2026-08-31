@@ -120,10 +120,20 @@ class CapturePaystackSandbox extends Command
     private function initialise(PaystackClient $client, int $naira): void
     {
         $amount = Money::fromKobo($naira * 100);
+
+        // NOT GatewayReference::mint(), deliberately. That format routes a webhook back to a school,
+        // and this command creates NO finance_gateway_transactions row — it calls Paystack directly
+        // to measure fee arithmetic and records nothing. A reference that cannot route is correct
+        // here precisely because nothing will ever look this up; minting a routable one would
+        // advertise a transaction that does not exist. (The model guard would refuse this string on
+        // a real row, which is the guard working, not a conflict.)
         $reference = 'CAPTURE-'.$naira.'-'.now()->format('YmdHis');
 
         $this->line('');
-        $this->info("initialise  ₦{$naira}  ({$amount->toKobo()} kobo)  reference={$reference}");
+        // Money::format(), not a hand-written ₦ — one formatter per side (money-lint). The gate
+        // caught the hand-written one here, which is the lint doing exactly its job on a file whose
+        // whole purpose is measuring money.
+        $this->info("initialise  {$amount->format()}  ({$amount->toKobo()} kobo)  reference={$reference}");
 
         try {
             $checkout = $client->initialize($amount, $reference, (string) $this->option('email'));

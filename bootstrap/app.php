@@ -4,6 +4,7 @@ use App\Exceptions\DutySeparationViolationException;
 use App\Finance\Console\AuditLedgerCoherence;
 use App\Finance\Console\ImportOpeningBalances;
 use App\Finance\Console\ReconcileAccounts;
+use App\Finance\Providers\FinanceServiceProvider;
 use App\Http\Middleware\ApplyImpersonation;
 use App\Http\Middleware\DenyGuardianBulkRecords;
 use App\Http\Middleware\EnsureGuardianOwnsGuardianRecord;
@@ -42,6 +43,11 @@ return Application::configure(basePath: dirname(__DIR__))
     // Finance models private, so a command touching them cannot sit in
     // app/Console/Commands). Auto-discovery only scans app/Console/Commands, so the
     // module's commands are registered explicitly here.
+    // Finance's composition root. Registered by CLASS NAME here so the module's private service
+    // layer is never named at the application root — see FinanceServiceProvider's docblock.
+    ->withProviders([
+        FinanceServiceProvider::class,
+    ])
     ->withCommands([
         ReconcileAccounts::class,
         AuditLedgerCoherence::class,

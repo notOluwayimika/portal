@@ -28,6 +28,7 @@ use App\Enums\Permission as PermissionEnum;
 use App\Enums\ScholarshipKind;
 use App\Enums\StudentStatusEnum;
 use App\Enums\TermStatusEnum;
+use App\Finance\Http\Controllers\ManualInvoiceRunStudentController;
 use App\Models\AcademicSession;
 use App\Models\Arm;
 use App\Models\ClassLevel;
@@ -56,6 +57,22 @@ const MIRP_ACCESS = 'finance.access';
 const MIRP_GENERATE = 'finance.invoice.generate';
 const MIRP_PAGE = '/finance/manual-invoice-runs';
 const MIRP_ROSTER = '/api/v1/finance/manual-invoice-runs/students';
+
+/**
+ * Assert a source file declares $needle, VERBATIM.
+ *
+ * `expect($source)->toContain(...)` would do it and its failure prints the ENTIRE file — 87 KB of
+ * index.tsx into the terminal for one missing line, which is how a legible red becomes an unread
+ * one. This reduces the subject to a boolean and puts the needle in the message instead.
+ */
+function mirpDeclares(string $source, string $needle, string $where): void
+{
+    expect(str_contains($source, $needle))->toBeTrue(
+        "Expected {$where} to declare, verbatim:\n    {$needle}\n"
+        .'It does not. These values are hand-mirrored across PHP and TypeScript and nothing but the '
+        .'arms below holds them together — see 2h for which three places carry the number.'
+    );
+}
 
 /**
  * A School with TWO class levels and TWO arms, created so a count can be wrong.
@@ -398,7 +415,7 @@ it('2d — filters on class level, arm and scheme, and "none" is not a scheme', 
     expect($bySearch->json('data.*.admission_number'))->toBe(['ADM-302']);
 });
 
-it('2e — paginates, and CLAMPS the page size at 100 rather than refusing', function () {
+it('2e — paginates, and CLAMPS the page size at 150 rather than refusing', function () {
     /*
      * THE CEILING IS PART OF THE SCREEN'S CENTRAL COMPROMISE, so it is pinned by VALUE.
      *
@@ -408,6 +425,13 @@ it('2e — paginates, and CLAMPS the page size at 100 rather than refusing', fun
      * visible to a test of the screen. The literals below are LITERALS on purpose — a test that
      * derived its payload from the constant could only ever restate the constant, which is how a cap
      * test survives the cap being raised.
+     *
+     * THE VALUE MOVED 100 -> 150 and this arm was REWORDED rather than replaced, because the arm's
+     * subject never changed: it is the clamp, and what it must catch is the clamp going away. The
+     * number came from measuring class-level cohorts on the production copy — 116, 107, 102, 101,
+     * 99, 86 — four of which the old ceiling refused to put on one page, by between 1 and 16 rows.
+     * See ManualInvoiceRunStudentController::MAX_PER_PAGE for the reasoning and the re-measure
+     * instruction; arm 2h below is what stops the three places that carry the number from drifting.
      */
     $ctx = mirpSchool();
     foreach (range(1, 5) as $i) {
@@ -451,13 +475,110 @@ it('2e — paginates, and CLAMPS the page size at 100 rather than refusing', fun
         ->and($lastPage->json('pagination.prev_page_url'))->toBeString();
 
     // ACCEPTED at the ceiling…
-    expect(mirpAs($actor, $ctx['school'])->getJson(MIRP_ROSTER.'?per_page=100')->assertOk()
-        ->json('pagination.per_page'))->toBe(100);
+    expect(mirpAs($actor, $ctx['school'])->getJson(MIRP_ROSTER.'?per_page=150')->assertOk()
+        ->json('pagination.per_page'))->toBe(150);
 
     // …and CLAMPED above it, not refused: a client asking for more gets the most it may have rather
     // than an error in the middle of a selection.
+    expect(mirpAs($actor, $ctx['school'])->getJson(MIRP_ROSTER.'?per_page=151')->assertOk()
+        ->json('pagination.per_page'))->toBe(150);
+
+    // AND THE OLD CEILING IS NO LONGER THE CEILING. Without this, every assertion above passes on a
+    // server that still clamps at 100 except the two literals — and those two are exactly the lines
+    // a hurried "fix" would edit back. 101 is the value that was clamped before this commit and is
+    // served whole now, so the arm reds in BOTH directions rather than only when the clamp vanishes.
     expect(mirpAs($actor, $ctx['school'])->getJson(MIRP_ROSTER.'?per_page=101')->assertOk()
-        ->json('pagination.per_page'))->toBe(100);
+        ->json('pagination.per_page'))->toBe(101);
+});
+
+it('2h — the ceiling is written in THREE places and this arm is the only thing stopping them drifting', function () {
+    /*
+     * ONE NUMBER, THREE OWNERS, AND NO SHARED SOURCE BETWEEN THEM:
+     *
+     *   1. `ManualInvoiceRunStudentController::MAX_PER_PAGE` — the CLAMP. The authority; it is what
+     *      actually decides what a client gets.
+     *   2. `MAX_PER_PAGE` in the screen — the BANNER's copy. It is what the operator is TOLD the
+     *      ceiling is ("the largest page available is N"), and it is what decides whether the
+     *      "Show all N on one page" button is offered at all.
+     *   3. `ROSTER_PAGE_LIMITS` in the screen — the CONTROL. It is what the operator can actually
+     *      pick.
+     *
+     * A TypeScript file cannot import a PHP constant and this screen fetches its roster over HTTP
+     * rather than receiving it as props, so there is no build step and no shared module that could
+     * make these one value. They are three copies, and copies drift. The failure is quiet in every
+     * direction: a banner naming a ceiling the server does not have, or an option in the dropdown
+     * that the server silently clamps — the operator picks 150, is served 100, and the label agrees
+     * with them.
+     *
+     * SO IT IS PINNED AGAINST LITERALS, FROM THREE INDEPENDENT READS. An arm that derived any of
+     * these from any other would prove only that a value equals itself. The clamp is additionally
+     * pinned by BEHAVIOUR in 2e — accepted at 150, clamped at 151 — because a constant that matches
+     * a literal is not evidence that anything reads it.
+     */
+    $screen = file_get_contents(base_path('resources/js/pages/admin/finance/manual-invoice-runs/index.tsx'));
+
+    // 1 · the clamp, read off the controller itself rather than inferred from a response
+    $clamp = new ReflectionClassConstant(
+        ManualInvoiceRunStudentController::class,
+        'MAX_PER_PAGE',
+    );
+
+    expect($clamp->getValue())->toBe(150);
+
+    // 2 · the banner's mirror, as the literal it is written as
+    mirpDeclares($screen, 'const MAX_PER_PAGE = 150;', 'the roster screen');
+
+    // 3 · the control's options, ending at the mirror rather than at a second literal — which is
+    // what makes it structurally impossible for the dropdown to offer more than the server serves.
+    mirpDeclares($screen, 'const ROSTER_PAGE_LIMITS = [5, 10, 25, 50, 100, MAX_PER_PAGE];', 'the roster screen');
+    mirpDeclares($screen, 'limits={ROSTER_PAGE_LIMITS}', 'the roster screen');
+
+    /*
+     * AND THE SHARED CONTROL IS UNTOUCHED, which is half the point of this commit. `LIMITS` in
+     * pagination.tsx is rendered by fifteen screens whose servers disagree about a legal `per_page`
+     * — two of them clamp nothing at all — so raising it there would have offered 150 on every one
+     * of them, including the ones that would page against it. If somebody "simplifies" this by
+     * raising the shared array instead, this is what says no.
+     */
+    mirpDeclares(
+        file_get_contents(base_path('resources/js/components/pagination.tsx')),
+        'const LIMITS = [5, 10, 25, 50, 100];',
+        'the shared pagination control',
+    );
+});
+
+it('2i — raising the ceiling MOVES where the page-scoped warning is met; it does not remove it', function () {
+    /*
+     * THE HAZARD THIS COMMIT COULD HAVE INTRODUCED. Selection is page-scoped, and the amber banner
+     * is the only thing that tells an operator so before they lose forty ticks to a page turn. A
+     * ceiling raise makes the banner fire on FEWER screens — every class level in the production
+     * copy now fits on one page — which is the intent, and which is also exactly how such a warning
+     * gets quietly disconnected: it stops appearing, nobody misses it, and the next filter that
+     * spans pages has no warning left.
+     *
+     * SO THE ARM PINS WHAT THE BANNER KEYS ON. `last_page > 1` is a property of the RESPONSE and
+     * carries no reference to the ceiling at all, which is what makes the warning survive any
+     * future move of that number. Had it been written as `total > MAX_PER_PAGE` it would have read
+     * identically and been coupled to the thing this commit changes.
+     *
+     * THIS IS A SOURCE ASSERTION, NOT A RENDER ONE, and it is worth saying so rather than letting
+     * the name imply more. There is no render harness for this component — the repo's vitest tests
+     * cover pure modules — so what is proved here is that the wiring still reads the way it must.
+     * That the banner actually paints, and escalates once there are ticks to lose, is a drive's job.
+     */
+    $screen = file_get_contents(base_path('resources/js/pages/admin/finance/manual-invoice-runs/index.tsx'));
+
+    // Keyed on the response's own page count — NOT on the ceiling, which is the whole point.
+    mirpDeclares($screen, 'const spansPages = pagination.last_page > 1;', 'the roster screen');
+    mirpDeclares($screen, '{spansPages && (', 'the roster screen');
+    mirpDeclares($screen, 'data-testid="page-scoped-warning"', 'the roster screen');
+
+    // The unconditional half: ticks are page-scoped, said whenever the filter spans pages.
+    mirpDeclares($screen, 'Ticks apply to this page only.', 'the roster screen');
+
+    // And the escalation, which is only reachable when there is something to lose.
+    mirpDeclares($screen, 'selectedCount > 0', 'the roster screen');
+    mirpDeclares($screen, 'will clear the ${String(selectedCount)} you have ticked.', 'the roster screen');
 });
 
 it('2f — School B’s roster holds none of School A’s students, and with no School it is REFUSED', function () {

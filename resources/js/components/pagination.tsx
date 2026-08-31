@@ -1,6 +1,15 @@
 import { ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useState } from 'react';
 
+/**
+ * The page-size options every caller gets unless it passes its own.
+ *
+ * DO NOT RAISE THIS FOR ONE SCREEN'S SAKE. Fifteen screens render this control and their servers do
+ * not agree about a legal `per_page` — two of them clamp nothing at all — so a value added here is
+ * offered on every one of them, including the ones where it is silently accepted and paged against.
+ * A screen that needs a different ceiling passes `limits`, coupled to ITS OWN server's clamp; see
+ * `ROSTER_PAGE_LIMITS` in the manual-invoice-run screen for the worked example.
+ */
 const LIMITS = [5, 10, 25, 50, 100];
 
 function visiblePages(current = 1, last = 1, delta = 2) {
@@ -31,10 +40,13 @@ export function Pagination({
     meta,
     setPage,
     setLimit,
+    limits = LIMITS,
 }: {
     meta: any;
     setPage: (page: number) => void;
     setLimit: (limit: number) => void;
+    /** Page-size options for THIS screen. Omit to get the shared default — see LIMITS above. */
+    limits?: number[];
 }) {
     const [limitOpen, setLimitOpen] = useState(false);
     const pages = visiblePages(meta.current_page, meta.last_page);
@@ -119,7 +131,7 @@ export function Pagination({
                                 onClick={() => setLimitOpen(false)}
                             />
                             <div className="absolute bottom-[calc(100%+6px)] left-1/2 z-20 min-w-[140px] -translate-x-1/2 overflow-hidden rounded-xl border border-border bg-background shadow-md">
-                                {LIMITS.map((l) => (
+                                {limits.map((l) => (
                                     <button
                                         key={l}
                                         onClick={() => {

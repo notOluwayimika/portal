@@ -123,13 +123,50 @@ class ManualInvoiceRunStudentController extends Controller
     private const PER_PAGE = 25;
 
     /**
-     * The largest page a client may ask for. It is the students index pagination control's own
-     * ceiling (`resources/js/components/pagination.tsx`, LIMITS) rather than a number invented
-     * here, so the control cannot offer an option the server refuses — and it is CLAMPED rather
-     * than validated, because a client asking for more should get the most it may have, not an
-     * error in the middle of a selection.
+     * The largest page a client may ask for. CLAMPED rather than validated, because a client asking
+     * for more should get the most it may have, not an error in the middle of a selection.
+     *
+     * ═══════════════════════════════════════════════════════════════════════════════════════════
+     * IT IS THIS FEATURE'S CEILING, NOT THE SHARED CONTROL'S — the earlier comment here said the
+     * opposite and was wrong from the moment this number moved
+     * ═══════════════════════════════════════════════════════════════════════════════════════════
+     *
+     * It used to be 100 *because* that was the top option in
+     * `resources/js/components/pagination.tsx`'s `LIMITS`, and the comment said so. That array is
+     * shared by fifteen screens whose servers do not agree about a legal `per_page` — two of them
+     * clamp nothing at all — so it cannot be raised for this screen's sake, and this screen must
+     * therefore stop deriving its ceiling from it. The roster passes its OWN limits list to the
+     * shared component (`ROSTER_PAGE_LIMITS` in the screen), topped at this number, so the property
+     * the old comment was reaching for still holds: THE CONTROL CANNOT OFFER AN OPTION THE SERVER
+     * REFUSES. What changed is which side is the authority. This constant is.
+     *
+     * ═══════════════════════════════════════════════════════════════════════════════════════════
+     * WHY 150 — MEASURED COHORTS, AND THE DISTRIBUTION IS RECORDED SO THE NEXT READER RE-MEASURES
+     * ═══════════════════════════════════════════════════════════════════════════════════════════
+     *
+     * Selection is page-scoped, so the largest page decides the largest cohort a bursar can tick in
+     * one go. The unit they actually bill is a class level, and on the production copy (school#1,
+     * 611 live students) those cohorts are:
+     *
+     *     116   107   102   101   99   86
+     *
+     * FOUR OF SIX EXCEEDED 100, and by between 1 and 16. So the old ceiling met a bursar billing a
+     * whole class with the page-scoped tick warning for the sake of a handful of rows — the warning
+     * firing on the ordinary case, which is how a warning stops being read. 150 clears the largest
+     * measured cohort by 34.
+     *
+     * IT IS A MEASUREMENT, NOT A ROUND NUMBER, AND IT WILL GO STALE. A school that grows, or a
+     * second school with larger classes, moves it. Re-measure rather than re-guess — the query is
+     * a `COUNT(DISTINCT students.id)` grouped by class level over students with an ACTIVE episode —
+     * and update this list along with the number, so the next reader inherits evidence rather than
+     * a number with a story attached.
+     *
+     * COST IS NOT WHAT DECIDES THIS NUMBER. Two perf commits took a 611-student run from 6030
+     * queries to 13 (docs/handoff/reports/perf-manual-run-batch-target-inserts.md), so 150 ticked
+     * students is not a consideration on either the roster read or the run. What decides it is how
+     * many rows an operator can honestly hold in one page-scoped selection.
      */
-    private const MAX_PER_PAGE = 100;
+    private const MAX_PER_PAGE = 150;
 
     public function __construct(private readonly BillableEnrollmentProvider $enrollments) {}
 

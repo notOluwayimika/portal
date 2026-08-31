@@ -75,11 +75,17 @@ import type { SelectableBankAccount } from '@/types/finance';
  * to a page turn with no warning is the failure this whole feature was shaped to avoid. So whenever
  * the filtered result spans more than one page, this screen states in words that ticks are
  * page-scoped, and it escalates the wording the moment there are ticks to lose. The page-size
- * control is in the pagination bar directly beneath, and the banner names its ceiling — 100 — so a
+ * control is in the pagination bar directly beneath, and the banner names its ceiling — 150 — so a
  * cohort that fits on one page can be put on one page, and a cohort that cannot is told so rather
  * than discovering it forty ticks in.
  *
- * A SERVER-SIDE "EVERYONE MATCHING THIS FILTER" SCOPE IS THE REAL ANSWER FOR A COHORT ABOVE 100, and
+ * THE CEILING WAS 100 AND IS NOW 150, ON MEASURED COHORTS. Class levels on the production copy run
+ * 116 / 107 / 102 / 101 / 99 / 86 — four of them above the old ceiling, by between 1 and 16 rows —
+ * so a bursar billing a whole class met the page-scoped warning for the sake of a handful of rows,
+ * which is how a warning stops being read. Raising it MOVES where that message is met; it does not
+ * remove it, and `ManualInvoiceRunPageTest` arm 2i is what holds that.
+ *
+ * A SERVER-SIDE "EVERYONE MATCHING THIS FILTER" SCOPE IS THE REAL ANSWER FOR A COHORT ABOVE 150, and
  * it is NOT this commit. Brief §1 sanctions the shape — resolved server-side from the filter
  * payload, never from a client id list — and `POST /v1/finance/manual-invoice-runs` takes explicit
  * ids only. Building the client half first would mean assembling that list in the browser, which is
@@ -163,12 +169,33 @@ const EMPTY_LINE: RunLineDraft = {
 /**
  * The largest page the roster will serve, mirrored here so the banner can NAME the ceiling.
  *
- * It is `ManualInvoiceRunStudentController::MAX_PER_PAGE` and the pagination control's own top
- * option, and it is written as a literal rather than derived from the options array — a number
- * derived from the control it describes could only ever restate the control, and what the operator
- * needs told is the SERVER's limit.
+ * IT IS `ManualInvoiceRunStudentController::MAX_PER_PAGE`, and it is no longer the shared
+ * pagination control's top option — that array is shared by fifteen screens whose servers disagree
+ * about a legal `per_page`, so this screen brings its own (see ROSTER_PAGE_LIMITS below).
+ *
+ * WRITTEN AS A LITERAL, not derived from the options array: a number derived from the control it
+ * describes could only ever restate the control, and what the operator needs told is the SERVER's
+ * limit. It is a MIRROR, which means it can drift — the controller is the authority and this is a
+ * copy of it. `ManualInvoiceRunPageTest` pins the two against the same literal, from opposite
+ * sides, precisely because nothing else can stop them disagreeing.
+ *
+ * 150 is a measurement, not a round number: class-level cohorts on the production copy are
+ * 116 / 107 / 102 / 101 / 99 / 86, four of them over the old ceiling of 100. The controller's
+ * constant carries the full reasoning and the instruction to re-measure rather than re-guess.
  */
-const MAX_PER_PAGE = 100;
+const MAX_PER_PAGE = 150;
+
+/**
+ * The page sizes THIS screen offers, topped at the ceiling the server actually clamps to.
+ *
+ * It exists so the shared control does not have to be raised for this screen's sake. It is the
+ * shared `LIMITS` plus this feature's ceiling — nothing is removed, so a bursar who reaches for a
+ * familiar option still finds it — and the last entry is the mirrored constant rather than a second
+ * literal, so the control CANNOT OFFER AN OPTION THE SERVER REFUSES. That is the property the
+ * controller's comment used to get by deriving its ceiling from the shared control; it now holds in
+ * the other direction, with the server as the authority.
+ */
+const ROSTER_PAGE_LIMITS = [5, 10, 25, 50, 100, MAX_PER_PAGE];
 
 export default function ManualInvoiceRunsIndex({
     class_levels: classLevels,
@@ -943,6 +970,7 @@ export default function ManualInvoiceRunsIndex({
                                 meta={pagination}
                                 setPage={setPage}
                                 setLimit={setLimit}
+                                limits={ROSTER_PAGE_LIMITS}
                             />
                         </div>
                     </div>

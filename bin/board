@@ -13,6 +13,22 @@
 #
 # Reads refs only. Fetches first (its one mutation) so "remote" means the remote, not a stale
 # tracking ref — the same reason `bin/landed` fetches.
+#
+# ── TWO THINGS THIS DOES NOT SAY, BOTH OF WHICH GET READ INTO IT ────────────────────────────────
+#
+# 1. PUSHED IS NOT PROPOSED. A branch marked `pushed` may have no PR, or a draft one, and may be
+#    parked mid-review. Pushing makes work VISIBLE AND BACKED UP; proposing asks for someone's time.
+#    Conflating them is what nearly kept a finished client local — "it isn't ready to proposed"
+#    became "so don't push it", which is a non sequitur that costs backups and reviewability.
+#    Push freely. Propose deliberately.
+#
+# 2. IT SWEEPS ONE WORKING COPY — THIS ONE. A clean board means "nothing unpushed HERE", never
+#    "nothing unpushed". The same condition can hold on a colleague's machine and no ref in this
+#    repository would show it. That is not hypothetical: this tool's first run found a nine-commit
+#    branch, two weeks old, that had never appeared in any hand-written board — so the class is
+#    demonstrably not rare, and the same blind spot exists one machine over.
+#    Same register as the collation tripwire's presence-not-reachability caveat: state what the
+#    instrument measured, not what it feels like it measured.
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"

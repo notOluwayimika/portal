@@ -1,4 +1,6 @@
-# `bin/db-exclusive` protects only the branches that contain it
+# A repo-local tool protects only the branches that contain it
+
+*(Raised about `bin/db-exclusive`; `bin/board` has since joined it — see the three occurrences below.)*
 
 **Raised:** 2026-08-30, immediately after writing the gate.
 **Severity:** ticket — the gate works where it exists; the hole is *where it does not*.
@@ -17,6 +19,25 @@ and the push proceeded ungated. It happened to be safe. The gate contributed not
 
 **Worse than absent, in one respect:** the invocation *looked* like protection in the transcript.
 Someone reading that command later would reasonably conclude the check ran.
+
+## Three occurrences, which is what makes this an argument rather than an anecdote
+
+All on 2026-08-30/31, all the same shape — a repo-local tool absent from the branch that needed it:
+
+1. **`bin/db-exclusive`, on `docs/paystack-fee-design`.** A push invoked it, the shell reported
+   `no such file or directory`, the script carried on, and the push ran ungated. Safe by luck.
+2. **`bin/db-exclusive`, on `feat/finance-collation-tripwire`.** That branch's full-suite run —
+   2550 tests, used to justify pushing it — was ungated for the same reason. Credible on symptoms
+   (contention produces `1213` deadlocks spread across every file, which this did not show), **not on
+   a check**.
+3. **`bin/board`, on `feat/guardian-merge-command`.** The board-reporting tool was absent from the
+   branch the board was being reported from — so the instrument written *because* status came from
+   recall could not be run at the moment status was being given. It had to be replaced by an inline
+   ref comparison.
+
+The third is the clearest: **the tool for not-trusting-recall was itself unavailable, and nothing
+said so except a shell error that a human happened to read.** One instance is an anecdote; three
+across two tools in two days is the shape of the problem.
 
 ## Why this is the reachability problem again
 

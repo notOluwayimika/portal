@@ -1124,6 +1124,20 @@ Route::middleware(['auth', 'tenant', 'permission:parent_portal.access'])->group(
     Route::get('parent/wards', function () {
         return Inertia::render('parent/wards');
     })->name('parent.wards');
+
+    /*
+     * The parent's finance screen. Gated on `parent_portal.access` like its siblings — the same
+     * permission that gates the read endpoint it calls, so the page and its data agree about who may
+     * see them rather than each deciding separately.
+     *
+     * IT CARRIES NO PARAMETER, matching `GET /api/parent/finance/wards`, which derives the wards from
+     * the authenticated user. There is deliberately no `parent/finance/{student}` variant: a route
+     * with an identifier in it is a route with an ownership check that can be forgotten, and this
+     * surface currently cannot have that class of hole. One ward at a time is a filter over the list.
+     */
+    Route::get('parent/finance', function () {
+        return Inertia::render('parent/finance');
+    })->name('parent.finance');
 });
 
 Route::middleware(['auth', 'tenant', 'permission:boarding_portal.access'])->group(function () {

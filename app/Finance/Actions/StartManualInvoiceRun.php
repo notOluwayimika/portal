@@ -23,19 +23,31 @@ use Illuminate\Support\Facades\DB;
  * THE RESOLVER IS THE ACL PORT. THERE IS NOT A SECOND ONE, AND THERE MUST NOT BE
  * ═══════════════════════════════════════════════════════════════════════════════════════════════
  *
- * `BillableEnrollmentProvider::currentForStudent()` is the ONLY thing that decides which episode a
- * ticked student is billed for. Finance may not import `StudentCurriculum` (arch rule 3), but the
- * real reason is not the lint: a second expression of "the student's current billable episode" is a
- * second definition, and this repository has already paid for exactly that twice — the adapter's own
- * docblock records a tie-break that was deleted from one of two copies while the other stayed green,
- * and `CurrentTerm` / `ResolvesTermFilter` are a live pair reading `order` and `id` as though they
- * were interchangeable.
+ * `BillableEnrollmentProvider` is the ONLY thing that decides which episode a ticked student is
+ * billed for. Finance may not import `StudentCurriculum` (arch rule 3), but the real reason is not
+ * the lint: a second expression of "the student's current billable episode" is a second definition,
+ * and this repository has already paid for exactly that twice — the adapter's own docblock records a
+ * tie-break that was deleted from one of two copies while the other stayed green, and `CurrentTerm` /
+ * `ResolvesTermFilter` are a live pair reading `order` and `id` as though they were interchangeable.
  *
- * IT IS CALLED ONCE PER STUDENT, and that is N queries for N ticked students rather than one. There
- * is no batch method on the port, and adding one HERE would be the second resolver this paragraph
- * exists to forbid. The consumer is one bursar pressing one button over a list they typed by hand,
- * so the cost is bounded by what a person can tick; if a batch read is ever wanted it belongs on the
- * port, expressed through `billableEpisodes()`, and not inlined here.
+ * IT IS CALLED ONCE FOR THE WHOLE LIST — `currentForStudents()`, not `currentForStudent()` in the
+ * loop. The loop was the original shape and this docblock defended it on a number that was wrong:
+ * it said "N queries for N ticked students", and MEASURED it is 8N. `currentForStudent()` carries
+ * the adapter's five snapshot relation paths, which expand to seven eager loads on top of the root
+ * select. Over 611 students on a copy of production data the loop cost 4888 queries / 1647 ms and
+ * held this transaction open for ~2.6 s; the batch read costs 8 queries / 82.7 ms for the same 611.
+ *
+ * The rest of that defence — "the consumer is one bursar pressing one button over a list they typed
+ * by hand, so the cost is bounded by what a person can tick" — is what stopped the batch being done,
+ * and it was reasoning from a bound rather than from a measurement. It is gone. What it was right
+ * about survives and is now satisfied rather than traded away: a batch read belongs ON THE PORT,
+ * expressed through `billableEpisodes()`, and must not be inlined here. It is
+ * {@see BillableEnrollmentProvider::currentForStudents()}, one `whereIn` away from the single-student
+ * call, so there is still exactly ONE definition of a current billable episode.
+ *
+ * A STUDENT THE PORT CANNOT PLACE IS ABSENT FROM THE MAP, which is the batch spelling of the null
+ * the single call returned. The `?? null` below is that translation and it is the only behavioural
+ * seam between the two shapes; everything downstream of it is unchanged.
  *
  * RESOLUTION IS AN OUTCOME, NOT A PRECONDITION. A student the port cannot place becomes a target row
  * with `enrollment_id` NULL — which is what commit 1's re-key of the targets table bought, and it is
@@ -114,8 +126,12 @@ final class StartManualInvoiceRun
                 ]);
             }
 
+            // ONE read for the whole selection. Placeable students only; the rest are absent, which
+            // is what the `?? null` below turns back into the NULL enrollment_id a target carries.
+            $enrollments = $this->enrollments->currentForStudents($studentIds);
+
             foreach ($studentIds as $studentId) {
-                $enrollment = $this->enrollments->currentForStudent($studentId);
+                $enrollment = $enrollments[$studentId] ?? null;
 
                 ManualInvoiceRunTarget::create([
                     'school_id' => $schoolId,

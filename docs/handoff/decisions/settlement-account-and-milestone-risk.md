@@ -369,6 +369,46 @@ mentions nobody's table. That is the intended trade — silent addition is what 
 not see — and it is a real tax on whoever adds the next CHECK. It should be widened to
 `finance\_%` only when the 29 are fixed, not before.
 
+## 6 · A separate defect, MEASURED so it does not need your attention yet
+
+Surfaced while auditing branches, measured before raising, and reported here only so the number
+exists rather than the suspicion.
+
+**The defect is real on the write path.** `GuardianService::createGuardianWithUser` dedupes the USER
+by email and then calls `Guardian::create()` **unconditionally**, so a second `guardians` row against
+the same `(user_id, school_id)` is a normal outcome rather than an exceptional one. With no email at
+all, `User::where('email', null)->first()` never matches under MySQL, so an email-less submission
+mints a fresh user AND a fresh guardian. Nothing at the schema level forbids either — `guardians`
+carries non-unique indexes on `user_id` and `school_id` and no unique key beyond `uuid`.
+
+**It matters because it sits beneath the payment gate.** `GuardianPaymentAuthorisation::mayPay`
+delegates to `isWardOf`, which resolves through `forUserInActiveSchool()` — and that resolver exists
+in that shape precisely because a multi-school parent's rows are unordered. Duplicates are the
+condition it was built to survive.
+
+**Measured on the 27 August production clone (`portal270826`), and on two other copies:**
+
+```
+duplicate (user_id, school_id) pairs : 0      redundant rows: 0
+guardian rows with a NULL-email user : 0
+guardians total                      : 1067
+users with NULL email, overall       : 1     (holding no guardian row)
+```
+
+**So it is a backlog item, not a resumption blocker**, and the intake-week argument does not fire the
+way a code reading suggests: the email-less arm needs email-less submissions, and production has
+essentially none. If new-enrolment intake creates guardians *with* emails, the deduping half handles
+them and the leak stays shut. Worth watching during intake; not worth your attention before it.
+
+**Not asserted:** whether a duplicate could make `mayPay` answer wrongly. With zero duplicates the
+question is moot today, and the two failure directions differ enough to matter if it ever isn't — a
+false negative (a parent cannot see their own child) is support load; a false positive (access to
+someone else's ward) would be an incident. Neither is established and neither is claimed.
+
+The remediation branch `feat/guardian-merge-command` — nine commits, 17-18 August, unlanded, parked
+with two open review tickets of its own — is pushed for visibility, **not proposed**. It needs a
+decision eventually; it does not need one this week.
+
 ## If the 31st passes with no answer
 
 This escalates to the milestone owner rather than being chased a third time. Recorded here so that

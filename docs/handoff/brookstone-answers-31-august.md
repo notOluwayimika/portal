@@ -70,10 +70,20 @@ already-decided grant away.
 The audit trail they describe — who, what, date and time — is what spatie activitylog already
 records for every other approval in this system. Nothing new is needed to satisfy that sentence.
 
-And **parents cannot see invoices today.** There are no guardian-facing finance routes, and
-`InvoiceStatus` has exactly two cases, `Issued` and `Void`. "Release to parents" therefore gates a
-channel that does not yet exist. This is the cheapest moment this requirement could ever arrive:
-retrofitting a review gate after a parent portal ships would be materially worse.
+**CORRECTED 2026-08-31 — parents CAN already see invoices.** This section first claimed there was
+no parent-facing finance surface, and called this "the cheapest moment the requirement could ever
+arrive". That was wrong. `parent/finance` (`routes/web.php:1138`) is live behind
+`parent_portal.access`, renders `resources/js/pages/parent/finance.tsx` with each ward's invoices —
+display number, total, outstanding — and available credit, and is fed by
+`GET /api/parent/finance/wards` (`routes/endpoints/parent-finance.php:34`,
+`GuardianFinanceController`).
+The false claim came from searching `routes/web.php` and `routes/endpoints/finance.php` for
+"guardian"; the route is spelled `parent/` and its endpoint file is `parent-finance.php`. An absence
+was proved with one spelling of the concept.
+
+**So the review gate is a retrofit onto a shipped screen, not a gate in front of an unbuilt one**,
+and it is launch-blocking rather than conditionally so. Until it exists, that screen shows parents
+every issued invoice the moment it is raised — which is the state Brookstone have just ruled out.
 
 **One thing to watch in their list.** They want the Auditor to see "applicable scholarships and
 discounts". On a mid-term manual charge there are none, by Brookstone's own 29 August ruling that a
@@ -178,15 +188,18 @@ that shape wrong anyway: a draft would not count against the balance, and they w
 **The review action is batch-level; the state is per-invoice.** Nobody reviews six hundred invoices
 one at a time, and the termly run produces one per student.
 
-**The pending indicator costs something today; the visibility gate does not.** Parents have no
-finance view yet, so gating them is free. But "clearly show the bill as pending Internal Audit
-review" has to appear now on the invoice list, the invoice detail and the staff-facing student
-statement.
+**Both halves cost something, and the earlier claim that the visibility gate was free is
+withdrawn** — see the correction in §2. `parent/finance` already shows parents every issued invoice,
+so the gate has to be retrofitted there as well as onto the staff surfaces. "Clearly show the bill
+as pending Internal Audit review" applies to the invoice list, the invoice detail and the
+staff-facing statement; withholding it applies to `parent/finance` and to Developer 2's pay screen.
 
-**Scheduling.** The parent screens (U20-U23) are in the launch cut and are all currently nothing. If
-parents can see bills at launch, this review gate is launch-blocking, because a bill reaching a
-parent unreviewed is what Brookstone have ruled out. If the parent screens slip past launch, it is
-not. That dependency belongs in the plan rather than in cutover week.
+**Scheduling — LAUNCH-BLOCKING, not conditional.** The earlier version of this paragraph made it
+conditional on the parent screens shipping. They have shipped: `parent/finance` is live, and
+Developer 2's guardian pay screen puts a *Pay now* control beside those invoices at the 6 September
+resumption. A bill reaching a parent unreviewed is exactly what Brookstone have ruled out, so either
+the review step exists by then, or `parent/finance` must withhold unreviewed bills in the meantime.
+That second option is the cheap interim and it should be costed before the full feature is.
 
 ---
 

@@ -224,6 +224,53 @@ This is the same class as the `--step=N` audit error already recorded in `docs/t
 migration command that exits 0 having done something other than what you assumed, with nothing in the
 output to say so.
 
+#### The scope this rule was never given, added 2026-08-30
+
+Rule 3 is written about migrations because that is where it was learned, and it has been cited that
+way ever since. **It is not a fact about migrations. It is a fact about instruments**, and confining
+it to `information_schema` left three other tools trusted on exactly the basis it forbids. All three
+bit in a single day:
+
+| the instrument | its report | the state it claims to describe |
+|---|---|---|
+| `CREATE TRIGGER` | exit 0 | `information_schema.TRIGGERS` |
+| **`git push`** | **exit 0** | **`git rev-parse origin/<branch>`** |
+| **`grep -c`** | **`0`** | a pattern proven to match something |
+| **a passing suite** | green | a suite that was the *only* consumer of the database |
+
+**`git push` exiting 0 is not evidence the remote moved.** A failing pre-push hook aborts the push,
+and the surrounding job can still exit 0. Measured on 2026-08-30: a branch was reported as pushed,
+the remote was four commits behind, and the PR sat unmergeable for an hour on a conflict that had
+already been resolved locally. **Verify by comparing refs**, exactly as a migration verifies by
+reading `information_schema`:
+
+```bash
+git push origin "$branch"
+git fetch -q origin
+[ "$(git rev-parse HEAD)" = "$(git rev-parse "origin/$branch")" ] || echo "PUSH DID NOT LAND"
+```
+
+**`grep -c` returning `0` conflates "absent" with "my pattern was wrong."** Same day, the same hour: a
+verification grep reported `0` for content that was present, because the pattern was case-mismatched
+against the file. The check said the work was missing and the work was fine — and the same shape in
+the other direction is how a sweep reports a clean tree it never searched correctly. **A grep you
+would act on needs a known positive first**: run it against something you are certain matches, and
+only then trust a zero. That is the planted-positive discipline of a tripwire, applied to a command
+line.
+
+**And a green suite is not evidence when it was not the only consumer of the database.** `bin/quality`
+runs the full suite and the pre-push hook runs `bin/quality`, so **a push IS a suite run**. Starting a
+second suite beside one produces deadlocks on `roles` and foreign-key violations on
+`role_has_permissions` — 798 reds across nearly every file, indistinguishable at a glance from a
+catastrophic regression, and it happened three times on 2026-08-30 before the pattern was named. One
+consumer of `portal_testing` at a time.
+
+**The general form, which is the sentence to carry rather than the four rows:** *verify by reading the
+state, not by reading the tool's report of having changed it.* Every instrument reports on itself, and
+every instrument's report is a claim about the world rather than the world. This ADR already knew that
+about `CREATE TRIGGER`; it applies unchanged to any tool whose success can be decoupled from its
+effect.
+
 #### The carve-out: `2026_08_03`, edited after it had already applied
 
 `feat/executive-director-role`'s commit `17da5c3` edits the executing half of

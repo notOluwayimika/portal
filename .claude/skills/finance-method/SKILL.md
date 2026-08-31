@@ -65,7 +65,7 @@ common: a **description** — a name, a docblock, a comment — that asserts a p
 not actually have. Nothing is missing; something is *claimed*. And because the claim reads as
 verification, it stops anyone looking.
 
-Nine instances across three days and four branches, which is why it earns a section:
+Twelve instances across four days, which is why it earns a section:
 
 | The description | What it claimed | What was true |
 |---|---|---|
@@ -78,6 +78,22 @@ Nine instances across three days and four branches, which is why it earns a sect
 | a test fixture: *"holds exactly the abilities named"* | exactly those | its helper assigned `admin`, making every negative arm vacuous |
 | a 502 fixture, under a test named *"a 5xx is UNAVAILABLE"* | that the 5xx branch works | its body was not JSON, so it passed through the UNREADABLE-BODY branch — deleting the 5xx check left it green |
 | a docblock claiming the comparison is `hash_equals` and never `===` | timing-safety | true, and **unverifiable by any behavioural test** — see below |
+| two true measurements about a branch (*"lacks migration X"*, *"list lacks constraint Y"*) | *"so it will break"* | neither branch **reaches** the guard — no test there creates an invoice |
+| `git push` exiting 0 | the remote moved | the pre-push hook had aborted it; the remote was 4 commits behind |
+| `grep -c` returning `0` | the content is absent | the pattern was case-mismatched; the content was there |
+
+**A TRUE MEASUREMENT CAN CARRY AN UNMEASURED INFERENCE, and its credibility transfers.** The
+branch row above is the sharpest form in this table, because nothing in it is false. Both
+measurements were real, both outputs were real — and the conclusion drawn from them was never
+measured at all. It reads as solid precisely *because* the checking was genuine; the inference
+arrives wearing the evidence's clothes.
+
+The discriminator is **reachability**. A check that establishes a hazard is PRESENT licenses
+*"this branch could hit X"*. It never licenses *"this branch will break."* Those are different
+claims and only the first was measured. The same word had been used correctly about a finding one
+turn earlier — *reachability not established, so ticketed rather than claimed* — and then not
+applied to the next one. **Presence is not reachability**, and the gap between them is where a
+confident wrong conclusion lives.
 
 **Two of those rows are worse than the others and are worth separating out.**
 
@@ -97,6 +113,87 @@ behaviourally, the artifact itself is the only available instrument — assert a
 That is the same move as reading trigger bodies back out of `information_schema` instead of trusting
 the migration that claims to install them: check the artifact, not the intent. It is crude, and crude
 beats a sentence with nothing behind it.
+
+**A GATE NEEDS THE KNOWN NEGATIVE MORE THAN A TEST DOES**, and this is the one asymmetry in the
+table worth stating separately. A test that is broken-closed goes red and somebody looks. **A gate
+that is broken-closed refuses everything — and refusing everything is indistinguishable from
+strictness until someone bypasses it, then disables it, and you are left with neither the gate nor
+the knowledge that it is gone.** The failure is silent compliance rather than a red.
+
+Measured: `bin/db-exclusive` was written to refuse concurrent suite runs, and its first version
+matched the invoking shell — whose command line contains the script's own text — so it refused on a
+free database, always. A busy-only bite-proof passes that gate. Only asserting **free → exit 0**
+alongside **busy → exit 1** caught it. Every gate you write gets both arms, and the free arm is the
+one that matters.
+
+**AND A BITE-PROOF MUST SURVIVE THE FIXTURE'S OWN SETUP, or it tested the erasure.** The newest
+shape, and it is not an instrument blind to its axis — it is a *proof destroyed by the thing it was
+proving against*. Measured 2026-08-30: a collation tripwire was bite-proven by planting a bare
+comparison with `CREATE TRIGGER` before the run. It passed 4/4 — because the file uses
+`RefreshDatabase`, which runs `migrate:fresh` and had dropped the planted trigger before the first
+assertion. **The gate had never been shown to fire, and the passing bite-proof said it had.**
+
+The general fix: plant *inside the thing the fixture rebuilds from*, not on top of what it rebuilds.
+For a schema gate that means **mutating the migration**, so the refresh re-creates the defect. Ask of
+any bite-proof: what does `beforeEach` do to my plant?
+
+This is the same family as *a green is not a pass when it was measured against a base that has
+moved* — a result measured against a state that no longer existed by the time the assertion ran.
+
+## Report the board from `bin/board`, never from recall
+
+A one-line rule with a script behind it, because it was learned the hard way inside the very session
+that wrote the section below.
+
+**A status report derived from your own account of your work is not a measurement of your work.** It
+inherits every gap in the account, including the ones you have no way to notice. On 2026-08-31 two
+finished, fully-verified branches were reported as ready while existing **only locally**. The summary
+was not careless — it was an accurate summary of a board being read from memory, and memory has no
+entry for *"I verified this and did not push it."*
+
+`bin/board` reads refs, fetches first, and prints local vs remote vs base for every branch. Run it
+before any status claim. Its first run on the real repository surfaced a branch nine commits ahead,
+local only, that had never appeared in any board reported by hand.
+
+**"Verified but unpushed" emits nothing** — no red, no warning, no diff — which puts it squarely in
+the class described immediately below. Knowing about that class is not what protects you from it.
+
+## A rule with no local failure signal has no adoption gradient
+
+Its own section, because it explains a distribution rather than an incident, and because the fix is
+structural rather than a habit.
+
+> **A correctness rule whose violation produces no red propagates by memory alone — and memory does
+> not propagate. Not across developers, not across a week, not to the file next door. So its uptake
+> looks like NOISE, not like a date. Writing it down is not propagation; only a gate is.**
+
+**Measured, and it began as a wrong hypothesis.** The collation rule — every string comparison in a
+finance trigger under `COLLATE utf8mb4_bin` — was recorded in `2026_08_17_100000`'s docblock and
+corrected under #95. The natural theory was a **dated cohort**: the bare comparisons are the ones
+written before the correction, so a dated sweep fixes them.
+
+That is **false, measured**. Six of the ten affected triggers POSTDATE the correction, and one is
+`2026_07_26_140001` — the same-day SIBLING of the migration that recorded it. The adjacent file, the
+same afternoon, did not pick it up.
+
+**The absence needed an explanation and this is it.** Nothing fails when you omit the clause. There
+is no red, no lint, no failing test — so the only transmission mechanism is somebody remembering, and
+the observed distribution is exactly what random recall produces: not a date, not a gradient, noise.
+The list then grew from 29 to 31 *during the two days a gate for it was being written*, which is the
+same fact demonstrating itself.
+
+**The generalisation, which is why this is here and not in the ticket:** ANY rule whose violation is
+silent at write time is in this class. Currency shape before the CHECKs. Citation format before
+`citation-lint`. `COLLATE utf8mb4_bin` before this. The docblock version of such a rule is not a
+weaker gate — **it is not a gate at all**, and its apparent adoption is sampling noise.
+
+Two operational consequences:
+
+- **Do not infer a cohort from an undated defect.** If violations are silent, their distribution
+  carries no information about when the rule was written, and a dated sweep will miss most of them.
+- **When you write a rule of this shape, the gate is the deliverable.** The sentence is documentation
+  of the gate, not a substitute for it. If a gate is genuinely too expensive today, say the rule is
+  currently unpropagated rather than recording it as practice.
 
 **The fix has been identical every time: turn the sentence into an assertion.** Enumerate the exact
 set instead of naming members. Run the matcher over a case it must find *and* one it must not flag.

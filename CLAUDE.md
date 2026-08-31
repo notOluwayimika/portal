@@ -65,6 +65,37 @@ operational facts an agent needs most often.
   should.
 - Tests alone are not verification — migrate the dev DB and drive the affected
   flows in the running app.
+- **ONE CONSUMER OF `portal_testing` AT A TIME — and a `git push` IS a suite run.** `bin/quality`
+  runs the full suite; `.githooks/pre-push` runs `bin/quality`. So every push holds the test database
+  for ~18 minutes, and anything started beside it collides. The collision does not look like a
+  collision: it produces `1213 Deadlock ... update roles set name = ...` and `1452` foreign-key
+  violations on `role_has_permissions`, spread across nearly every file — **798 reds in one run**,
+  indistinguishable at a glance from a catastrophic regression. It also silently breaks the push,
+  because the poisoned `bin/quality` fails and a failing pre-push hook aborts the push while the
+  surrounding shell still exits 0. Three false signals from this on 2026-08-30 alone, each of which
+  read as a real finding. Before starting a suite, check nothing else is running:
+  `ps -eo command | grep -c '[p]hp.*vendor/bin/pest'`.
+
+  **AND MAKE IT GATE, NOT REPORT.** Written as a bare `echo` at the top of a compound command it is
+  decoration: on 2026-08-30 exactly such a pre-flight printed `2` and the suite started anyway,
+  because nothing branched on the number. A check whose result is not acted on is the same defect as
+  a rule with no lint behind it, one layer smaller. Either guard it —
+
+  ```bash
+  [ "$(ps -eo command | grep -c '[p]hp.*vendor/bin/pest')" -eq 0 ] || { echo "busy"; exit 1; }
+  ```
+
+  — or use `bin/db-exclusive`, which is that guard as a script: `bin/db-exclusive ./vendor/bin/pest`
+  refuses rather than reports. **Do not write the inline form**, because an unheeded check
+  manufactures the confidence that stops anyone looking.
+
+  **AND ITS FIRST VERSION WAS BROKEN CLOSED**, which is worth more than the script. The matcher
+  `[p]hp.*vendor/bin/pest` also matched the INVOKING SHELL, whose command line contains the script's
+  own text — so it refused every time, including when the database was free. Same self-matching trap
+  as the `pgrep -f` wait-loops that blocked for hours the day before, now in the tool written to stop
+  a *different* self-inflicted false signal. It was caught only by asserting the **known negative**
+  (free → exit 0) alongside the known positive; a busy-only bite-proof passes a gate that always
+  refuses.
 - **`Http::fake()` ACCUMULATES stubs and the FIRST match wins — re-faking the same URL inside a
   loop does nothing.** Every iteration after the first receives the FIRST iteration's response, so a
   `foreach` over six provider statuses tests one status six times and reports six passes. Bit once
@@ -126,6 +157,18 @@ operational facts an agent needs most often.
   branch that touches no Finance code — a stale Vite manifest after a `staging` pull
   that added new pages, so every Inertia test rendering them 500'd. The check is
   cheap: run the failing files on the base branch with none of your work present.
+  **AND THE RULE ABOVE UNDER-DESCRIBES ITS OWN FAILURE — a `staging` pull is not the only thing that
+  stales it.** `public/build/manifest.json` is ONE SHARED, GITIGNORED artifact, and **any
+  `bin/quality` run on any branch rebuilds it from that branch's tree**. So pushing branch A silently
+  invalidates the manifest for branch B, with no pull, no merge and no edit involved — ordinary
+  branch-switching is enough. Measured 2026-08-30: the manifest was rebuilt on a branch that adds an
+  Inertia page, its tests passed, a push on an unrelated docs branch then rebuilt it WITHOUT that
+  page, and the same tests 500'd with `Unable to locate file in Vite manifest`.
+
+  Being gitignored is what makes it recur: it appears in no diff, survives no code review, and is
+  never fixed *for* anybody — it breaks independently on every machine and is re-diagnosed from
+  scratch each time. **Rebuild before running any suite that renders a page your branch adds, if
+  anything else has run since** — not merely after a pull.
   **Rebuild the frontend after any `staging` pull that touches it**, and note the
   worse cousin — a manifest that is stale but still *resolvable* passes against the
   wrong bundle instead of erroring.

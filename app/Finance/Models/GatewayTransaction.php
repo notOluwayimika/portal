@@ -6,12 +6,14 @@ use App\Casts\MoneyCast;
 use App\Concerns\AddUuid;
 use App\Concerns\BelongsToSchool;
 use App\Finance\Enums\GatewayTransactionStatus;
+use App\Finance\Services\GatewayReference;
 use App\Support\Money;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
+use RuntimeException;
 
 /**
  * One checkout attempt at an online payment provider — the mutable conversation whose single
@@ -80,6 +82,50 @@ class GatewayTransaction extends Model
      *
      * @return BelongsTo<Invoice, $this>
      */
+    /**
+     * THE REFERENCE MUST ROUTE BACK TO THIS ROW'S OWN SCHOOL, and it is refused at CREATION rather
+     * than discovered at delivery.
+     *
+     * The webhook derives the school from the reference (see {@see GatewayReference}) so the lookup
+     * can run with `SchoolScope` intact instead of searching across schools. That makes the
+     * reference FORMAT a contract between the initialise call that mints one and the webhook that
+     * reads it back — two pieces of code written weeks apart by different hands.
+     *
+     * A DOCBLOCK WOULD MAKE THAT CONTRACT FOLKLORE. Its violation is silent in the worst possible
+     * way: a hand-built reference is accepted here, the parent pays, Paystack delivers, and the
+     * webhook answers 200 having found nothing — indistinguishable from a delivery for a
+     * transaction we never issued. The money is taken and no payment is recorded, and the only
+     * evidence is a log line saying the reference was unknown.
+     *
+     * So the check lives where the mistake is MADE, not where it surfaces. Minting through
+     * `GatewayReference::mint()` passes; building the string by hand fails loudly, at the write,
+     * with the reason named — before anyone is charged.
+     *
+     * This is the collation-tripwire argument one seam over: a rule with no mechanism behind it is
+     * a wish, and this one had a whole component's worth of correctness resting on it.
+     */
+    protected static function booted(): void
+    {
+        // AFTER the traits. BelongsToSchool registers its own `creating` listener during boot(),
+        // and booted() runs after every boot{Trait}, so school_id is populated by the time this
+        // callback sees the model — which is what makes comparing against it meaningful.
+        parent::booted();
+
+        static::creating(function (self $transaction): void {
+            $routesTo = GatewayReference::schoolIdFrom((string) $transaction->reference);
+
+            if ($routesTo !== (int) $transaction->school_id) {
+                throw new RuntimeException(
+                    'A gateway transaction reference must be minted by GatewayReference::mint() for '
+                    .'its own school. This one routes to '.var_export($routesTo, true).' but the row '
+                    .'belongs to school#'.$transaction->school_id.'. A reference that does not route '
+                    .'is accepted by the gateway and then unfindable when the webhook arrives: the '
+                    .'payer is charged and no payment is ever recorded.'
+                );
+            }
+        });
+    }
+
     public function invoice(): BelongsTo
     {
         return $this->belongsTo(Invoice::class);

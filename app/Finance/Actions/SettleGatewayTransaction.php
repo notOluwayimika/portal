@@ -8,6 +8,7 @@ use App\Finance\Enums\LedgerEntryType;
 use App\Finance\Exceptions\GatewayClaimLost;
 use App\Finance\Models\GatewayTransaction;
 use App\Finance\Models\GatewayTransactionEvent;
+use App\Finance\Models\Invoice;
 use App\Finance\Models\Payment;
 use App\Finance\Services\GatewayEventRedactor;
 use App\Finance\Services\SettlementBankAccount;
@@ -134,6 +135,24 @@ final class SettleGatewayTransaction
             return GatewaySettlementOutcome::FeeNotReported;
         }
 
+        // THE SUBTRACTION IS THE FEE RULING, NOT ARITHMETIC — and it is NOT policy-independent.
+        //
+        // Dev 1 settled it (docs/handoff/payments-decisions-30-august.md §2, 2026-08-30): the PARENT
+        // bears the fee. The parent is charged bill + fee, the school receives the full bill, and
+        // "the amount charged at the gateway is not the amount recorded against the invoice". The
+        // fee portion was the parent paying Paystack, never paying the school, so the invoice is
+        // credited `amount − fees`.
+        //
+        // UNDER A SCHOOL-ABSORBS RULING THIS LINE WOULD BE `$transaction->amount` INSTEAD. There the
+        // parent is charged the bill exactly and has paid it in full; the fee is the school's own
+        // cost, not a shortfall on the payer's account. Subtracting it would leave a parent who paid
+        // ₦100,000 against a ₦100,000 invoice owing ₦1,600 — permanently, on an append-only table.
+        //
+        // The two regimes agree on what the school NETS and disagree on what the payment CREDITS,
+        // which is why "the school receives bill − fee" is not an argument for subtracting here. No
+        // configuration knob exists because the ruling is settled, not because the policies agree.
+        // If the ruling ever moves, this line moves with it — and so does §11 decision 4, where the
+        // credit banked against a cancelled invoice is the RECORDED PAYMENT AMOUNT.
         $net = $transaction->amount->minus($fee);
 
         if ($net->isZero() || $net->isNegative()) {
@@ -213,6 +232,7 @@ final class SettleGatewayTransaction
     private function writePayment(GatewayTransaction $transaction, array $body, Money $net): Payment
     {
         $schoolId = (int) $transaction->school_id;
+        /** @var Invoice $invoice */
         $invoice = $transaction->invoice()->firstOrFail();
         $studentId = (int) $invoice->student_id;
         $receivedAt = $this->receivedAt($body);

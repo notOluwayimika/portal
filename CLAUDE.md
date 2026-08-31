@@ -63,6 +63,21 @@ operational facts an agent needs most often.
   And read `git diff --stat` against your own model of the change before
   pushing — no gate objects to a commit full of correct formatting, and none
   should.
+- **`git commit -m "…"` runs backticks as commands. Write the message to a FILE and use `-F`.**
+  Double quotes stop word-splitting and globbing; they do NOT stop command substitution. A commit
+  message that names identifiers the way this repo's messages do — `payment_id IS NULL`,
+  `withoutGlobalScope`, `redacted_at` — hands every one of them to the shell to EXECUTE. Bit once
+  (2026-08-31) on `feat/paystack-webhook`: nine identifiers were substituted away and the commit
+  landed with sentences like "a compare-and-swap on  whose affected-row count is asserted". The
+  only visible sign was a few `command not found` lines scrolling past ABOVE the successful commit
+  hash, which reads as noise from an earlier step. **The commit still succeeds**, which is what
+  makes it dangerous: nothing fails, and the message is wrong in exactly the places that carried
+  the technical content. Same class as the pint scalar-vs-array trap one entry down — a
+  substitution that does not expand to what you think it does — and the same fix shape: take the
+  shell out of the path (`-F file`) rather than escaping harder, because escaping is a rule you
+  have to remember every time and a file is a rule you cannot forget. Heredocs with a QUOTED
+  delimiter (`<<'EOF'`) are safe and are why the file-writing steps in the same session were fine.
+
 - Tests alone are not verification — migrate the dev DB and drive the affected
   flows in the running app.
 - **ONE CONSUMER OF `portal_testing` AT A TIME — and a `git push` IS a suite run.** `bin/quality`

@@ -1,10 +1,12 @@
 <?php
 
+use App\Finance\Actions\SettleGatewayTransaction;
 use App\Finance\Enums\InvoiceKind;
 use App\Finance\Enums\InvoiceStatus;
 use App\Finance\Models\GatewayTransaction;
 use App\Finance\Models\Invoice;
 use App\Finance\Models\Payment;
+use App\Finance\Models\PaymentAllocation;
 use App\Finance\Models\SchoolFinanceSettings;
 use App\Finance\Services\GatewayEventRedactor;
 use App\Finance\Services\GatewayReference;
@@ -153,6 +155,55 @@ it('settles a signed charge.success: the payment is amount MINUS the reported fe
         ->and($fresh->provider_reference)->toBe('3209876541');
 });
 
+it('ALLOCATES the payment to the invoice the parent chose', function () {
+    $transaction = pwtTransaction();
+
+    pwtPost(pwtBody($transaction->reference))->assertOk()->assertJsonPath('outcome', 'settled');
+
+    [$payment, $allocation] = ActiveSchool::runFor($transaction->school_id, fn () => [
+        Payment::firstOrFail(),
+        PaymentAllocation::firstOrFail(),
+    ]);
+
+    // THE ARM THE FIRST VERSION OF THIS FILE DID NOT HAVE, which is why the defect it covers was
+    // invisible: the old fixture asserted the Payment row's amount and nothing about the invoice.
+    // A payment that banks as unnamed account credit produces an IDENTICAL Payment row — same
+    // amount, same origin, same balance movement — and leaves the invoice the parent actually paid
+    // sitting outstanding. The two are indistinguishable without this assertion.
+    expect($allocation->payment_id)->toBe($payment->id)
+        ->and($allocation->invoice_id)->toBe($transaction->invoice_id)
+        ->and($allocation->amount->toKobo())->toBe($payment->amount->toKobo())
+        ->and($allocation->allocation_rule)->toBe(PaymentAllocation::RULE_PAYMENT_AGAINST_NAMED_INVOICE);
+});
+
+it('records the provider reference, so there is a way back to Paystack', function () {
+    $transaction = pwtTransaction();
+
+    pwtPost(pwtBody($transaction->reference))->assertOk();
+
+    // The only link from this row to the provider's record of the money.
+    expect(ActiveSchool::runFor($transaction->school_id, fn () => Payment::firstOrFail())->external_reference)
+        ->toBe($transaction->reference);
+});
+
+it('refuses to book against a void invoice, loudly, without a 500', function () {
+    $transaction = pwtTransaction();
+
+    ActiveSchool::runFor($transaction->school_id, fn () => voidInvoiceViaApproval(
+        (int) $transaction->school_id,
+        (string) Invoice::findOrFail($transaction->invoice_id)->uuid,
+    ));
+
+    // The payer has already been charged, so this is money with no payment against it. 200 because
+    // redelivery cannot fix our data — but recorded, left pending, and left for the discrepancy
+    // report. A 500 here would put Paystack into a retry schedule that fails identically forever.
+    pwtPost(pwtBody($transaction->reference))->assertOk()->assertJsonPath('outcome', 'could_not_book');
+
+    expect(DB::table('finance_payments')->count())->toBe(0)
+        ->and(DB::table('finance_gateway_transaction_events')->count())->toBe(1)
+        ->and($transaction->fresh()->status->value)->toBe('pending');
+});
+
 it('files the payment on the LAGOS date, not the UTC one', function () {
     $transaction = pwtTransaction();
 
@@ -213,22 +264,56 @@ it('is idempotent: a redelivered webhook does not pay the invoice twice', functi
         ->and(DB::table('finance_gateway_transaction_events')->count())->toBe(2);
 });
 
-it('the compare-and-swap predicate is what refuses the second claim', function () {
+it('the compare-and-swap refuses a second claim on an already-claimed row', function () {
     $transaction = pwtTransaction();
     pwtPost(pwtBody($transaction->reference))->assertOk();
 
-    // The swap, run again by hand against an already-claimed row. It must affect ZERO rows.
+    $settled = $transaction->fresh();
+    $payment = ActiveSchool::runFor($transaction->school_id, fn () => Payment::firstOrFail());
+
+    // A DIFFERENT payment, so the attempted claim would genuinely CHANGE the row.
     //
-    // THIS IS THE MUTATION GUARD for `AND payment_id IS NULL`: drop that clause from the UPDATE in
-    // SettleGatewayTransaction and this expectation becomes 1, because everything else in the
-    // statement matches. The idempotency test above passes on the ROW LOCK alone and so cannot see
-    // that clause disappear — which is exactly why this arm exists separately.
-    $affected = DB::update(
-        'UPDATE finance_gateway_transactions SET payment_id = ? WHERE id = ? AND payment_id IS NULL',
-        [null, $transaction->getKey()],
+    // The first version of this arm re-claimed with the SAME payment and asserted 0 affected rows.
+    // It passed with `AND payment_id IS NULL` REMOVED, because MySQL reports 0 affected when an
+    // UPDATE matches a row and writes identical values — so the 0 was proving "nothing changed",
+    // not "the predicate refused". The fixture had collapsed to where a wrong implementation passed
+    // for a reason that had nothing to do with the rule under test.
+    $rival = ActiveSchool::runFor($transaction->school_id, fn () => Payment::create([
+        'school_id' => $transaction->school_id,
+        'student_id' => $payment->student_id,
+        'reference' => $payment->reference + 1,
+        'amount' => Money::fromKobo(1),
+        'payer_name' => 'Rival delivery',
+        'received_at' => '2026-09-15',
+        'origin' => Payment::ORIGIN_GATEWAY,
+        'bank_account_id' => $payment->bank_account_id,
+    ]));
+
+    // THE PRODUCTION SWAP, called directly against a row that is already claimed, with a payment
+    // that WOULD change it. It must affect ZERO rows.
+    //
+    // An earlier version of this arm issued its OWN hand-written UPDATE and claimed to be the
+    // mutation guard for `AND payment_id IS NULL`. It was not: deleting that clause from the action
+    // changed nothing the test executed, so it asserted a property of MySQL under a comment
+    // asserting the opposite. This calls the real method, so removing the clause reds HERE.
+    //
+    // Reflection rather than widening the method to public: the swap is an internal seam, and the
+    // fix for an untestable private is not to make the class lie about its surface.
+    $method = new ReflectionMethod(SettleGatewayTransaction::class, 'claim');
+    $affected = ActiveSchool::runFor(
+        $transaction->school_id,
+        fn () => $method->invoke(
+            app(SettleGatewayTransaction::class),
+            $settled,
+            $rival,
+            pwtBody($transaction->reference)['data'],
+            Money::fromKobo(99_999),
+        ),
     );
 
-    expect($affected)->toBe(0);
+    expect($affected)->toBe(0)
+        // And the row is untouched — a refused claim must not have rewritten the winner's fields.
+        ->and($transaction->fresh()->payment_id)->toBe($payment->id);
 });
 
 it('records the delivery but writes no payment when the provider does not report its fee', function () {
@@ -246,6 +331,27 @@ it('records the delivery but writes no payment when the provider does not report
         ->and($transaction->fresh()->status->value)->toBe('pending')
         ->and($transaction->fresh()->payment_id)->toBeNull();
 });
+
+it('refuses to book a delivery whose amount is not the one we initiated', function (array $override, string $why) {
+    $transaction = pwtTransaction();
+
+    pwtPost(pwtBody($transaction->reference, ['data' => $override]))
+        ->assertOk()
+        ->assertJsonPath('outcome', 'amount_mismatch');
+
+    // Nothing booked, delivery on file, row left pending for the discrepancy report. Everything
+    // downstream takes the GROSS from our own row, so without this check a provider reporting a
+    // different amount would never be noticed — the two numbers simply never meet.
+    expect(DB::table('finance_payments')->count())->toBe(0)
+        ->and(DB::table('finance_gateway_transaction_events')->count())->toBe(1)
+        ->and($transaction->fresh()->status->value)->toBe('pending');
+})->with([
+    'a different amount' => [['amount' => 4_137_499], 'one kobo under'],
+    'a different currency' => [['currency' => 'USD'], 'not the invoice currency'],
+    // ABSENT MUST FAIL, NOT PASS. Treating a missing field as matching puts the check back where it
+    // started, which is the usual way a validation of this shape is written wrong.
+    'no amount at all' => [['amount' => null], 'missing is not matching'],
+]);
 
 it('acknowledges a reference it never minted without writing anything', function () {
     // Someone else's integration on the same Paystack account, or the dashboard's test button.

@@ -1,13 +1,60 @@
 # Report — `feat/paystack-webhook` (step 4)
 
-**Base:** `origin/staging` · **Branch:** `feat/paystack-webhook` · **Commits:** 2
-**Shape:** 8 new PHP files, 3 modified, 1 migration, 1 test file (12 tests), 1 ticket, 1 route.
+**Base:** `origin/staging` (merge-base `ba11c154`) · **Branch:** `feat/paystack-webhook`
+**Commits:** 4 (re-derive before quoting; the first version of this line said 2 and was stale by two commits)
+**Shape:** re-derive with `git diff --stat origin/staging...HEAD` rather than trusting this line.
 
-**This is full-review tier — it touches money, a migration, and `school_id` isolation.
-Recommend a cold session before merge.** No subagent review was run: the standing instruction in
-this session is not to spawn agents unless asked.
+**This is full-review tier — money, two migrations, an append-only table, `school_id` isolation,
+and a new unauthenticated route.**
+
+**A cold review WAS run and returned one stop and four fixes. All five are addressed below.** The
+stop was real: the gateway payment was never allocated to the invoice it was raised for. A second
+cold pass on the corrected branch is still worth having — this revision is larger than the change
+the first pass reviewed.
 
 ---
+
+## What the cold review found, and what changed
+
+| # | Finding | Status |
+|---|---|---|
+| 1 | **STOP** — payment never allocated to the named invoice | **Fixed** by delegating to `RecordPayment` |
+| 2 | New route absent from `route-middleware-baseline.json` | **Fixed** — one entry registered; 67 unrelated stale entries ticketed, not swept in |
+| 3 | `redacted_fields` added without extending the events update guard | **Fixed** — `2026_08_31_110000`, plus the enumeration-test arm |
+| 4 | Credit derived from settlement fee, not the up-front bill | **Partly** — see below; the residual is stated, the structural fix belongs to step 3 |
+| 5 | CAS "mutation guard" test could not see the clause it named | **Fixed** — predicate extracted and tested directly |
+
+### On finding 1, because it is the one that mattered
+
+The ruling: **allocate to the named invoice**, and the alternative was not available as a signed
+decision — it was a defect wearing one's clothes. ADR 0048 makes `applyCreditForward` the sole
+allocator of **unnamed** money; gateway money that named an invoice at initiation is not unnamed.
+Banking it misclassified the input and then applied the right rule to the wrong category.
+
+`writePayment()` now delegates to `RecordPayment`, which locks the invoice, caps the allocation at
+outstanding, and writes it under `RULE_PAYMENT_AGAINST_NAMED_INVOICE`. That also closed four of the
+reviewer's tickets at once — `external_reference`, the void-invoice refusal, the invoice-currency
+refusal, and the concurrency-doc question (there is no new lock site; the anchor is taken inside
+`RecordPayment`).
+
+**Why no test caught it:** a payment that banks as unnamed credit produces an *identical* `Payment`
+row. The old fixture asserted that row's amount and nothing about the invoice, so the two outcomes
+were indistinguishable. The new arm asserts the allocation, and reds when the allocation is
+suppressed.
+
+### On finding 4, which is NOT fully closed
+
+The ruling's second-order clause — *"the fee must be known before the parent is charged, computed up
+front rather than read off the settlement"* — means the amount to credit is **the bill**, fixed at
+initialise. What is credited is `gross − reported_fee`, which equals the bill only if two
+independently-rounded numbers agree to the kobo. `finance_gateway_transactions` has no column for
+the bill, so the residual cannot currently be measured.
+
+What this branch added instead is a **refusal**: the delivery's `amount` and `currency` are now
+compared to the transaction, and a mismatch books nothing (`amount_mismatch`, logged at ERROR, row
+left pending). That catches a wrong *charge*; it does not catch a kobo-level *rounding* residual.
+**Carrying the bill on the transaction at initialise is step 3's work, and step 7 should compare
+against it.**
 
 ## Deviations from the plan as specified
 
@@ -106,6 +153,10 @@ pint                       {"tool":"pint","result":"passed"}
 | Drop early return **and** CAS predicate | **RED** — idempotency test (double payment) |
 | Write guard `if (false)` (never refuses) | **RED ×2** — both reference-refusal arms |
 | Drop early return **only** | **GREEN — by design, see below** |
+| Suppress the allocation in `RecordPayment` | **RED** — the allocation arm (finding 1's guard) |
+| Drop `AND payment_id IS NULL` **alone** | **RED** — the extracted-CAS arm (was unkillable before) |
+| `matchesCharge()` always true | **RED ×3** — all amount/currency dataset cases |
+| Revert the events guard to its pre-fix column list | **RED** — twice, by two independent detectors |
 
 The survivor is deliberate and is the proof that the CAS is live, not a hole: with the early return
 gone, the second delivery still produced **one** payment and `already_settled`, which can only
@@ -140,6 +191,9 @@ Re-derived position from `migrate:status` rather than assuming a depth. Rolled b
 
 ## What I did NOT do
 
+- **The two mutations that were re-run after the correction both killed as ERRORS, not failures** —
+  they would have read as survivors under the summariser this branch started with. Recorded because
+  it is the second time today that instrument mattered.
 - **No browser drive.** This change adds no screen. The verify-on-return screen (step 6) is next
   and will need one.
 - **No real-provider arm.** Every test posts a locally-signed body. The HMAC is computed with the

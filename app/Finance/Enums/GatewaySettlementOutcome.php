@@ -44,6 +44,26 @@ enum GatewaySettlementOutcome: string
      */
     case NotASettlementEvent = 'not_a_settlement_event';
 
+    /**
+     * The money arrived and could NOT be booked against its invoice — the invoice is void, or its
+     * currency does not match. `RecordPayment` refuses both, and it is right to.
+     *
+     * THIS IS THE SERIOUS ONE. A payer has been charged and the system holds no payment. It answers
+     * 200 because redelivery cannot fix it — the refusal is about our data, not about the delivery
+     * — and it is logged at ERROR, left `pending`, and left for step 7's discrepancy report. It
+     * must never be silently folded in with the ordinary outcomes.
+     */
+    case CouldNotBook = 'could_not_book';
+
+    /**
+     * The provider reported an amount or a currency that is not what this transaction asked for.
+     *
+     * Nothing is booked. The delivery is on file, the row stays `pending`, and it is logged at
+     * ERROR — a provider charging a different amount from the one we initiated is either a defect
+     * or a reference collision, and neither should be absorbed silently into a payer's balance.
+     */
+    case AmountMismatch = 'amount_mismatch';
+
     /** The transaction vanished between the lookup and the lock. Recorded, not settled. */
     case Unknown = 'unknown';
 }

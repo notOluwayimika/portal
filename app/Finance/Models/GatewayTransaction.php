@@ -78,11 +78,6 @@ class GatewayTransaction extends Model
     ];
 
     /**
-     * The invoice this attempt was raised to settle.
-     *
-     * @return BelongsTo<Invoice, $this>
-     */
-    /**
      * THE REFERENCE MUST ROUTE BACK TO THIS ROW'S OWN SCHOOL, and it is refused at CREATION rather
      * than discovered at delivery.
      *
@@ -126,6 +121,11 @@ class GatewayTransaction extends Model
         });
     }
 
+    /**
+     * The invoice this attempt was raised to settle.
+     *
+     * @return BelongsTo<Invoice, $this>
+     */
     public function invoice(): BelongsTo
     {
         return $this->belongsTo(Invoice::class);

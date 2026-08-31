@@ -1826,6 +1826,10 @@
         "permission:finance.access",
         "permission:finance.invoice.void-request.reject"
     ],
+    "POST /api/webhooks/paystack": [
+        "api",
+        "throttle:120,1"
+    ],
     "POST /dashboard/refresh": [
         "web",
         "auth",

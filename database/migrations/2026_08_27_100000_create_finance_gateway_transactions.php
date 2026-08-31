@@ -551,9 +551,22 @@ return new class extends Migration
      * shipping the door now makes the retention policy a code change against a schema that already
      * permits it rather than a schema change against live money data.
      *
-     * SO THE FULL PAYLOAD IS KEPT — a live dispute is answered by what the provider actually sent,
-     * and §7's "the payer succeeded and our handler threw" is diagnosed from exactly the fields a
-     * write-time redaction would have discarded — AND `redacted_at` is the one door out.
+     * SO THE PAYLOAD IS KEPT — a live dispute is answered by what the provider actually sent, and
+     * §7's "the payer succeeded and our handler threw" is diagnosed from exactly the fields a
+     * blanket write-time redaction would have discarded — AND `redacted_at` is the one door out.
+     *
+     * AMENDED 2026-08-31 (`feat/paystack-webhook`), because this paragraph originally said the FULL
+     * payload is kept and that is no longer true. Two named fields are now stripped BEFORE the
+     * insert — `data.authorization.authorization_code`, which Paystack marks `reusable: true` and
+     * which can initiate a future charge against the payer's card, and `data.authorization.
+     * signature`, a card fingerprint that correlates across every school on a platform whose only
+     * isolation boundary is `school_id`. Neither is needed to reconcile a payment.
+     *
+     * The reasoning above still holds for everything else, and the two mechanisms remain distinct:
+     * write-time stripping records itself in `redacted_fields` and leaves the row STORED, while
+     * `redacted_at` is retention redaction and means the payload is GONE. See
+     * `App\Finance\Services\GatewayEventRedactor` for the list, which is the thing being
+     * maintained.
      *
      * REDACTION HAS TO PROVE ITSELF, and the first version of this guard did not make it. It required
      * `redacted_at` to move and said NOTHING about the payload, so

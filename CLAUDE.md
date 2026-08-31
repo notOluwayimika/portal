@@ -63,6 +63,22 @@ operational facts an agent needs most often.
   And read `git diff --stat` against your own model of the change before
   pushing — no gate objects to a commit full of correct formatting, and none
   should.
+- **A command whose exit code matters is NEVER the left side of a pipe — and an ad-hoc shell
+  inherits none of this repo's safety.** `bin/quality`, `.githooks/pre-push`, `bin/board` and
+  `bin/db-exclusive` all `set -uo pipefail`, so the scripts are fine. A one-off command typed at a
+  prompt is not: `git push -u origin <branch> | tail -6` exits with **tail's** status, which is 0
+  whatever the push did. Bit on 2026-08-31 — the pre-push gate REFUSED the push (one ratchet
+  regression), and the command reported success. Worse, the harness's own completion notification
+  reported `exit code 0` too, because it reports the pipeline's status: **the false signal was
+  echoed back by the tooling, not just produced by it**, so there was no second opinion to catch it.
+  What caught it was `git rev-parse origin/<branch>` — the ref, not the code — which is the same
+  discipline `bin/landed` exists to enforce one level up. Three earlier pushes the same day reported
+  success without moving the remote for three DIFFERENT reasons (hook aborted by a branch switch, a
+  gate poisoned by a concurrent suite, DNS), so this is the fourth instance of one class: **a
+  wrapper's exit status is a claim about the wrapper.** Either drop the pipe when you need the
+  status, or verify the effect instead of the code — and prefer the latter, because it is the only
+  form that survives someone else adding a pipe later.
+
 - **`git commit -m "…"` runs backticks as commands. Write the message to a FILE and use `-F`.**
   Double quotes stop word-splitting and globbing; they do NOT stop command substitution. A commit
   message that names identifiers the way this repo's messages do — `payment_id IS NULL`,

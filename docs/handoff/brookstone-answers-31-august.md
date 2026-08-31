@@ -67,8 +67,21 @@ review step is built, and the truncation ticket's severity drops when it is.
 calling the finance grant "DECIDED and UNIMPLEMENTED". The reading half of their requirement is one
 already-decided grant away.
 
-The audit trail they describe — who, what, date and time — is what spatie activitylog already
-records for every other approval in this system. Nothing new is needed to satisfy that sentence.
+**CORRECTED 2026-08-31 (second pass).** This paragraph claimed the audit trail they describe —
+who, what, date and time — "is what spatie activitylog already records for every other approval in
+this system. Nothing new is needed." **That is false, and it was the load-bearing half of the
+"this is cheap" argument.** Measured: `app/Finance` contains exactly one model using `LogsActivity`
+(`StudentDiscountAward`) and exactly one explicit `activity()` call (`AwardStudentDiscount`,
+log_name
+'finance'). `CreditNote`, `VoidRequest`, `FeeScheduleChange`, `DiscountPolicyChange` and
+`OpeningBalanceBatch` write **zero** activitylog entries. The real trail is domain columns on the
+request row — `submitted_by` / `decided_by_user_id` / `decided_at` / `rejection_reason`, under a DB
+CHECK, stamped through `transitionTo()`.
+
+Which inverts the point above about the auditor's seat. `internal_auditor`'s only grant is the
+activity log, and **the finance approvals are not in it.** The seat is not one grant away from
+reading its own trail; it is one grant away from reading a log the trail was never written to. The
+review's audit record is a build, not a freebie.
 
 **CORRECTED 2026-08-31 — parents CAN already see invoices.** This section first claimed there was
 no parent-facing finance surface, and called this "the cheapest moment the requirement could ever
@@ -185,8 +198,32 @@ a
 human releases the batch to `issued`". No `Draft` case was ever built, and Brookstone's answer makes
 that shape wrong anyway: a draft would not count against the balance, and they want it to.
 
-**The review action is batch-level; the state is per-invoice.** Nobody reviews six hundred invoices
-one at a time, and the termly run produces one per student.
+**Per-invoice is the COMPLETE axis; batch is a convenience over it.** An earlier draft of this line
+read "the review action is batch-level; the state is per-invoice", which as a design instruction is
+wrong. Measured: there are two run shapes keyed differently — `BulkInvoiceRun` on `enrollment_id`,
+`ManualInvoiceRun` on `student_id` — a whole-school termly billing is N runs, one per class level,
+and two invoice routes belong to no run at all (`POST /v1/finance/invoices` and
+`POST /v1/finance/students/{student}/invoices`). `finance_invoices` carries no run reference; the
+link is one-way, from run row to invoice. Brookstone said ALL bills, so the per-invoice axis has to
+be the complete one and any batch action is a convenience layered on top.
+
+Cost is not the obstacle it looks like. Stamping 611 invoices is one set-update statement, chunked
+the way the manual-run target inserts were on 31 August; the measured lesson from that commit was
+*don't write per-row*, not *don't write per-invoice*.
+
+**The audit entry is per-subject, not per-batch.** `approval-feeds.ts` makes `subject` a required
+member for the stated reason that "an approval row that cannot say WHICH thing it is about voids the
+control it implements". One entry reading "reviewed 611 invoices" would be the first control in this
+system whose trail cannot name what was reviewed — and Brookstone asked the auditor to review the
+selected students, the amounts and the applicable scholarships, which are per-student facts.
+
+**The approvals queue is a different axis, and its coverage test will force the naming.** It carries
+five feeds, not six — credit note, void, fee-schedule change, discount-policy change, opening
+balance — and every one gates a REQUEST that has not yet acted. An IA review gates the visibility of
+an object that has already posted a ledger charge. But `ApprovalsQueueFeedCoverageTest` matches on
+URI shape alone, so any new `api/v1/finance/*/pending` route reds the suite unless it is enrolled in
+`APPROVAL_FEEDS`. The route name must be chosen deliberately, with the reason recorded, or the
+naming will make that decision silently.
 
 **Both halves cost something, and the earlier claim that the visibility gate was free is
 withdrawn** — see the correction in §2. `parent/finance` already shows parents every issued invoice,
@@ -204,6 +241,17 @@ That second option is the cheap interim and it should be costed before the full 
 ---
 
 ## 7. Still open
+
+- **What a parent sees while a bill is under review.** Asked 31 August, with a recommendation: show
+  a balance that excludes bills pending review, so the list and the total agree and both move on
+  release, rather than a complete balance above a list that cannot account for it. **Segun's
+  directive: if no answer by Wednesday, proceed with the recommended option.** Built that way on
+  31 August (`d4536ae1`).
+- **The bills that already exist.** Asked 31 August: are pre-existing bills treated as already
+  reviewed? **Default taken, same directive shape:** the migration stamps every invoice present at
+  its run as reviewed, using `created_at` rather than `now()` so the data does not assert that six
+  hundred invoices were reviewed in one instant, and leaving `reviewed_by_user_id` NULL so
+  "reviewed with no reviewer" is a legible grandfathered state.
 
 - **What happens when the Auditor finds a bill is NOT correct.** The bill already exists and already
   counts against the child's balance, so something must undo or change it — and the only instrument

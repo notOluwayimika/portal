@@ -254,6 +254,66 @@ trusting `--step=1`, and `--step=1` counts from the branch's latest migration �
 migration sits on top, a rollback audit that trusts the step count reverts the wrong thing and passes
 having tested nothing. That is a documented bite in this repository, not a hypothetical.
 
+## 4b · §11 DECISION 4 HAS MOVED UP — it blocks the webhook handler, not just a screen
+
+**Raised 2026-08-31.** The 2 September grouping assumed decision 4 (*what happens to a payment
+against an invoice cancelled in between*) only shaped a screen. It does not. **It blocks step 4's
+call site**, and the block is not the one anybody expected.
+
+The fee ruling made "who bears the fee" a **ledger** question, not a pricing one, and the two answers
+write different rows:
+
+| | what the parent is charged | what settles the invoice | where the fee lands |
+|---|---|---|---|
+| **Parent bears it** | gross (`bill + fee`) | the **bill** portion | never enters the ledger — it was never the school's money |
+| **School absorbs it** | the bill exactly | the bill, in full | a shortfall at **settlement**, not at payment |
+
+**Same screen, different `finance_payments` row.** And that row is append-only, so choosing wrongly
+is unrepairable — not "hard to fix", *unrepairable*.
+
+**So the fee-bearer policy will be a REQUIRED EXPLICIT INPUT to the payment path, with no default.**
+Nothing will compile without a choice being made somewhere a human can see it. A default here is
+exactly the shape this project keeps paying for: not a decision anyone took, becoming one the moment
+the first real transaction is written.
+
+### It may not need a decision — here is the derivation, please confirm rather than choose
+
+Gross-or-net falls out of the fee ruling plus a rule already in force, so this is a **yes/no**, not a
+fork:
+
+> **Credit banked against a cancelled invoice = THE AMOUNT RECORDED AS THE PAYMENT.**
+> Which is the **bill portion** under parent-bears, and the **full bill** under school-absorbs.
+
+**Both alternatives break in exactly one regime, which is what makes this a derivation:**
+
+| candidate rule | parent-bears | school-absorbs |
+|---|---|---|
+| credit *what the payer paid* | ✗ school banks credit for money it never received (the fee went to Paystack) | ✓ |
+| credit *what the school received* | ✓ | ✗ parent loses a fee they were told they would not bear |
+| **credit the invoice-settling amount** | **✓** | **✓** |
+
+The third is correct in both, and it is **already what `RecordPayment` writes** — so the ledger needs
+no new concept, no new column and no new branch. That is the tell that it is the right rule rather
+than a convenient one.
+
+**Please confirm the derivation holds.** If it does, decision 4 is closed and step 4's call site is
+unblocked. Both fee-bearer arms are being built regardless, behind a required explicit input with no
+default.
+
+### The residual, which will surface at a counter rather than in code
+
+Under **parent-bears**, a cancellation leaves the payer out the gateway fee **with no trace in our
+books** — the fee was never the school's money, so it never entered the ledger, so there is nothing to
+refund and nothing recording that they paid it.
+
+Making that payer whole is therefore a **goodwill credit**: a different instrument from a refund,
+requiring somebody with the ability to issue one. **Nobody on production has that ability until
+Section 0.1 creates the approvals accounts.**
+
+Raising it now as a known consequence rather than letting the first affected parent discover it. It
+needs no code today; it needs to be a sentence somebody has read before a bursar is asked the
+question at a desk.
+
 ## 5 · What is actually still open, as of 2026-08-30
 
 Kept short deliberately: a list that re-asks answered questions is a list that stops being read.
@@ -265,9 +325,11 @@ Kept short deliberately: a list that re-asks answered questions is a list that s
 2. **Ability names for the gateway ROUTES.** `finance.payment.record` covers recording a payment;
    the webhook, the verify-on-return and the pay-initiation endpoints still need theirs, and the
    grants-convergence lint bites on merge if we each invent our own.
-3. **The three §11 business questions** — who bears the gateway fee, whether partial payment is
-   permitted, and what happens to a payment against an invoice voided in between. I searched staging
-   and could not find any of them answered. All three change the screen or the ledger.
+3. **§11 decision 4 — ESCALATED, see §4b.** It blocks the webhook handler's call site, not merely a
+   screen: the fee ruling turned "who bears it" into a question about which `finance_payments` row
+   gets written, and that table is append-only. Decisions 2 and 3 are answered (parent bears; partial
+   permitted); 4 needs one more sentence about whether a payment against a cancelled invoice banks
+   as credit at gross or net.
 4. **The payment-received notification's name**, so it is registered once rather than twice.
 5. **Two policy defaults that are mine to raise and not to set:** how long a raw gateway payload is
    retained before redaction (`docs/handoff/tickets/gateway-payload-retention.md`), and how long a
@@ -306,6 +368,46 @@ knowing: an exact-set gate over shared schema fires on legitimate additions too,
 mentions nobody's table. That is the intended trade — silent addition is what the named lists could
 not see — and it is a real tax on whoever adds the next CHECK. It should be widened to
 `finance\_%` only when the 29 are fixed, not before.
+
+## 6 · A separate defect, MEASURED so it does not need your attention yet
+
+Surfaced while auditing branches, measured before raising, and reported here only so the number
+exists rather than the suspicion.
+
+**The defect is real on the write path.** `GuardianService::createGuardianWithUser` dedupes the USER
+by email and then calls `Guardian::create()` **unconditionally**, so a second `guardians` row against
+the same `(user_id, school_id)` is a normal outcome rather than an exceptional one. With no email at
+all, `User::where('email', null)->first()` never matches under MySQL, so an email-less submission
+mints a fresh user AND a fresh guardian. Nothing at the schema level forbids either — `guardians`
+carries non-unique indexes on `user_id` and `school_id` and no unique key beyond `uuid`.
+
+**It matters because it sits beneath the payment gate.** `GuardianPaymentAuthorisation::mayPay`
+delegates to `isWardOf`, which resolves through `forUserInActiveSchool()` — and that resolver exists
+in that shape precisely because a multi-school parent's rows are unordered. Duplicates are the
+condition it was built to survive.
+
+**Measured on the 27 August production clone (`portal270826`), and on two other copies:**
+
+```
+duplicate (user_id, school_id) pairs : 0      redundant rows: 0
+guardian rows with a NULL-email user : 0
+guardians total                      : 1067
+users with NULL email, overall       : 1     (holding no guardian row)
+```
+
+**So it is a backlog item, not a resumption blocker**, and the intake-week argument does not fire the
+way a code reading suggests: the email-less arm needs email-less submissions, and production has
+essentially none. If new-enrolment intake creates guardians *with* emails, the deduping half handles
+them and the leak stays shut. Worth watching during intake; not worth your attention before it.
+
+**Not asserted:** whether a duplicate could make `mayPay` answer wrongly. With zero duplicates the
+question is moot today, and the two failure directions differ enough to matter if it ever isn't — a
+false negative (a parent cannot see their own child) is support load; a false positive (access to
+someone else's ward) would be an incident. Neither is established and neither is claimed.
+
+The remediation branch `feat/guardian-merge-command` — nine commits, 17-18 August, unlanded, parked
+with two open review tickets of its own — is pushed for visibility, **not proposed**. It needs a
+decision eventually; it does not need one this week.
 
 ## If the 31st passes with no answer
 

@@ -116,12 +116,75 @@ Saturday, not to Friday.** The docblock at the call site should say so, next to 
 
 ---
 
+## 4 · THE INTERIM STRIP MAKES "raw payload" FALSE — so it must not be called that
+
+Stripping two fields at write is right (§2), and it has a consequence that must be built in rather
+than discovered: **the stored payload is then no longer the payload.** A column documented as the
+provider's raw body, holding a body we edited, is a description asserting a property the artifact
+does not have — and every downstream reader (the discrepancy report, a dispute, whoever reconstructs
+a bad night eighteen months from now) will treat it as verbatim, because that is what it says.
+
+Two requirements, both cheap now and expensive later:
+
+1. **Name it for what it is.** Column comment and docblock read *"provider payload, authorisation
+   credential fields removed at write"* — never *"raw"*.
+2. **Record THAT we stripped, and WHICH fields.** An absent `authorization_code` is otherwise
+   ambiguous between *"Paystack did not send one"* and *"we removed it"*, and those are entirely
+   different facts to an investigator. A `redacted_fields` list on the event row turns a silence into
+   a statement. Without it this is the no-local-failure-signal class **inside the artifact whose
+   whole job is to be evidence.**
+
+### The one-way door, named rather than discovered
+
+**Stripping is irreversible for historical rows; keeping is reversible**, because the redaction door
+already exists. So the interim deliberately takes the NON-recoverable direction — and it is still
+right:
+
+- nothing in the product charges a saved card, so stripping loses nothing anyone needs today;
+- keeping accumulates a live liability during precisely the window in which nobody has decided.
+
+**The cost, stated so it is not a surprise:** if saved-card billing is later wanted, cards from
+before the decision must be re-entered by their owners. That cost was probably unavoidable anyway —
+storing a reusable authorisation needs the parent's consent, and nobody has asked for it.
+
+## 5 · The timezone sweep — one candidate, and my check of it was vacuous
+
+`app.timezone` is UTC, so the naive instant→date path is the default everywhere, not only in the
+gateway. Swept `app/Finance/` for `toDateString()` and `format('Y-m-d')`:
+
+**Safe** — these read DATE columns, where the conversion is a no-op:
+`OpeningBalanceBatchController:287` and `PostOpeningBalanceBatch:226,277,313` (`cutover_date`, a
+`date`), `ImportOpeningBalances:445` (validating a user-entered string).
+
+**One candidate** — `ApproveVoidRequest::originalChargeEffectiveAt()`:
+
+```php
+return $charge?->effective_at?->toDateString()      // date column — safe
+    ?? $invoice->created_at->toDateString();        // TIMESTAMP — carries the bug
+```
+
+Its docblock says the fallback is unreachable, and gives a reason that covers only half the branch:
+*the column is NOT NULL and the table was empty when it was added* explains why `effective_at` is
+never null — it does **not** explain the `$charge === null` case, which fires when an invoice has no
+charge row at all.
+
+**And my attempt to measure that was vacuous, which is worth recording as much as the finding.** The
+query "invoices with no charge ledger row" returned **0** — but the database holds **0 invoices**, so
+it cannot distinguish *"every invoice has a charge"* from *"nothing exists yet"*. Both give zero.
+Reported as confirmation it would have been the degenerate-fixture class in my own check.
+
+**What is actually established:** the path is unreachable **today**, because the finance tables are
+empty. Whether it becomes reachable once invoices exist is open, and cheap to re-run then. Not
+Developer 1's urgent problem — a `ticket`, with the note that the docblock's stated reason does not
+cover the branch that can actually fire.
+
 ## What this changes for step 4
 
 1. `observedFee()` reads `data.fees` — confirmed, no adjustment.
 2. The gross-up uses solve-for-gross — confirmed correct against the real schedule.
 3. **The event row must not store `authorization_code` or `signature`** pending §2's decision. Until
    it is taken, redact-at-write is the safe default: it can be relaxed later, and an unwritten token
-   needs no remediation.
+   needs no remediation. **And per §4 the column is named for what it holds, with a `redacted_fields`
+   list** — a stripped payload described as raw is a lie in the evidence table.
 4. `received_at` comes from `paid_at` **converted to Africa/Lagos**, with the reasoning at the call
    site.

@@ -140,6 +140,24 @@ any bite-proof: what does `beforeEach` do to my plant?
 This is the same family as *a green is not a pass when it was measured against a base that has
 moved* — a result measured against a state that no longer existed by the time the assertion ran.
 
+## Report the board from `bin/board`, never from recall
+
+A one-line rule with a script behind it, because it was learned the hard way inside the very session
+that wrote the section below.
+
+**A status report derived from your own account of your work is not a measurement of your work.** It
+inherits every gap in the account, including the ones you have no way to notice. On 2026-08-31 two
+finished, fully-verified branches were reported as ready while existing **only locally**. The summary
+was not careless — it was an accurate summary of a board being read from memory, and memory has no
+entry for *"I verified this and did not push it."*
+
+`bin/board` reads refs, fetches first, and prints local vs remote vs base for every branch. Run it
+before any status claim. Its first run on the real repository surfaced a branch nine commits ahead,
+local only, that had never appeared in any board reported by hand.
+
+**"Verified but unpushed" emits nothing** — no red, no warning, no diff — which puts it squarely in
+the class described immediately below. Knowing about that class is not what protects you from it.
+
 ## A rule with no local failure signal has no adoption gradient
 
 Its own section, because it explains a distribution rather than an incident, and because the fix is

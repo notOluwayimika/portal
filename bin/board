@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# THE BOARD, DERIVED FROM REFS — never from anybody's account of their own work.
+#
+# WHY THIS EXISTS. On 2026-08-31 two finished branches were reported as ready while existing only
+# locally. The summary was not careless; it was a correct summary of a board being read from
+# RECOLLECTION, and recollection has no entry for "I verified this and did not push it". A status
+# report derived from your own account of your work is not a measurement of your work — it inherits
+# every gap in the account, including the ones you have no way to notice.
+#
+# "Verified but unpushed" EMITS NOTHING. No red, no warning, no diff. It is the same class as the
+# collation rule whose violation produced no failure signal: it propagates by memory alone, and
+# memory does not propagate. The instrument is the fix; knowing about the class is not.
+#
+# Reads refs only. Fetches first (its one mutation) so "remote" means the remote, not a stale
+# tracking ref — the same reason `bin/landed` fetches.
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+git fetch -q origin 2>/dev/null || { echo "fetch failed — cannot report on refs I could not read" >&2; exit 2; }
+
+base="${1:-origin/staging}"
+printf '%-42s %-9s %-9s %-14s %s\n' BRANCH LOCAL REMOTE STATE 'AHEAD OF BASE'
+printf '%.0s─' {1..96}; printf '\n'
+
+git for-each-ref --format='%(refname:short)' refs/heads |
+grep -E '^(feat|fix|docs|chore|ci|refactor|test|perf)/' |
+while read -r b; do
+    l=$(git rev-parse --short "$b")
+    if r=$(git rev-parse --short "origin/$b" 2>/dev/null); then
+        if [ "$(git rev-parse "$b")" = "$(git rev-parse "origin/$b")" ]; then state='pushed'
+        elif git merge-base --is-ancestor "origin/$b" "$b"; then state='AHEAD of remote'
+        else state='DIVERGED'; fi
+    else r='—'; state='LOCAL ONLY'; fi
+
+    ahead=$(git rev-list --count "$base..$b" 2>/dev/null || echo '?')
+    # Nothing ahead of the base is already merged or empty; not interesting.
+    [ "$ahead" = "0" ] && continue
+
+    printf '%-42s %-9s %-9s %-14s %s\n' "$b" "$l" "$r" "$state" "$ahead"
+done

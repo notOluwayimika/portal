@@ -135,14 +135,68 @@ fourth filter that shadows an existing one is how the guardians and students ind
 
 ---
 
-## 6. Still open
+## 6. Answered 31 August — both review questions, and the design ruling they force
 
-- **Does Internal Audit review apply to ALL bills — including the scheduled termly run for the whole
-  school — or only to group billing the Finance team prepares by hand?** The cost difference is
-  large. Asked 31 August.
-- **Does "reviewed before released to parents" mean the bill does not exist and does not count
-  against the balance until approval, or that it exists and counts but is not shown or sent until
-  approval?** Both are buildable and they are very different pieces of work. Asked 31 August.
+**Scope: ALL bills.** The Internal Audit review applies to the normal termly fee bills as well as to
+any additional or group bills Finance prepares. This is therefore a platform-wide change to the
+invoice lifecycle, not a feature of the manual run screen.
+
+**Timing: option (b).** The bill is created and reflected in the student's account, but it is not
+visible or sent to parents until the Auditor has reviewed and confirmed it. The system must clearly
+show the bill as pending Internal Audit review until it is released.
+
+### The ruling that follows: pending-review must NOT be an `InvoiceStatus` case
+
+This is settled by a measurement rather than by taste. `finance_invoices` carries a generated column
+
+    active_enrollment_key = IF(status = 'issued', student_curriculum_id, NULL)
+    UNIQUE (school_id, active_enrollment_key)
+
+installed by
+`2026_07_19_120000_slice2_invoice_total_immutable_and_active_enrollment_guard.php:37-38`.
+That is the duplicate-invoice guard. **Any status other than `issued` frees the enrollment's active
+slot** — `InvoiceStatus`'s own docblock says so deliberately, naming "DRAFT, REJECTED, Ph3" as
+future
+states that *should* free it.
+
+That docblock was written on the assumption that a pre-release bill does not count. Brookstone have
+now said it does count. So a bill awaiting review that carried a new STATUS would leave its
+enrollment unguarded for the whole review window, and a second run over the same cohort would
+succeed instead of colliding.
+
+**The state therefore lives on a separate axis.** `status` stays `issued`; a release/review column
+carries whether parents may see it. That also leaves the eight `InvoiceStatus::` reads in the tree
+correct without revisiting each one, which is the other way this goes wrong quietly.
+
+### What else follows
+
+**This supersedes V2's condition (a) in `finance-mvp-cut-brief.md`** — "it generates to `draft` and
+a
+human releases the batch to `issued`". No `Draft` case was ever built, and Brookstone's answer makes
+that shape wrong anyway: a draft would not count against the balance, and they want it to.
+
+**The review action is batch-level; the state is per-invoice.** Nobody reviews six hundred invoices
+one at a time, and the termly run produces one per student.
+
+**The pending indicator costs something today; the visibility gate does not.** Parents have no
+finance view yet, so gating them is free. But "clearly show the bill as pending Internal Audit
+review" has to appear now on the invoice list, the invoice detail and the staff-facing student
+statement.
+
+**Scheduling.** The parent screens (U20-U23) are in the launch cut and are all currently nothing. If
+parents can see bills at launch, this review gate is launch-blocking, because a bill reaching a
+parent unreviewed is what Brookstone have ruled out. If the parent screens slip past launch, it is
+not. That dependency belongs in the plan rather than in cutover week.
+
+---
+
+## 7. Still open
+
+- **What happens when the Auditor finds a bill is NOT correct.** The bill already exists and already
+  counts against the child's balance, so something must undo or change it — and the only instrument
+  today is a void, which needs Executive Director approval and is refused once any allocation exists
+  against the invoice. Asked 31 August; three options put to them (return to Finance, Auditor
+  cancels directly, or an existing practice we have not been told about).
 
 Segun's own direction of 31 August — plan for every possibility without limitation, and yes to
 selecting a group without ticking names — stands as the working assumption. It is recorded here as

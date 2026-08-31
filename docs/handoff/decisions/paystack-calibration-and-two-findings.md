@@ -173,10 +173,30 @@ query "invoices with no charge ledger row" returned **0** — but the database h
 it cannot distinguish *"every invoice has a charge"* from *"nothing exists yet"*. Both give zero.
 Reported as confirmation it would have been the degenerate-fixture class in my own check.
 
-**What is actually established:** the path is unreachable **today**, because the finance tables are
-empty. Whether it becomes reachable once invoices exist is open, and cheap to re-run then. Not
-Developer 1's urgent problem — a `ticket`, with the note that the docblock's stated reason does not
-cover the branch that can actually fire.
+**And re-running the count later would NOT fix it**, which is the more useful correction. **A count
+over existing rows can confirm a violation; it can never establish an invariant.** Zero charge-less
+invoices says nothing about whether one is *permitted* — exactly as zero duplicate guardians said
+nothing about whether `Guardian::create()` can duplicate. Both are readings of HISTORY offered as
+statements about the RULES. Once invoices exist the same query becomes non-vacuous and still does not
+answer the question.
+
+**What answers it is the write path and the schema, both readable now.** Checked: there is **no
+constraint anywhere requiring an invoice to carry a charge line.** `2026_08_29_120000` requires a
+destination *on* charge lines — not that one exists. So whatever the generate modal currently
+permits, the claim is **unenforced**: nothing stops an invoice of only waiver and discount lines
+being written by any future path, and the fallback fires the moment one is.
+
+**By the quantifier rule this docblock is a test that was never written.** *"Unreachable"* is the
+strongest claim in that file, supported by a reason covering only half the branch. Two honest
+resolutions:
+
+- **Cheap and true:** weaken it to what was actually checked — *"not reachable through current write
+  paths; not enforced."* One sentence.
+- **Better:** make it executable — a constraint that every invoice carries at least one charge line,
+  or an explicit throw on the null-charge path rather than a silent fallback to a timestamp-derived
+  date.
+
+`ticket`, for Developer 1, not urgent: the fallback is currently unreached and the tables are empty.
 
 ## What this changes for step 4
 

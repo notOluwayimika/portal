@@ -54,6 +54,8 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $cancelled_at
  * @property int|null $cancelled_by_user_id
  * @property string|null $cancel_reason
+ * @property Carbon|null $reviewed_at when Internal Audit released this bill to parents; NULL = not yet visible to the payer
+ * @property int|null $reviewed_by_user_id LOOKUP, not an FK. NULL on a grandfathered row (see 2026_08_31_100000)
  * @property Carbon $created_at
  */
 class Invoice extends Model
@@ -69,6 +71,7 @@ class Invoice extends Model
         'kind' => InvoiceKind::class,
         'total' => MoneyCast::class.':total_minor,total_currency',
         'cancelled_at' => 'datetime',
+        'reviewed_at' => 'datetime',
     ];
 
     protected static function booted(): void
@@ -203,5 +206,38 @@ class Invoice extends Model
     public function scopeExcludingVoid(Builder $query): Builder
     {
         return $query->where('status', '!=', InvoiceStatus::Void->value);
+    }
+
+    /**
+     * Has Internal Audit released this bill to parents? (Brookstone, 31 August 2026 — §6.)
+     *
+     * FALSE DOES NOT MEAN THE BILL IS NOT REAL. An unreleased invoice is `issued`, holds the
+     * enrollment's active slot, and has already posted its ledger charge — so it counts against the
+     * student's balance exactly as a released one does. Only its VISIBILITY to the payer is gated.
+     * That is the whole point of putting the state on this axis rather than on `status`; see
+     * 2026_08_31_100000's docblock for the `active_enrollment_key` measurement that forces it.
+     */
+    public function isReviewed(): bool
+    {
+        return $this->reviewed_at !== null;
+    }
+
+    /**
+     * Only bills a parent may see — invoices Internal Audit has released.
+     *
+     * A NAMED SCOPE AND NEVER A GLOBAL ONE, for the reason `scopeExcludingVoid()` above records and
+     * one more that is specific to this axis. Voidness is a reporting concern; release is a
+     * VISIBILITY concern, and it is one-sided: it applies to the parent portal and to nothing else.
+     * A global scope would silently withhold unreleased invoices from the bursar, the statement, the
+     * duplicate guard's own read and the auditor who is supposed to review them — hiding the bill
+     * from the very people the ruling puts in charge of it, and doing so with no call site to read.
+     *
+     * There is exactly ONE consumer (`InvoiceReadModel::outstandingForStudent()`), and the count is
+     * the point: `accountPositionForStudent()` is shared with the staff statement and must NOT
+     * acquire this predicate — per Brookstone the balance keeps counting the bill.
+     */
+    public function scopeReviewed(Builder $query): Builder
+    {
+        return $query->whereNotNull('reviewed_at');
     }
 }

@@ -53,6 +53,26 @@ return [
      * to an empty key, because a signature over a known secret authenticates nothing
      * while appearing to.
      */
+    /*
+     * PAYSTACK — the payment gateway (§6 steps 3-6).
+     *
+     * THE SECRET KEY IS THE WEBHOOK VERIFICATION KEY TOO. Paystack signs every webhook with an
+     * HMAC-SHA512 over the raw body keyed on this same secret, so this one value is both the
+     * outbound API credential and the inbound authenticity check. Leaking it does not merely let
+     * someone call the API as us — it lets them forge webhooks we would believe.
+     *
+     * NO DEFAULTS, DELIBERATELY. `env('...')` with no second argument yields null when unset, and
+     * PaystackSignature refuses to verify with an empty key rather than computing an HMAC over ''.
+     * A signature checked against a known-empty secret authenticates nothing while appearing to —
+     * the same reasoning as services.pickup_authorization.callback_secret.
+     */
+    'paystack' => [
+        'secret_key' => env('PAYSTACK_SECRET_KEY'),
+        'public_key' => env('PAYSTACK_PUBLIC_KEY'),
+        // Overridable so a test or a sandbox can point elsewhere; the default is production's host.
+        'base_url' => env('PAYSTACK_BASE_URL', 'https://api.paystack.co'),
+    ],
+
     'pickup_authorization' => [
         'callback_secret' => env('PICKUP_AUTHORIZATION_CALLBACK_SECRET'),
     ],

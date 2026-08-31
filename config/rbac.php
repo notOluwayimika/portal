@@ -6,6 +6,10 @@ use App\Finance\Models\CreditNote;
 use App\Finance\Models\Invoice;
 use App\Finance\Models\InvoiceLine;
 use App\Finance\Models\LedgerTransaction;
+use App\Finance\Models\ManualInvoiceRun;
+use App\Finance\Models\ManualInvoiceRunLine;
+use App\Finance\Models\ManualInvoiceRunRow;
+use App\Finance\Models\ManualInvoiceRunTarget;
 use App\Finance\Models\OpeningBalanceBatch;
 use App\Finance\Models\OpeningBalanceRow;
 use App\Finance\Models\Payment;
@@ -155,6 +159,18 @@ return [
     | the models that stay on.
     |
     */
+    /*
+     * THIS LIST IS ASSERTED VERBATIM, and the assertion is hand-maintained on purpose.
+     * `tests/Feature/Isolation/FinanceFailClosedBatchTest.php`'s default-batch arm compares the
+     * whole array with `toBe([...])` against a freshly-required copy of this file — so ADDING A
+     * MODEL HERE MEANS ADDING IT THERE TOO, in the same order, or the suite reds.
+     *
+     * That the enumeration is duplicated rather than derived is the point: a test that computed the
+     * expectation from this file would assert only that the file equals itself, and every addition
+     * would land silently. Typing it twice is what makes an addition deliberate. What the shape
+     * could not do until now is tell an author the second copy EXISTS — which is why this pointer
+     * sits at the site you edit rather than only in the test that fails afterwards.
+     */
     'fail_closed_models' => array_values(array_filter(array_map(
         'trim',
         explode(',', trim((string) env('RBAC_FAIL_CLOSED_MODELS', '')) ?: implode(',', [
@@ -182,6 +198,23 @@ return [
             // the silent-unscoped branch rather than to a refusal.
             BulkInvoiceRun::class,
             BulkInvoiceRunRow::class,
+            // The MANUAL invoice run and its three child tables, on the same evidence one commit
+            // later. Not analogy: the manual run's report NAMES students — admission number, the
+            // enrollment, the invoice raised and the reason one was not — so read with no School
+            // context it is a cross-School list of who was charged what. The run's LINES carry the
+            // money, and its TARGETS carry the bursar's selection, which is the list of children
+            // somebody decided to bill.
+            //
+            // ALL FOUR, not just the two the bulk run needed, because all four are read by the
+            // report: targets supply `target_count` (the number the bursar ticked), lines supply
+            // what everyone was charged, rows supply the outcomes. A model left off this list does
+            // not refuse — SchoolScope falls to its SILENT-UNSCOPED branch, which is how the bulk
+            // run answered a super admin with eight runs spanning two Schools before its two
+            // entries were added.
+            ManualInvoiceRun::class,
+            ManualInvoiceRunLine::class,
+            ManualInvoiceRunRow::class,
+            ManualInvoiceRunTarget::class,
         ])),
     ))),
 ];

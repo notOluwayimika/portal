@@ -48,6 +48,10 @@ use App\Finance\Models\CreditNote;
 use App\Finance\Models\Invoice;
 use App\Finance\Models\InvoiceLine;
 use App\Finance\Models\LedgerTransaction;
+use App\Finance\Models\ManualInvoiceRun;
+use App\Finance\Models\ManualInvoiceRunLine;
+use App\Finance\Models\ManualInvoiceRunRow;
+use App\Finance\Models\ManualInvoiceRunTarget;
 use App\Finance\Models\OpeningBalanceBatch;
 use App\Finance\Models\OpeningBalanceRow;
 use App\Finance\Models\Payment;
@@ -157,6 +161,10 @@ it('ships the finance transactional batch as the default, with no env var set', 
         VoidRequest::class,
         BulkInvoiceRun::class,
         BulkInvoiceRunRow::class,
+        ManualInvoiceRun::class,
+        ManualInvoiceRunLine::class,
+        ManualInvoiceRunRow::class,
+        ManualInvoiceRunTarget::class,
     ], 'config/rbac.php no longer ships the finance transactional batch as its DEFAULT. If this '
         .'list moved into an environment variable, the protection became something a deploy can '
         .'forget: an environment that sets nothing would read every School\'s money rows unscoped.');

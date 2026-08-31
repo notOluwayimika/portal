@@ -319,8 +319,16 @@ return new class extends Migration
         }
 
         // COALESCE and COLLATE are both explained in the class docblock; neither is stylistic.
-        // MESSAGE_TEXT is capped at 128 characters by MySQL and silently truncated past it — the
-        // sentence below is 97, counted rather than eyeballed.
+        //
+        // MESSAGE_TEXT is capped at 128 characters — the sentence below is 97, counted rather than
+        // eyeballed. "SILENTLY TRUNCATED PAST IT" WAS WRONG, and it is corrected here rather than
+        // left to be cited: MEASURED on 5.7.23 and on 8.0.43, `SIGNAL` itself fails past the cap
+        // with 1648/HY000 "Data too long for condition item 'MESSAGE_TEXT'". The write is still
+        // refused, but by the wrong code, so any caller classifying on the driver code is misled.
+        // Loud rather than quiet, and identical on both servers — they do not diverge here at all.
+        // Measurement and recipe: docs/finance/check-constraints-on-mysql-5-7.md § "SIGNAL … over
+        // 128 characters". The COUNT stays the control either way: under 128 the question does not
+        // arise on either server.
         $body = <<<'SQL'
             IF NOT COALESCE(
                    (NEW.origin COLLATE utf8mb4_bin = 'portal'   AND NEW.bank_account_id IS NOT NULL)

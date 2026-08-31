@@ -177,3 +177,29 @@ After the first bulk run, alongside the fee catalog, and **ahead of it** — thi
 in the C2C session bills, where the catalog's value only begins accruing once people are typing
 mid-term charges. Not before 5 September: it needs a migration, and Finding 0 warns that migrations
 landing in cutover week is the shape that goes wrong.
+
+---
+
+## 8. Cross-workstream collisions this design already survived, and what they cost
+
+Added 30 August after both landed. Recorded here because this feature was built alongside the
+payments workstream, and everything below happened between two branches that were each correct.
+
+**A fixture can predate a guard.** S11 made a destination mandatory on every charge line while
+#330's branch was open. That branch's fixture built charge lines without one, its gate was green on
+its own tree, and the merge took staging red across twenty-two arms. Nothing either side ran could
+have seen it.
+
+**An exhaustive-set assertion can meet a new member.** This feature's migration adds a currency-shape
+CHECK; #330 shipped a closed list of every CHECK on a `finance_` table. Same shape, same window,
+same invisibility. It then happened a second time inside a single commit, against
+`config/rbac.php`'s `fail_closed_models` — see
+`docs/handoff/tickets/hand-maintained-exhaustive-sets-have-no-discovery-path.md`.
+
+**Neither is a migration-order problem**, which is what the `--step` warning had led us to watch
+for. Ordering matters and is not sufficient.
+
+**The practical consequence for whoever builds the remaining commits:** before merging anything from
+this feature, re-run the gate against a tree that has staging merged INTO the branch, not just the
+branch. That is the only local approximation of what the server would check, and it is the thing
+that would have caught both.

@@ -84,6 +84,18 @@ const FNC_NOT_NAV = [
     // checked, so this cannot quietly become "unreachable by a different route".
     'finance/invoices/{invoice}' => 'per-invoice; linked from every row of the statement’s invoices table',
 
+    // Bulk manual invoicing's per-run report. Takes a RUN uuid, so there is no single URL a menu
+    // could point at — the same reason as the five above, and the identical shape to U6's bulk-run
+    // report two entries up.
+    //
+    // WHAT LINKS IT IS NOT A LIST, AND THAT IS A GAP RATHER THAN A DESIGN. There is no index of past
+    // manual runs — no endpoint returns one — so the report is reached from the selection screen at
+    // /finance/manual-invoice-runs by exactly two routes: submit lands on it, and the one-active-run
+    // refusal names the run in flight and offers a link to it. The arm below asserts both, because
+    // an exemption whose reason is unchecked is how a page becomes unreachable while looking
+    // accounted for. The missing list is recorded as a residual, not disguised here.
+    'finance/manual-invoice-runs/{run}' => 'per-run; reached from /finance/manual-invoice-runs — submit lands on it, and the in-flight refusal links to it',
+
     // U7's printable invoice. Takes an INVOICE uuid, one level in from the detail — the receipt's
     // shape and the receipt's reasoning. It is reached from the detail's toolbar, UNCONDITIONALLY:
     // the link is offered on a voided invoice too, because the person who needs the document on
@@ -260,6 +272,94 @@ it('the bulk-invoice-run exemption really is linked from the runs list, uncondit
         .'a failed run whose report cannot be opened hides the only place its reason is readable. If '
         .'you have only NAMED the status in a new comment, reword the comment: this check cannot tell '
         .'the two apart.');
+});
+
+it('the manual-invoice-run exemption really is linked from the selection screen, by BOTH routes', function () {
+    /*
+     * The same check as the four above, for bulk manual invoicing — and it asserts TWO links rather
+     * than one, because unlike every other exemption in this file the thing linking here is not a
+     * list. There is no index of manual runs, so if either of these two goes, a bursar who navigates
+     * away from a run has no way back to its report at all.
+     *
+     * LINK ONE — SUBMIT LANDS ON THE REPORT. `router.visit(manualInvoiceRuns.pageUrl(data.uuid))`
+     * immediately after a 201. That is the feature's design and not a convenience: Brookstone ruled
+     * on 30 August 2026 that this issues DIRECTLY, so the report is the only account this act ever
+     * gets, and a toast in its place would be the whole oversight replaced by a sentence.
+     *
+     * LINK TWO — THE IN-FLIGHT REFUSAL. A School's second non-terminal run is refused, and the
+     * refusal NAMES the run already under way. The screen turns that name into a link, which is
+     * currently the ONLY way back to a run whose uuid the operator did not keep.
+     *
+     * Both are built through the service module's `pageUrl`, which reads the wayfinder route helper,
+     * so the path lives in routes/web.php alone and a rename breaks the build rather than the
+     * screen.
+     *
+     * WHAT THIS CANNOT SEE, stated rather than implied — it is a TEXT check on a file, and there is
+     * no JavaScript test runner in this repository (package.json carries vite, eslint, prettier and
+     * tsc; no vitest, no jest): whether either link is reached at runtime, and whether the uuid
+     * handed to it is the right one.
+     */
+    $screen = fncRead('resources/js/pages/admin/finance/manual-invoice-runs/index.tsx');
+
+    // NOT matched as one multi-line string: prettier owns the wrapping of a nested call, so an
+    // assertion carrying its indentation would red on a reformat that changed nothing. The two
+    // facts are asserted separately, and the COUNT is what says there are two links rather than one
+    // written twice.
+    expect($screen)->toContain('manualInvoiceRuns.pageUrl(data.uuid)')
+        ->and($screen)->toContain('inFlightUuid');
+
+    expect(substr_count($screen, 'manualInvoiceRuns.pageUrl('))->toBeGreaterThanOrEqual(2,
+        'The manual-invoicing screen builds fewer than two links to a run report. There is no index '
+        .'of manual runs, so submit-lands-on-it and the in-flight refusal are the ONLY two ways a '
+        .'bursar reaches one; losing either strands a run whose uuid they did not keep.');
+});
+
+it('the manual-invoicing screen holds NONE of the guardians select-all-matching vocabulary', function () {
+    /*
+     * THE ONE RULE THIS SCREEN EXISTS UNDER, made executable rather than left in a docblock.
+     *
+     * `guardians/bulk-action-bar.tsx` renders "Select all N matching" and sets a `selectAllMatching`
+     * flag while the browser holds only the CURRENT PAGE's ids, so every action behind that bar runs
+     * on those — the operator is told 240 and gets 25, and nothing errors
+     * (docs/handoff/tickets/guardians-select-all-matching-claims-a-scope-it-does-not-have.md). In an
+     * export that is a short spreadsheet. On THIS screen it would bill 25 families and report 240,
+     * on a path where each wrong invoice is undone by its own void request and a second person's
+     * approval.
+     *
+     * The brief states the rule as "do not import anything from guardians/bulk-action-bar.tsx",
+     * because copying it is how the defect spreads. A prose rule with nothing behind it is
+     * wallpaper, so this is the lint: neither the import nor the vocabulary may appear.
+     *
+     * ── HOW THE IMPORT HALF IS MEASURED, AND WHY IT IS A COUNT ──
+     *
+     * The first version of this arm was `not->toContain('guardians/bulk-action-bar')` and it FAILED
+     * ON ITS OWN SUBJECT: the screen's docblock names that file, in the paragraph explaining why it
+     * must never be imported. That is the false positive this file's `receiptable` arm already
+     * records one screen over, met again — a text rule cannot tell a warning from the thing it warns
+     * about.
+     *
+     * So the path is counted rather than forbidden. EXACTLY ONE occurrence is legitimate — the
+     * docblock reference — and an import is a second one, which reds. If you are here because you
+     * added a second MENTION in a comment, reword the comment: this check cannot tell the two apart,
+     * and that is stated rather than left for you to discover.
+     *
+     * The two flag names carry no such tension and stay absolute: nothing on this screen has any
+     * business naming them at all.
+     */
+    $screen = fncRead('resources/js/pages/admin/finance/manual-invoice-runs/index.tsx');
+
+    expect(substr_count($screen, 'guardians/bulk-action-bar'))->toBe(1,
+        'The manual-invoicing screen names guardians/bulk-action-bar.tsx a number of times other '
+        .'than the one that is legitimate — the docblock explaining why it must not be imported. A '
+        .'second occurrence is an import, and importing that bar is how "told 240, billed 25" '
+        .'spreads onto a path where it bills families.');
+
+    expect($screen)->not->toContain('selectAllMatching')
+        ->and($screen)->not->toContain('totalMatching');
+
+    // And the page-scoped warning is present. Clearing the selection on navigation without SAYING
+    // so is the half of this compromise that costs the operator forty ticks with no notice.
+    expect($screen)->toContain('data-testid="page-scoped-warning"');
 });
 
 it('gates the Finance group on the permission its routes require', function () {

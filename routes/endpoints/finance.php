@@ -10,6 +10,8 @@ use App\Finance\Http\Controllers\FeeScheduleChangeController;
 use App\Finance\Http\Controllers\FeeScheduleController;
 use App\Finance\Http\Controllers\FinanceAccountController;
 use App\Finance\Http\Controllers\InvoiceController;
+use App\Finance\Http\Controllers\ManualInvoiceRunController;
+use App\Finance\Http\Controllers\ManualInvoiceRunStudentController;
 use App\Finance\Http\Controllers\OpeningBalanceBatchController;
 use App\Finance\Http\Controllers\PaymentAllocationController;
 use App\Finance\Http\Controllers\PaymentController;
@@ -408,4 +410,58 @@ Route::get('/v1/finance/bulk-invoice-runs', [BulkInvoiceRunController::class, 'i
 Route::post('/v1/finance/bulk-invoice-runs', [BulkInvoiceRunController::class, 'store'])
     ->middleware('permission:finance.invoice.generate');
 Route::get('/v1/finance/bulk-invoice-runs/{run:uuid}', [BulkInvoiceRunController::class, 'show'])
+    ->middleware('permission:finance.invoice.generate');
+
+/*
+ * THE MANUAL INVOICE RUN — a bursar's own list of students, one supplementary invoice each, from
+ * lines they typed. Two routes and no more; the filter-and-tick screen is a later commit and brings
+ * whatever reads it needs with it.
+ *
+ * SAME ABILITY AS EVERY OTHER INVOICE ROUTE, and nothing new is coined. `finance.invoice.generate`
+ * already governs the single-student POST and all four bulk-run routes on exactly this reasoning:
+ * the authority to raise one invoice is the authority to raise ninety. A `…generate-manual` minted
+ * here would be granted to precisely the roles that already hold `generate` — deciding nothing while
+ * adding a second case to keep in step. The read carries the same ability as the write for the
+ * reason the opening-balance maker's five routes do: the person who starts a run is the person who
+ * must read it back.
+ *
+ * NO PREVIEW, AND THE ASYMMETRY WITH THE BULK RUN IS DELIBERATE. A scheduled run's cohort is
+ * COMPUTED — the operator names two coordinates and the server decides who that is, so a preview is
+ * the only way to see the list before committing to it. A manual run's list is GIVEN: the operator
+ * IS the preview, and they are looking at the students they ticked. What they cannot see in advance
+ * is which of them the server can place, and that is answered by the run report rather than by a
+ * second endpoint — there is no maker-checker on this path, so the report is where a wrong selection
+ * has to surface anyway, and one place is better than two that can disagree.
+ *
+ * THERE IS NO DELETE AND NO CANCEL, for the reason the block above states and one worse. A run is
+ * the record of a billing act and the only thing that accounts for the students it did NOT bill, so
+ * deleting one destroys the evidence. And re-running is NOT the recovery path it is on the scheduled
+ * side: a supplementary invoice has no duplicate backstop at any layer
+ * (docs/handoff/tickets/a-supplementary-invoice-has-no-duplicate-backstop.md), so a second run over
+ * the same list bills everyone on it a second time.
+ *
+ * ORDER IS NOW LOAD-BEARING, WHICH IT WAS NOT WHEN THIS BLOCK WAS WRITTEN. The paragraph here used
+ * to read "there is no literal-segment route to shadow `{run:uuid}`", and the screen commit made
+ * that false by adding `/students` below. `{run:uuid}` is a BINDING, not a pattern — nothing
+ * constrains the segment to look like a uuid — so declared in the other order it would swallow
+ * `/v1/finance/manual-invoice-runs/students` and answer 404 from a failed model binding, which
+ * reads as "the roster is empty" on the screen rather than as a routing mistake. The literal
+ * segment is declared FIRST, and the trap the two blocks above record is the reason.
+ *
+ * THE ROSTER IS THE READ THE SCREEN BRINGS WITH IT, exactly as this block already anticipated. It
+ * is a THIRD route on this feature and it is not a third scope: it answers a PAGE of students to
+ * tick, never a set of ids for the client to act on in bulk. See
+ * ManualInvoiceRunStudentController for why the screen cannot simply fetch `/api/students` — in
+ * one line, `student.view` and `finance.invoice.generate` intersect on `admin` alone, so the
+ * bursar seat this feature exists for would meet a 403 where the roster should be.
+ *
+ * SAME ABILITY AGAIN. A read of who might be billed is not a smaller authority than the write that
+ * bills them, and a feed gated differently from the page that consumes it is how a visible control
+ * comes to 403 on click.
+ */
+Route::post('/v1/finance/manual-invoice-runs', [ManualInvoiceRunController::class, 'store'])
+    ->middleware('permission:finance.invoice.generate');
+Route::get('/v1/finance/manual-invoice-runs/students', [ManualInvoiceRunStudentController::class, 'index'])
+    ->middleware('permission:finance.invoice.generate');
+Route::get('/v1/finance/manual-invoice-runs/{run:uuid}', [ManualInvoiceRunController::class, 'show'])
     ->middleware('permission:finance.invoice.generate');

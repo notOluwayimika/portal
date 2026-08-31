@@ -45,6 +45,68 @@ Tests themselves do **not** require Redis (they use the `array` cache and `sync`
 queue). Redis is provisioned as a CI service for forthcoming queue/Horizon work;
 it is not needed to run the suite locally today.
 
+## Measuring a MySQL 5.7 claim (production's server, in ten minutes)
+
+Production is **MySQL 5.7.23**; local and the suite are **8.0.43**. Every gate this project has runs
+on 8.0, so any claim about 5.7 behaviour has historically been *reasoned about* rather than measured —
+and this repo has been bitten by that twice: `2026_08_17_100000`'s docblock recorded an unmeasured
+`MESSAGE_TEXT` claim that turned out to be false, and a `CHECK` that is invisible to
+`information_schema` on 5.7 was one review away from stopping a deploy (see
+`docs/finance/check-constraints-on-mysql-5-7.md`).
+
+**There is no longer any excuse for reasoning about it.** A throwaway container is the whole recipe:
+
+```bash
+docker run -d --name mysql57probe -p 13357:3306 \
+  -e MYSQL_ALLOW_EMPTY_PASSWORD=1 -e MYSQL_DATABASE=probe \
+  --platform linux/amd64 mysql:5.7.23 \
+  --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+
+# wait for it, then:
+docker exec -it mysql57probe mysql -uroot --default-character-set=utf8mb4 probe
+```
+
+Three details that are not optional:
+
+- **`--platform linux/amd64`.** There is no arm64 image for 5.7; on Apple silicon the run fails
+  without it.
+- **`--character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci`.** The image defaults to
+  latin1, and half the behaviours worth measuring here are collation behaviours (`COLLATE
+  utf8mb4_bin` on a trigger arm, `NOT REGEXP` on utf8mb4). Measuring them under latin1 measures the
+  wrong server. Pass `--default-character-set=utf8mb4` to the CLIENT too, or a `COLLATE utf8mb4_bin`
+  literal errors 1253 for a reason that has nothing to do with what you are testing.
+- **Pin the patch version, `5.7.23`,** not `5.7`. The point is to reproduce production, and "the
+  latest 5.7" is a different server from the one holding the money.
+
+### Running a real migration against it
+
+Better than transcribing DDL into the container by hand, which measures your transcription. Point a
+connection at the container and invoke the migration object directly, so the code path under test is
+the one that will run on production:
+
+```php
+config(['database.connections.probe57' => [
+    'driver' => 'mysql', 'host' => '127.0.0.1', 'port' => 13357, 'database' => 'probe',
+    'username' => 'root', 'password' => '', 'charset' => 'utf8mb4',
+    'collation' => 'utf8mb4_unicode_ci', 'prefix' => '', 'strict' => true, 'engine' => null,
+]]);
+DB::setDefaultConnection('probe57');
+
+$migration = require database_path('migrations/<the file>.php');
+$migration->up();   // throws exactly as it would on production
+```
+
+Create minimal stub parents first (`schools`, `users`, and whichever `finance_*` tables the foreign
+keys reference, carrying their `(id, school_id)` unique keys) — the migration under test only needs
+its referents to exist, not the whole schema.
+
+Then **drive the guards**, not just the DDL: a `CREATE TRIGGER` that succeeds is not evidence the
+trigger bites. Insert the value each arm forbids and read the driver code, exactly as the suite does
+on 8.0.
+
+**Tear it down** — `docker rm -f mysql57probe`. It is a probe, not an environment; nothing should
+come to depend on it existing.
+
 ## CI ratchets
 
 CI is a real gate even though the suite and type-check are not yet fully clean.

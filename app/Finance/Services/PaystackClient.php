@@ -2,6 +2,7 @@
 
 namespace App\Finance\Services;
 
+use App\Finance\Console\CapturePaystackSandbox;
 use App\Finance\DTOs\PaystackCheckout;
 use App\Finance\DTOs\PaystackTransaction;
 use App\Finance\Exceptions\PaystackUnavailable;
@@ -132,13 +133,37 @@ final class PaystackClient
     }
 
     /**
+     * The verify response as Paystack sent it, decoded and otherwise untouched.
+     *
+     * WHY THIS EXISTS ALONGSIDE `verify()`, WHICH IS THE ONE PRODUCTION USES. A DTO can only carry
+     * the fields we already knew to ask for, and the calibration question is precisely *what is in
+     * the payload that we did not anticipate* — most sharply, whether `fees` is measured against the
+     * gross we charged or the net settled, which `amount` and `requested_amount` answer together.
+     * Capturing through the DTO would discard the evidence before anyone read it.
+     *
+     * NOTHING IN PRODUCTION MAY CALL THIS. Its only caller is
+     * {@see CapturePaystackSandbox}, which refuses to run on anything but a
+     * `sk_test_` key. Recording a payment from an unshaped array is exactly the "trust the wire"
+     * failure `verify()` exists to prevent — the DTO is the boundary, and this deliberately steps
+     * outside it for a tool that writes nothing.
+     *
+     * @return array<string, mixed>
+     *
+     * @throws PaystackUnavailable when Paystack did not answer, or answered unreadably.
+     */
+    public function verifyRaw(string $reference): array
+    {
+        return $this->get('/transaction/verify/'.rawurlencode($reference));
+    }
+
+    /**
      * Ask Paystack what actually happened to a reference. THE AUTHORITY — see the class docblock.
      *
      * @throws PaystackUnavailable when Paystack did not answer, or answered unreadably.
      */
     public function verify(string $reference): PaystackTransaction
     {
-        $body = $this->get('/transaction/verify/'.rawurlencode($reference));
+        $body = $this->verifyRaw($reference);
         $data = $body['data'] ?? null;
 
         if (! is_array($data) || ! isset($data['status'], $data['reference'], $data['amount'])) {

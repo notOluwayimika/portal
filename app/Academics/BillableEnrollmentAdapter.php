@@ -89,6 +89,48 @@ final class BillableEnrollmentAdapter implements BillableEnrollmentProvider
     }
 
     /**
+     * The same question as {@see currentForStudent()}, asked once for a whole list. See the port for
+     * the contract; what follows is why this is a batch of that method rather than a third read.
+     *
+     * IT IS {@see billableEpisodes()} WITH THE STUDENT PREDICATE WIDENED, and nothing else — the
+     * only difference from currentForStudent() is `whereIn` in place of `where`. There is no second
+     * expression of "the student's current billable episode" here, which is the whole reason
+     * currentForStudent() was relieved of its inline `where(status, ACTIVE)->latest('id')` in the
+     * first place: a copy that reads correctly is a copy that can drift silently, and this
+     * repository has paid for that twice.
+     *
+     * NO `orderBy`, FOR THE SAME REASON currentForStudent() HAS NONE. billableEpisodes() admits at
+     * most ONE row per student — its subquery is `MAX(id) … GROUP BY student_id` — so keying the
+     * result by `student_id` cannot silently collapse two rows into the later one. Adding a
+     * tie-break here would be the second copy of a rule that is already applied one method up.
+     *
+     * A STUDENT-LESS EPISODE CANNOT REACH THE KEY. The subquery's `GROUP BY student_id` puts every
+     * NULL `student_id` in ONE group and so can emit a row with a null key (the shape
+     * {@see countBillableForSchool()} documents); `whereIn` on the outer query never matches NULL,
+     * so such a row is excluded before `keyBy` ever sees it.
+     *
+     * THE EMPTY LIST SHORT-CIRCUITS, like {@see displayFor()}: `whereIn('…', [])` is a query that
+     * asks the database for nothing and pays a round trip to be told so.
+     *
+     * @param  list<int>  $studentIds
+     * @return array<int, BillableEnrollment> keyed by student_id, placeable only
+     */
+    public function currentForStudents(array $studentIds): array
+    {
+        if ($studentIds === []) {
+            return [];
+        }
+
+        return $this->billableEpisodes()
+            ->whereIn('student_curricula.student_id', $studentIds)
+            ->with(self::SNAPSHOT_RELATIONS)
+            ->get()
+            ->keyBy(fn (StudentCurriculum $enrollment) => (int) $enrollment->getAttribute('student_id'))
+            ->map(fn (StudentCurriculum $enrollment) => $this->toBillableEnrollment($enrollment))
+            ->all();
+    }
+
+    /**
      * The cohort at ($termId, $classLevelId) in $schoolId. See the port for the contract; what
      * follows is how the two coordinates are reached, because neither is a column on the episode.
      *

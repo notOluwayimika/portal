@@ -256,6 +256,11 @@ function birProviderWith(?string $vanishing = null, ?Closure $onCohort = null, ?
             return $this->inner->currentForStudent($studentId);
         }
 
+        public function currentForStudents(array $studentIds): array
+        {
+            return $this->inner->currentForStudents($studentIds);
+        }
+
         public function scholarshipIdsFor(array $studentIds, int $schoolId): array
         {
             return $this->inner->scholarshipIdsFor($studentIds, $schoolId);

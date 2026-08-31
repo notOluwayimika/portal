@@ -362,6 +362,96 @@ test('currentForStudent applies the SAME tie-break, and fails on its own when it
         ->and($current->enrollmentId)->toBe($later->id);
 });
 
+test('currentForStudents is currentForStudent asked once — same answer per student, unplaceable ABSENT', function () {
+    // FOUR SHAPES IN ONE FIXTURE, because the map's contract has two halves and a fixture of
+    // placeable students can only see one of them:
+    //
+    //   - a placeable student, who must be present;
+    //   - a student holding TWO active episodes, so the MAX(id) tie-break has to survive the
+    //     widening from `where` to `whereIn` — a batch that dropped it would return the earlier
+    //     episode, or both rows and then silently keep whichever `keyBy` saw last;
+    //   - a WITHDRAWN student and a student with NO episode at all, who must be ABSENT rather than
+    //     present with a null value. A map that padded every requested id would pass a fixture made
+    //     only of the first two, and the Action's `?? null` would then never fire.
+    //
+    // THE EXPECTATION IS DERIVED BY THE OTHER CODE PATH, one student at a time. Nothing here
+    // restates the batch's own rule, so an implementation that agrees with itself is not enough.
+    $ctx = cohortSchool();
+    $second = cohortSecondLevel($ctx);
+
+    $placeable = cohortStudent($ctx, $ctx['arm']->id, $ctx['term']->id);
+    $withdrawn = cohortStudent($ctx, $ctx['arm']->id, $ctx['term']->id, StudentStatusEnum::WITHDRAWN);
+    $twoEpisodes = cohortStudent($ctx, $ctx['arm']->id, $ctx['term']->id);
+
+    $later = ActiveSchool::runFor($ctx['school']->id, fn () => StudentCurriculum::create([
+        'student_id' => $twoEpisodes->id,
+        'school_id' => $ctx['school']->id,
+        'curriculum_id' => Curriculum::factory()->create([
+            'school_id' => $ctx['school']->id,
+            'class_level_arm_id' => $second['arm']->id,
+            'term_id' => $ctx['term']->id,
+        ])->id,
+        'status' => StudentStatusEnum::ACTIVE,
+    ]));
+
+    // NO `student_curricula` ROW AT ALL — distinct from the withdrawn one, and the shape a bursar's
+    // selection actually produces when they tick a newly-admitted pupil.
+    $noEpisode = ActiveSchool::runFor($ctx['school']->id, fn () => Student::factory()->create([
+        'school_id' => $ctx['school']->id,
+        'admission_number' => 'ADM-'.Str::random(8),
+    ]));
+
+    $adapter = cohortAdapter();
+    $ids = [$placeable->id, $withdrawn->id, $twoEpisodes->id, $noEpisode->id];
+
+    $map = ActiveSchool::runFor($ctx['school']->id, fn () => $adapter->currentForStudents($ids));
+
+    foreach ($ids as $id) {
+        $single = ActiveSchool::runFor($ctx['school']->id, fn () => $adapter->currentForStudent($id));
+
+        if ($single === null) {
+            expect($map)->not->toHaveKey($id);
+
+            continue;
+        }
+
+        expect($map)->toHaveKey($id)
+            ->and($map[$id]->enrollmentId)->toBe($single->enrollmentId)
+            ->and($map[$id]->studentId)->toBe($single->studentId)
+            ->and($map[$id]->enrollmentUuid)->toBe($single->enrollmentUuid);
+    }
+
+    // NOT VACUOUS IN EITHER DIRECTION. The loop above is satisfied by an empty map (every arm takes
+    // the null branch) and by a padded one (nothing takes it), so the fixture's own split is pinned:
+    // two present, two absent, and the two present are DIFFERENT episodes rather than one row
+    // returned twice.
+    expect(array_keys($map))->toHaveCount(2)
+        ->and($map[$twoEpisodes->id]->enrollmentId)->toBe($later->id)
+        ->and($map[$placeable->id]->enrollmentId)->not->toBe($map[$twoEpisodes->id]->enrollmentId);
+});
+
+test('currentForStudents is AMBIENT-scoped, and the mirror proves it is the scope doing it', function () {
+    // The port splits its methods into AMBIENT and ARGUMENT and this one is deliberately ambient,
+    // matching currentForStudent. A one-directional assertion ("School B's id is absent under School
+    // A") passes for an implementation that returns nothing at all, so the mirror is the arm: under
+    // School B the SAME two ids resolve the other way round.
+    $a = cohortSchool();
+    $b = cohortSchool();
+
+    $mine = cohortStudent($a, $a['arm']->id, $a['term']->id);
+    $theirs = cohortStudent($b, $b['arm']->id, $b['term']->id);
+
+    $ids = [$mine->id, $theirs->id];
+
+    $underA = ActiveSchool::runFor($a['school']->id, fn () => cohortAdapter()->currentForStudents($ids));
+    $underB = ActiveSchool::runFor($b['school']->id, fn () => cohortAdapter()->currentForStudents($ids));
+
+    expect($underA)->toHaveKey($mine->id)
+        ->and($underA)->not->toHaveKey($theirs->id)
+        ->and($underB)->toHaveKey($theirs->id)
+        ->and($underB)->not->toHaveKey($mine->id);
+});
+
 test('the cohort is the class LEVEL, not the arm, and not the neighbouring term', function () {
     $ctx = cohortSchool();
 
@@ -535,6 +625,41 @@ test('the cohort read costs EIGHT queries, at any cohort size', function () {
         ->and($largeSize)->toBe(30)
         ->and($small)->toBe(8)
         ->and($large)->toBe(8);   // flat AND eight — eager-loaded, not N+1
+});
+
+test('the BATCH student read costs the same EIGHT, at any list size', function () {
+    // The same two halves as the cohort arm above, for the same reason, on the read that replaced a
+    // loop of currentForStudent() in StartManualInvoiceRun. It is the SAME eight because it is the
+    // same builder — billableEpisodes() with `whereIn` in place of `where` — so if these two numbers
+    // ever diverge, one of them grew a query the other did not and the two reads have started to
+    // differ by more than their predicate.
+    //
+    // WHAT THIS REPLACED, measured on a copy of production data: 611 students through
+    // currentForStudent() in a loop cost 4888 queries / 1647 ms, because the single-student call is
+    // eight queries and not one. The same 611 through this method cost 8 / 82.7 ms.
+    $ctx = cohortSchool();
+    $ids = [];
+
+    $count = function (int $students) use ($ctx, &$ids) {
+        for ($i = 0; $i < $students; $i++) {
+            $ids[] = cohortStudent($ctx, $ctx['arm']->id, $ctx['term']->id)->id;
+        }
+
+        // runFor is OUTSIDE the counted window: the ambient context is this method's isolation, not
+        // its cost, and resolving it inside would put a School lookup in one measurement.
+        return ActiveSchool::runFor(
+            $ctx['school']->id,
+            fn () => cohortQueryCost(fn () => cohortAdapter()->currentForStudents($ids)),
+        );
+    };
+
+    [$small, $smallSize] = $count(3);
+    [$large, $largeSize] = $count(27);
+
+    expect($smallSize)->toBe(3)
+        ->and($largeSize)->toBe(30)
+        ->and($small)->toBe(8)
+        ->and($large)->toBe(8);
 });
 
 test('the unplaceable read is flat in size, and never exceeds the cohort read\'s ceiling', function () {

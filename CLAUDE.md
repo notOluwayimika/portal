@@ -63,6 +63,28 @@ operational facts an agent needs most often.
   And read `git diff --stat` against your own model of the change before
   pushing — no gate objects to a commit full of correct formatting, and none
   should.
+- **Before starting any task: run `bin/board`, READ THE DIVERGENCE SECTION, then compile against the
+  base you intend to branch from.** One step, three questions — **is it already built**, **does it
+  still branch cleanly**, **does it compile**. The board fetches, so the divergence answer describes
+  the remote rather than how stale your clone is.
+
+  **The scar, because the abstract version of this rule does not get followed:** a
+  `SettlementBankAccount` stub was built against a resolver Developer 1 had ALREADY LANDED on
+  `staging`. One fetch at task start would have caught it. Four dependency surprises in a single day
+  were every one of them found by CHECKING rather than by planning — branch topology and other
+  people's merges are invisible from inside a task, and they keep changing while you work.
+
+  **Read the SUBJECTS, not the count.** "12 commits behind" tells you to rebase;
+  `feat(finance): withhold un-reviewed invoices from the parent feed` tells you somebody has built
+  the thing you were about to start. Recognition is the whole value, and only the subject line
+  produces it.
+
+  It is folded into `bin/board` rather than written here as a habit, so it runs because the
+  instrument runs and not because somebody remembered — the same reason `bin/db-exclusive` is a
+  script and not a sentence. A failed fetch prints **UNKNOWN** and exits 2, never an empty list:
+  "nothing landed" and "I could not look" must not render identically, which is the no-signal class
+  the board exists to close.
+
 - Tests alone are not verification — migrate the dev DB and drive the affected
   flows in the running app.
 - **ONE CONSUMER OF `portal_testing` AT A TIME — and a `git push` IS a suite run.** `bin/quality`

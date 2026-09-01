@@ -4,6 +4,55 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) first: the 16-rule Architecture
 Constitution there is enforced by CI, not by review. The pointers below are the
 operational facts an agent needs most often.
 
+## Ground truth is the tree, not memory
+
+**Every claim about this codebase is read from the working copy before it is stated.** Not a style
+preference — the correction to a measured failure mode.
+
+**THE FAILURE MODE.** A model of the repo built weeks ago decays fastest exactly where the work is
+heaviest, and the decay is invisible from inside: nothing about a stale belief feels stale. Claims of
+**ABSENCE** are where it surfaces — *"nothing binds X"*, *"the migration is inert"*, *"parents cannot
+see invoices"*. The asymmetry is the whole point: a positive claim is usually made just after reading
+something, whereas an absence claim requires an exhaustive search, and **the memory of not having
+seen a thing is not that search.**
+
+Four live instances, each stated confidently, each false, each re-derived against the tree before
+being written here:
+
+| Asserted | What the tree says |
+| --- | --- |
+| "parents cannot see invoices today" | `parent/finance` was live the whole time — `routes/web.php:1138`. The grep was for `guardian` on a route spelled `parent/`. |
+| "the 2026-09-01 `view_all` migration is inert" | It is load-bearing. `ActivityLogQueryService.php:54-57` keys the self-filter on exactly that permission, so without it the auditor's feed is empty by construction. |
+| "nothing binds the uuid to the caller on `/guardians/{uuid}/students`" | The binding shipped in `c2adf8ba` (2026-08-25) as `EnsureGuardianOwnsGuardianRecord`, and exceeds what the brief asked for. |
+| "the guardian binding's off switch is undocumented" | `GuardianService.php:1066-1091` is 26 lines documenting it and answering the objection. The method body was read; the docblock above it was not. |
+
+Note what the last one shows: **reading the wrong part of the right file produces the same confident
+wrongness as not reading at all.** The scroll stopped at `public function`.
+
+**THE RULES.**
+
+1. **Read before asserting** — `cat`, `grep`, `ls`, `find` against the working copy. No `git`
+   commands on the maintainer's tree: a read needs none, and two `.git/index.lock` incidents came
+   from `git`, not from reading.
+2. **Any claim of absence is read and verified, or it is marked UNVERIFIED.** Commands carry the same
+   standing: a command prescribed verbatim has been run, or it is marked UNVERIFIED. There is no
+   third state, and "I believe so" is the second one wearing the first one's clothes.
+3. **An unread premise is written as a question, not a fact.** A block that acts on an unread premise
+   opens with **VERIFY AND REPORT**, and stops there.
+4. **Carry no number that has not been re-derived.** A citation passed through from an earlier report
+   is not a read. `RbacSeeder.php:316` was passed through as `head_of_school`; it is **`registrar`**.
+   `head_of_school` is `:265`, via the `$guardianFull` spread.
+
+**WHY RULE 3 EARNS ITS PLACE.** VERIFY AND REPORT caught three wrong premises in a single day — a
+no-op commit against a binding that already existed, a fix aimed at a migration that was correct, and
+a gate that would have widened the audit page to every teacher. **Each would have been merged had the
+block written the fix directly**, because each was a competent implementation of a false premise, and
+a competent implementation is exactly what review is least able to reject.
+
+This is the same discipline as the entries below on reading refs rather than recollection, on
+re-deriving numbers, and on re-verifying a consolidated document at the moment of sending — applied
+one level up, to the premise rather than to the result.
+
 ## Non-negotiables you will hit early
 
 - **Isolation:** `school_id` is the only boundary. School-owned models use

@@ -165,9 +165,39 @@ busy-only bite-proof would have passed it.
 watch the lint red — not by hand-feeding the parser a fixture, so the proof survives the way the real
 map is written.
 
+## ORDERING — the applicability fix FIRST, the lint SECOND
+
+**This matters enough to state before either piece of work starts, because the natural reading of
+this ticket is the wrong order.** The gate section above is written at length and the fix is a
+predicate swap, so the lint looks like the deliverable. It is not.
+
+1. **First: change the predicate.** Decide applicability on the positive fact — the caller has a
+   guardian row in the active school.
+2. **Then: add the lint** as the staff arm's belt-and-braces.
+
+**Once step 1 lands, the predicate no longer consults `grantsMap()` at all**, and the invariant this
+whole ticket is about — *"every other role in the map is a staff or oversight seat"* — stops being
+load-bearing for guardian containment. **The runtime-role and school-scoped-role gap noted above
+closes with it**, because those roles were only ever a problem through the role-set test; a positive
+fact about the caller does not care how many roles they hold or where the rows came from.
+
+So the lint's value after step 1 is real but much smaller: it guards the **staff pass-through's**
+choice of permission and the classification of new seats. It is no longer what stands between a new
+role and a disengaged ownership binding.
+
+**Build the lint first and the ticket looks closed while nothing is fixed.** The lint goes green — it
+would, the map is correctly classified today — the gate exists, the box is ticked, and the predicate
+that actually disengages the binding is untouched. That is this repository's recurring failure shape:
+a green that measures something adjacent to the thing at risk. **Do not close this ticket on a green
+lint.** It closes when the predicate keys on the guardian row.
+
 ## Not to be changed casually
 
-**This is a live control on the path 37 parents use daily.** The fix needs:
+**This is a live control on a path real parents use daily.** (Deliberately no figure: the July
+observation window predates `/api/parent/wards` and is superseded — see the SUPERSEDED note in
+[`guardian-view-asserted-on-a-route-its-users-cannot-satisfy.md`](guardian-view-asserted-on-a-route-its-users-cannot-satisfy.md).
+The population is unmeasured; that it is non-empty is not in doubt, and is all this sentence needs.)
+The fix needs:
 
 - its **own commit** — not folded into the ability-check removal, and not into a role change;
 - its **own bite-proof** — revert the new predicate alone and watch only its arms red;

@@ -33,8 +33,9 @@ block, not `head_of_school`. `head_of_school` gets `guardian.view` at `:265` thr
 Two things fall out of the table that the original framing did not have:
 
 - **The flip breaks THREE of the five admitted seats, not one.** `guardian`, `teacher` and
-  `principal` are all admitted by the group and all fail the controller's ability. The 37 parents are
-  the largest and most visible population, not the only one.
+  `principal` are all admitted by the group and all fail the controller's ability. Parents are the
+  most visible population, not the only one — and see the SUPERSEDED note below before assuming they
+  are still on this route at all.
 - **`registrar` holds `guardian.view` and cannot reach this route at all** — it holds no
   `student_status.view`, so it never passes the group. An ability check whose holder set is disjoint
   from the route's admitted set in *both* directions is not a narrowed gate; it is a check that
@@ -66,23 +67,29 @@ page was moved off the route this ticket fixes, and moved for an ability mismatc
   `/api/parent/wards`. A sweep of `resources/js/pages/`, `components/` and `layouts/` finds no caller
   of `/api/guardians/{uuid}/students` outside generated wayfinder stubs under `resources/js/actions/`,
   which are URL builders rather than call sites.
-- **The July census predates the move.** `/api/parent/wards` was introduced in `224cddf0`,
-  **2026-08-03**. The 131 observations across 37 guardians are a July window, so they describe the
-  period **before** the replacement existed. They are evidence that the old route was in parent use
-  *then*, and by construction no evidence about now.
+- **The July observation window is SUPERSEDED evidence, and is deliberately not quoted here as a
+  count.** `/api/parent/wards` was introduced in `224cddf0`, **2026-08-03**. The census window closes
+  **before that route existed**, so its rows describe a system in which the old route was the only
+  way for a parent to load their ward list. They are not weak evidence about today; they are **no
+  evidence about today**, and the distinction is the reason the totals are omitted rather than
+  hedged. A number carried into a ticket acquires authority from being written down, and this one
+  would be quoted back in a month as the size of a population nobody has measured since the move.
+  Whatever those rows count, they count it about a system that no longer exists.
 
 **This is recorded as UNVERIFIED, and the query that settles it is:**
 
-> filter `authz_observations` on `controller_action = 'GuardianController@students'`, and compare the
-> observation dates against `224cddf0` (2026-08-03), the commit that introduced `/api/parent/wards`.
-> Rows dated after it are parents still reaching the old route — a stale SPA bundle, a bookmark, a
-> non-browser client. No rows after it means the parent population has already left.
+> filter `authz_observations` on `controller_action = 'GuardianController@students'`, **restricted to
+> rows dated on or after 2026-08-03** — the date `224cddf0` introduced `/api/parent/wards`. Anything
+> before that date is superseded and must be excluded from the count, not merely noted alongside it.
+> Rows in that window are parents still reaching the old route — a stale SPA bundle, a bookmark, a
+> non-browser client. An empty result means the parent population has already left.
 
 **This does not weaken the ticket, and the disposition does not change.** `teacher` and `principal`
 break on the flip regardless of which route parents use, and the `registrar` disjointness holds
-either way. What it changes is the **headline population**: until that filter runs, this ticket must
-not claim 37 broken parents as fact. The defect is that an ability check asserts something its
-route's admitted seats cannot satisfy; how many parents are behind it is a separate measurement.
+either way. What it changes is the **headline population**: until that filter runs, the number of
+affected parents is **unmeasured**, and this ticket states no figure for it. The defect is that an
+ability check asserts something its route's admitted seats cannot satisfy; how many parents sit
+behind it is a separate measurement that has not been taken.
 
 ## The route's real authorization is already complete without it
 

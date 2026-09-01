@@ -3,6 +3,7 @@
 use App\Exceptions\DutySeparationViolationException;
 use App\Finance\Console\AuditLedgerCoherence;
 use App\Finance\Console\CapturePaystackSandbox;
+use App\Finance\Console\GatewayDiscrepancyReport;
 use App\Finance\Console\ImportOpeningBalances;
 use App\Finance\Console\ReconcileAccounts;
 use App\Finance\Console\SetSettlementAccount;
@@ -56,6 +57,7 @@ return Application::configure(basePath: dirname(__DIR__))
         CapturePaystackSandbox::class,
         ImportOpeningBalances::class,
         SetSettlementAccount::class,
+        GatewayDiscrepancyReport::class,
     ])
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->encryptCookies(except: ['appearance', 'sidebar_state']);

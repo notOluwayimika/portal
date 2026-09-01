@@ -45,4 +45,37 @@ return [
 
     ],
 
+    'discrepancy' => [
+
+        /*
+        |----------------------------------------------------------------------
+        | How old a still-unanswered checkout must be before it is a finding
+        |----------------------------------------------------------------------
+        |
+        | In HOURS. There is NO DEFAULT, and `finance:gateway-discrepancy-report` refuses to run
+        | without it — the same shape as `SettlementBankAccount` and the gateway minimum: an unset
+        | value is refused loudly at the point of use, naming the key, rather than silently standing
+        | in for a decision nobody took.
+        |
+        | WHY THIS ONE ESPECIALLY MUST NOT HAVE A DEFAULT. The number IS the report's meaning. Set
+        | to 1, every checkout a parent is halfway through paying is a finding, and the report
+        | becomes a list nobody reads. Set to 168, a payment taken by the provider and never
+        | recorded here sits invisible for a week. Neither is a wrong THRESHOLD — they are two
+        | different reports, and choosing between them is an operational ruling about how fast
+        | somebody will look, not a value with an obviously sensible middle. A default here would
+        | be that ruling, made by omission, wearing the authority of having been typed deliberately.
+        |
+        | NOBODY HAS RULED IT. It is not Developer 1's (it is not a data-model question) and it has
+        | not been put to Segun. The report names the gap rather than inventing an owner for it —
+        | see the command's docblock, which states the operational half as open.
+        |
+        | THE FLAG OVERRIDES, THE CONFIG DOES NOT DEFAULT. `--pending-hours=N` exists for the
+        | operator running the report by hand against a different window; when it is absent this
+        | value is used, and when this value is absent the command refuses. An override with
+        | nothing to override is still a refusal.
+        */
+        'pending_hours' => env('FINANCE_GATEWAY_DISCREPANCY_PENDING_HOURS'),
+
+    ],
+
 ];

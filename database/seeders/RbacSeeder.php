@@ -549,6 +549,19 @@ class RbacSeeder extends Seeder
             'internal_auditor' => [
                 PermissionEnum::ACTIVITY_LOG_VIEW->value,
                 PermissionEnum::ACTIVITY_LOG_EXPORT->value,
+                // ADDED 2026-09-01, and it is what makes the two lines above mean anything.
+                // ActivityLogQueryService::baseQuery restricts a viewer WITHOUT view_all to rows
+                // they THEMSELVES caused. An auditor only ever reads other people's acts, so the
+                // seat was reading an empty feed by construction — and the paragraph above already
+                // says so ("restricting to self-caused rows without activity_log.view_all — which
+                // IA does not hold"), as the reason view_cross_school was armed rather than safe.
+                // With view_cross_school revoked (2026_08_04_100000) view_all is bounded to the
+                // active school by the same baseQuery's school predicate and by SchoolScope, so it
+                // is a WITHIN-school read and not a member of PermissionEnum::ISOLATION_CROSSING.
+                // It is deliberately NOT accompanied by view_sensitive: the auditor sees acts, not
+                // the entries the catalogue marks confidential.
+                // Converged by 2026_09_01_120000_grant_internal_auditor_activity_log_view_all.
+                PermissionEnum::ACTIVITY_LOG_VIEW_ALL->value,
             ],
             // ADR 0045 (B2): the explicit set IS the platform-admin set — no
             // ambient domain grants. Self-healed every run (see const).

@@ -4,6 +4,7 @@ use App\Exceptions\DutySeparationViolationException;
 use App\Finance\Console\AuditLedgerCoherence;
 use App\Finance\Console\ImportOpeningBalances;
 use App\Finance\Console\ReconcileAccounts;
+use App\Finance\Console\SetSettlementAccount;
 use App\Http\Middleware\ApplyImpersonation;
 use App\Http\Middleware\DenyGuardianBulkRecords;
 use App\Http\Middleware\EnsureGuardianOwnsGuardianRecord;
@@ -46,6 +47,7 @@ return Application::configure(basePath: dirname(__DIR__))
         ReconcileAccounts::class,
         AuditLedgerCoherence::class,
         ImportOpeningBalances::class,
+        SetSettlementAccount::class,
     ])
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->encryptCookies(except: ['appearance', 'sidebar_state']);

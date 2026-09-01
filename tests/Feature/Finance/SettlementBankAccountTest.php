@@ -153,22 +153,42 @@ it('accepts a settlement account belonging to the same school', function () {
 
 it('pins that no write path exists for the settlement account, so adding one is a decision and not a drift', function () {
     /*
-     * The survey behind this arm: `finance_school_settings` has no controller, no FormRequest, no
-     * route and no screen. `invoice_number_prefix` — the only other substantive column — is written
-     * by nothing but tests, and app/Support/SchoolDay.php says so in its own words ("carries one
-     * substantive column today and no screen to set it from"). The cutover runbook sets both by
-     * hand.
+     * THIS ARM WENT RED ON 2026-09-01 AND WAS REPLACED, WHICH IS WHAT IT WAS FOR.
      *
-     * That absence is deliberate and it is not this commit's to close. But an absence recorded only
-     * in a report is wallpaper: the next person to add a settings screen would wire this column
-     * alongside the prefix as a matter of course, and a screen that sets where a school's money
-     * lands needs an authorization decision that a prefix field does not.
+     * It used to assert that NOTHING in app/ or resources/js touched this column: the write path
+     * did not exist, the column was set by hand in the cutover runbook, and the arm existed so that
+     * "the next person to add a settings screen would wire this column alongside the prefix as a
+     * matter of course" could not happen silently. Its own words: "when a write path lands this
+     * goes RED, and whoever wrote it has to come here and replace this arm with the authorization
+     * arm the new path deserves. That is the point — the red is the conversation, not an obstacle."
      *
-     * So the absence is enforced. When a write path lands this goes RED, and whoever wrote it has to
-     * come here and replace this arm with the authorization arm the new path deserves. That is the
-     * point — the red is the conversation, not an obstacle.
+     * The write path landed (feat/audited-bank-account-and-settlement-acts). This is that
+     * conversation, recorded as the arm that replaces it, and it asserts two things.
+     *
+     * ONE — THE SET, NOT THE ABSENCE. An exact allow-list of the files that may name this column, so
+     * a FIFTH one still reds. A count would not do: it cannot tell "these four" from "some other
+     * four", and the swap is exactly the case that must not slip through.
+     *
+     * TWO — THE AUTHORIZATION CLAIM THE NEW PATH ACTUALLY MAKES, which is narrower than a
+     * permission and is stated rather than implied. There is NO HTTP surface: no route, no
+     * controller action, no FormRequest writes this column, so no permission decision has been made
+     * and none is being smuggled in. The only writer is an Action reached from a console command,
+     * whose authorization IS shell access, and which refuses to run without a named `--actor` it
+     * then records (asserted in tests/Feature/Finance/AuditedMoneyDestinationTest.php). When an
+     * HTTP surface does arrive it will red this arm again, and the permission it needs is the
+     * conversation that red is for.
      */
-    $offenders = [];
+    $mayNameIt = [
+        // The Action that writes it, and the console command's only route to the column.
+        'app/Finance/Actions/SetSettlementBankAccount.php',
+        // Reads it to flag a deactivation that retires the account settlement still points at.
+        'app/Finance/Http/Controllers/BankAccountController.php',
+        // The model documents the column; the resolver READS it. Neither writes.
+        'app/Finance/Models/SchoolFinanceSettings.php',
+        'app/Finance/Services/SettlementBankAccount.php',
+    ];
+
+    $found = [];
 
     $directories = [__DIR__.'/../../../app', __DIR__.'/../../../resources/js'];
 
@@ -182,16 +202,34 @@ it('pins that no write path exists for the settlement account, so adding one is 
 
             $path = $file->getPathname();
 
-            // The resolver READS the column and the model documents it; neither writes it.
-            if (str_ends_with($path, 'SettlementBankAccount.php') || str_ends_with($path, 'SchoolFinanceSettings.php')) {
-                continue;
-            }
-
             if (str_contains((string) file_get_contents($path), 'settlement_bank_account_id')) {
-                $offenders[] = str_replace(__DIR__.'/../../../', '', $path);
+                $found[] = str_replace(__DIR__.'/../../../', '', $path);
             }
         }
     }
 
-    expect($offenders)->toBe([]);
+    sort($found);
+
+    expect($found)->toBe($mayNameIt,
+        'a file outside the allow-list names settlement_bank_account_id. If it WRITES the column, '
+        .'the authorization it needs is a decision — come here and make it. If it only reads, add it '
+        .'to the list and say why.');
+
+    // No HTTP surface, asserted directly rather than inferred from the list above: a controller
+    // could be added to the list by somebody reading it as bookkeeping. The BankAccountController
+    // entry is a READ, and the assertion below is what keeps that true.
+    $writesFromHttp = collect($found)
+        ->filter(fn (string $p) => str_contains($p, '/Http/'))
+        ->filter(function (string $p): bool {
+            $body = (string) file_get_contents(__DIR__.'/../../../'.$p);
+
+            // A write would name the column inside an update()/create()/fill() payload. The read
+            // this file does have is a ->value('settlement_bank_account_id') on a query.
+            return (bool) preg_match('/[\'"]settlement_bank_account_id[\'"]\s*=>/', $body);
+        })
+        ->values()->all();
+
+    expect($writesFromHttp)->toBe([],
+        'an HTTP path now WRITES the settlement account. That needs a permission and probably an '
+        .'approval step (docs/handoff/tickets/settlement-account-change-has-no-approval-step.md).');
 });

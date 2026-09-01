@@ -59,6 +59,15 @@ return [
         'rbac.impersonation_started',
         'rbac.impersonation_ended',
         'finance.refund_issued',
+        // WHERE EVERY NAIRA OF GATEWAY FEE INCOME SETTLES.
+        // App\Finance\Actions\SetSettlementBankAccount writes this on every change to
+        // finance_school_settings.settlement_bank_account_id. CRITICAL, at the same tier as a role
+        // grant and an impersonation, and for the same reason: it is one gesture, performed by one
+        // person, that redirects the destination of a school's entire gateway income. It has no
+        // approval step today — deliberately, for one week, and ticketed
+        // (docs/handoff/tickets/settlement-account-change-has-no-approval-step.md) — which makes
+        // the record of it the only control there is.
+        'finance.settlement_account_changed',
     ],
 
     'warning' => [
@@ -82,6 +91,22 @@ return [
         // reach of the severity filter without claiming each row is an alarm.
         'guardian.student_record_access_refused',
         'grades.modified_after_publish',
+        // THE ACCOUNTS MONEY LANDS IN — App\Finance\Http\Controllers\BankAccountController.
+        // WARNING and not CRITICAL, argued rather than defaulted: none of these four acts moves
+        // money by itself. An account only receives anything once something POINTS at it — a
+        // bursar choosing it on a payment, or the settlement selection above, which is critical
+        // precisely because it is that pointing. Creating, relabelling or retiring an account is
+        // finance configuration a reconciliation will ask about, and `warning` puts it in reach of
+        // the severity filter without claiming each row is an alarm.
+        //
+        // `bank_account_deactivated` is the one a reconciliation asks about FIRST — "when did we
+        // stop using this, and who decided" — and it carries `was_settlement_account` so a
+        // retirement of the account gateway money is still being sent to is visible in the row
+        // itself rather than only by joining two tables.
+        'finance.bank_account_created',
+        'finance.bank_account_updated',
+        'finance.bank_account_deactivated',
+        'finance.bank_account_reactivated',
     ],
 
     'notice' => [

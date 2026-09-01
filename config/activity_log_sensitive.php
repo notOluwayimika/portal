@@ -47,6 +47,19 @@ return [
         // `authentication`, not `auth`. The previous key 'auth.password_reset'
         // matched no row.
         'authentication.password_reset',
+        // DELIBERATELY ABSENT: the five `finance.bank_account_*` /
+        // `finance.settlement_account_changed` keys. They are the highest-tier finance events in
+        // the catalogue — settlement is `critical` — and they are NOT listed here, which is not an
+        // omission and is not in tension with that tier. `entries` does not mean "important"; it
+        // means HIDDEN from anyone without `activity_log.view_sensitive`
+        // (ActivityLogQueryService::excludeSensitive). `internal_auditor` holds
+        // `activity_log.view`, `activity_log.export` and `activity_log.view_all` and deliberately
+        // NOT `view_sensitive`, so listing these would hide the record of where a school's money
+        // settles from the one seat that exists to read it — the same argument the guardian note
+        // below makes, applied to money instead of student records. The rows carry no credential
+        // material and no account number; the properties are actor, account uuid, label, bank name
+        // and the from/to of the change.
+        //
         // DELIBERATELY ABSENT: `guardian.student_record_viewed` and
         // `guardian.student_record_access_refused`
         // (App\Support\StudentRecordAccessLog). These two exist to answer "did a

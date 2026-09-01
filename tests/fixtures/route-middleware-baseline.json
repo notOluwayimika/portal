@@ -3,7 +3,7 @@
         "api",
         "auth:sanctum",
         "tenant",
-        "permission:academic_data.view"
+        "permission:activity_log.view"
     ],
     "DELETE /api/class-structure/arms/{arm}": [
         "api",
@@ -224,43 +224,43 @@
         "api",
         "auth:sanctum",
         "tenant",
-        "permission:academic_data.view"
+        "permission:activity_log.view"
     ],
     "GET /api/activity-logs/export": [
         "api",
         "auth:sanctum",
         "tenant",
-        "permission:academic_data.view"
+        "permission:activity_log.view"
     ],
     "GET /api/activity-logs/exports/{export}": [
         "api",
         "auth:sanctum",
         "tenant",
-        "permission:academic_data.view"
+        "permission:activity_log.view"
     ],
     "GET /api/activity-logs/filters/options": [
         "api",
         "auth:sanctum",
         "tenant",
-        "permission:academic_data.view"
+        "permission:activity_log.view"
     ],
     "GET /api/activity-logs/saved-filters": [
         "api",
         "auth:sanctum",
         "tenant",
-        "permission:academic_data.view"
+        "permission:activity_log.view"
     ],
     "GET /api/activity-logs/stats": [
         "api",
         "auth:sanctum",
         "tenant",
-        "permission:academic_data.view"
+        "permission:activity_log.view"
     ],
     "GET /api/activity-logs/{id}": [
         "api",
         "auth:sanctum",
         "tenant",
-        "permission:academic_data.view"
+        "permission:activity_log.view"
     ],
     "GET /api/behavioral-assessments": [
         "api",
@@ -1326,7 +1326,7 @@
         "api",
         "auth:sanctum",
         "tenant",
-        "permission:academic_data.view"
+        "permission:activity_log.view"
     ],
     "POST /api/behavioral-assessments": [
         "api",

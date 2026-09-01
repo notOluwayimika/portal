@@ -109,7 +109,11 @@ it('hides sensitive entries without view_sensitive', function () {
     $u->assignRole('teacher');
     Role::findByName('teacher')->givePermissionTo(['activity_log.view', 'activity_log.view_all']);
 
-    logRow($school->id, $u, ['log_name' => 'permissions', 'event' => 'role_assigned']);
+    // `rbac.role_attached`, the key App\Listeners\LogRbacChange actually writes.
+    // This row used to be a fabricated `permissions.role_assigned`, which no
+    // emitter produces — so the arm demonstrated the exclusion against a key
+    // that could never appear in the table.
+    logRow($school->id, $u, ['log_name' => 'rbac', 'event' => 'role_attached']);
     logRow($school->id, $u, ['log_name' => 'guardian', 'event' => 'updated']);
 
     $res = $this->actingAs($u)->getJson('/api/activity-logs')->assertOk();
@@ -117,9 +121,15 @@ it('hides sensitive entries without view_sensitive', function () {
 });
 
 it('derives severity per the config map', function () {
+    // These are the EMITTED keys. This arm used to name `permissions.role_assigned`
+    // and `auth.login_failed`, which no emitter has ever written — so it passed for
+    // years while 1,800 real rows resolved to `info`. It exercises the resolver's
+    // mechanics only; the arms that tie a tier to a row an emitter actually wrote
+    // live in tests/Feature/ActivityLog/EmittedEventCatalogueTest.php.
     $sev = ActivitySeverityService::make();
-    expect($sev->for('permissions', 'role_assigned'))->toBe('critical');
-    expect($sev->for('auth', 'login_failed'))->toBe('warning');
+    expect($sev->for('rbac', 'role_attached'))->toBe('critical');
+    expect($sev->for('auth', 'failed_login'))->toBe('warning');
+    expect($sev->for('authentication', 'password_reset'))->toBe('warning');
     expect($sev->for('guardian', 'deleted'))->toBe('notice');
     expect($sev->for('guardian', 'updated'))->toBe('info');
 });

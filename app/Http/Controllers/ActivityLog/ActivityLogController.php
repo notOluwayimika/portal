@@ -198,9 +198,16 @@ class ActivityLogController extends Controller
                             ->where('activity_log.created_at', '>=', now()->subDay())
                             ->distinct()->count('causer_id'),
                         'critical_7d' => $bySeverity['critical'] ?? 0,
+                        // App\Listeners\LogFailedLogin:22,:28 writes
+                        // activity('auth')->event('failed_login'). This read
+                        // `like '%login_failed%'` — the same transposition the
+                        // severity catalogue carried — so the tile reported 0
+                        // against 994 rows. Matched EXACTLY, not with a LIKE:
+                        // a substring match is what let the wrong name look
+                        // plausible for as long as it did.
                         'failed_logins_24h' => $this->queries->baseQuery($user, true)
                             ->where('log_name', 'auth')
-                            ->where('event', 'like', '%login_failed%')
+                            ->where('event', 'failed_login')
                             ->where('activity_log.created_at', '>=', now()->subDay())->count(),
                         'top_causers' => $topCausers,
                         'by_event' => $recent->groupBy('event')->map->count(),

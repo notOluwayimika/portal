@@ -44,6 +44,9 @@ Two platform rules that follow from these and are already enforced:
 - **Off-request School context comes only from `ActiveSchool::runFor()`**
   (jobs use the `SchoolAware` middleware). Impersonating a causer via
   `auth()->setUser()` to obtain context is banned in new code. (ADR 0026)
+  _Carve-out (ADR 0045 A1):_ a sanctioned super-admin impersonation session —
+  bounded, entry/exit audited, context set explicitly from `(user, school)`,
+  causer pinned to the operator — is distinct on every axis and permitted.
 
 ## Workflow
 

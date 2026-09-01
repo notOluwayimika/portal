@@ -107,6 +107,23 @@ function isComment(string $line): bool
 $app = phpLines($root.'/app', $root);
 $tests = phpLines($root.'/tests', $root);
 
+// COVERAGE, REPORTED ALONGSIDE FINDINGS — the denominator, not just the numerator.
+//
+// "No violations" and "no violations, across N files" are different claims and only the second is
+// checkable. A gate's FIRST green is the least trustworthy green it will ever produce, because it
+// is the only one taken before anyone has established what the instrument cannot see: the SIGNAL
+// length lint reported a clean run while reading 61 of 117 messages, and nothing in its output
+// could have revealed that.
+//
+// This lint's denominator is `app/` and `tests/`, recursively, every .php file — verified by
+// counting what phpLines actually returned rather than by describing the iterator. It does NOT
+// scan database/, routes/ or config/, which is deliberate: migrations legitimately name finance
+// tables, and the rules here are about application code.
+$scannedFiles = count(array_unique(array_merge(
+    array_column($app, 0),
+    array_column($tests, 0),
+)));
+
 $found = [];
 $add = function (string $rule, string $rel, string $line) use (&$found) {
     $found[$rule."\t".$rel."\t".trim($line)] = true;
@@ -383,5 +400,6 @@ if ($fixed) {
     exit(1);
 }
 
-fwrite(STDERR, 'boundary-lint: OK — no new boundary violations ('.count($found)." known temporary exceptions).\n");
+fwrite(STDERR, 'boundary-lint: OK — no new boundary violations ('.count($found).' known temporary exceptions); '
+    .$scannedFiles." files scanned across app/ and tests/.\n");
 exit(0);

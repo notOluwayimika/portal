@@ -63,6 +63,34 @@ operational facts an agent needs most often.
   And read `git diff --stat` against your own model of the change before
   pushing — no gate objects to a commit full of correct formatting, and none
   should.
+- **A GATE REPORTS COVERAGE, NOT JUST FINDINGS — and its FIRST green is the least trustworthy green
+  it will ever produce.** It is the only one taken before anyone has established what the instrument
+  cannot see, so "no violations" is unfalsifiable until the denominator is stated.
+
+  Measured 2026-09-01. The SIGNAL-length lint reported a clean run while reading **61 of 117**
+  messages — it knew the heredoc form of a SQL string and not the escaped form inside a PHP
+  single-quoted string, and nothing in its output could have revealed that. Asking the same question
+  of the two OLDER gates then found a real hole in one of them: the collation tripwire's matcher had
+  no `LIKE` at all, and `LIKE` is collation-sensitive (`'a' LIKE 'A'` is TRUE under
+  `utf8mb4_unicode_ci`). It had been clean by luck — the repository's only two `LIKE`s happened to
+  carry `COLLATE`. The same question found a SECOND gap in the same file: comparisons against a
+  declared local variable, which the right-hand side had never accepted.
+
+  **REPORT THREE NUMBERS, NOT TWO.** *Examined*, *excluded with a stated reason*, and
+  **unrecognised** — constructs the instrument could not classify at all. Only the third is
+  dangerous, and an aggregate hides it: `LIKE` sat inside a "61 skipped" that looked like deliberate
+  exclusion. Assert the third is zero, so a new unclassifiable form reds instead of vanishing. Same
+  UNKNOWN discipline as `bin/board`'s failed fetch, applied to coverage.
+
+  **AND WIDEN THE MATCHER TO RECOGNISE MORE THAN IT JUDGES.** A numeric literal is not a collation
+  concern, but the matcher must PARSE `NEW.flag = 1` in order to exclude it on column type —
+  otherwise it lands in unrecognised and the honest bucket fills with noise. Recognise broadly,
+  judge narrowly.
+
+  **A PARTIAL FIX TO A GATE IS WORSE THAN THE GAP**, because it converts a known blind spot into an
+  unknown one. When two gaps overlap, the bite-proof must be the case that survives either fix
+  alone — here a bare `LIKE` with a `CONCAT(...)` right-hand side.
+
 - **WHEN YOU ASSERT A NEGATIVE, ASSERT *WHICH* NEGATIVE.** An assertion satisfiable by more than one
   state does not distinguish them, and this repository's guards are STACKED — so when your assertion
   is loose, something else almost always refuses first and the test passes for the wrong reason.

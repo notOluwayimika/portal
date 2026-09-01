@@ -70,6 +70,33 @@ enum GatewaySettlementOutcome: string
      */
     case FeeIsNegative = 'fee_is_negative';
 
+    /**
+     * The delivery was recorded, and `verify()` — the authority — could not be reached.
+     *
+     * **"We could not find out" is not "it failed."** Nothing is written, the status is not moved,
+     * and the row stays `pending` for a later delivery, the return path, or step 7's report to
+     * recover. This is §7's fifth failure row, decided on 2026-08-29 in
+     * `docs/handoff/decisions/webhook-arrives-but-verify-is-unreachable.md` before the handler
+     * existed — and unreachable in the shipped code until the verify call it depends on was
+     * actually made.
+     *
+     * It answers 200 like everything else here: what failed was our call OUT, not the provider's
+     * call in, so asking Paystack to deliver it again buys nothing.
+     */
+    case VerifyUnavailable = 'verify_unavailable';
+
+    /**
+     * The webhook announced a settlement and `verify()` did not agree the money is collected.
+     *
+     * THIS CASE IS THE REASON THE VERIFY CALL EXISTS. A signature proves the body came from the
+     * holder of the secret; it says nothing about whether the contents match Paystack's own ledger.
+     * Only asking Paystack directly can tell a genuine `charge.success` from a signed assertion that
+     * one happened. Nothing is booked, the row stays `pending`, and it is logged at ERROR — a
+     * notification the provider will not corroborate is either a defect or a forged body, and both
+     * want a human.
+     */
+    case NotSuccessfulAtProvider = 'not_successful_at_provider';
+
     /** The transaction vanished between the lookup and the lock. Recorded, not settled. */
     case Unknown = 'unknown';
 }

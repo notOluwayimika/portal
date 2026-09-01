@@ -19,6 +19,7 @@ use App\Support\ActiveSchool;
 use App\Support\Money;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Testing\TestResponse;
 
@@ -35,7 +36,51 @@ uses(RefreshDatabase::class);
 
 const PWT_SECRET = 'sk_test_pwt_fixture_secret';
 
-beforeEach(fn () => config(['services.paystack.secret_key' => PWT_SECRET]));
+beforeEach(function () {
+    config(['services.paystack.secret_key' => PWT_SECRET]);
+
+    // NO TEST MAY REACH THE NETWORK, AND A TEST THAT TRIES MUST SAY SO. Every settling arm now goes
+    // out to `verify()`, so an arm that forgets its fake would otherwise either hit Paystack or fail
+    // with a connection error whose message is about DNS rather than about the missing stub. This
+    // turns both into a loud, specific refusal naming the URL.
+    Http::preventStrayRequests();
+});
+
+/**
+ * What Paystack will answer when this system asks about the reference — THE AUTHORITY.
+ *
+ * The webhook body stays a plain `charge.success` in every arm below and the variation lives HERE,
+ * because that is what the code now does: the delivery supplies the trigger and the reference, and
+ * every number that reaches a money column comes from this response.
+ *
+ * ONE `Http::fake()` PER TEST, NEVER A SHARED DEFAULT PLUS AN OVERRIDE. Fakes accumulate and the
+ * FIRST match wins, so a second call for the same URL is silently ignored — the trap already
+ * recorded in CLAUDE.md, which produced six passing assertions against one response.
+ *
+ * @param  array<string, mixed>  $dataOverrides  merged into the `data` object
+ * @param  list<string>  $drop  keys removed from `data` entirely — `null` and ABSENT are different
+ *                              facts and several arms turn on which one they are testing
+ */
+function pwtVerifyReturns(string $reference, array $dataOverrides = [], array $drop = []): void
+{
+    $data = pwtBody($reference, ['data' => $dataOverrides])['data'];
+
+    foreach ($drop as $key) {
+        unset($data[$key]);
+    }
+
+    Http::fake(['*/transaction/verify/*' => Http::response([
+        'status' => true,
+        'message' => 'Verification successful',
+        'data' => $data,
+    ], 200)]);
+}
+
+/** Paystack is unreachable — the case decided on 2026-08-29 and unreachable in code until now. */
+function pwtVerifyUnavailable(): void
+{
+    Http::fake(['*/transaction/verify/*' => Http::response('upstream is unwell', 503)]);
+}
 
 function pwtTransaction(?School $school = null, ?string $reference = null, int $amountKobo = 4_137_500): GatewayTransaction
 {
@@ -162,6 +207,7 @@ it('refuses an unsigned delivery with 401, records nothing, but leaves a trace',
 
 it('settles a signed charge.success: the payment is amount MINUS the reported fee', function () {
     $transaction = pwtTransaction();
+    pwtVerifyReturns($transaction->reference);
 
     pwtPost(pwtBody($transaction->reference))->assertOk()->assertJsonPath('outcome', 'settled');
 
@@ -182,6 +228,7 @@ it('settles a signed charge.success: the payment is amount MINUS the reported fe
 
 it('ALLOCATES the payment to the invoice the parent chose', function () {
     $transaction = pwtTransaction();
+    pwtVerifyReturns($transaction->reference);
 
     pwtPost(pwtBody($transaction->reference))->assertOk()->assertJsonPath('outcome', 'settled');
 
@@ -203,6 +250,7 @@ it('ALLOCATES the payment to the invoice the parent chose', function () {
 
 it('records the provider reference, so there is a way back to Paystack', function () {
     $transaction = pwtTransaction();
+    pwtVerifyReturns($transaction->reference);
 
     pwtPost(pwtBody($transaction->reference))->assertOk();
 
@@ -219,18 +267,24 @@ it('refuses to book against a void invoice, loudly, without a 500', function () 
         (string) Invoice::findOrFail($transaction->invoice_id)->uuid,
     ));
 
+    pwtVerifyReturns($transaction->reference);
+
     // The payer has already been charged, so this is money with no payment against it. 200 because
     // redelivery cannot fix our data — but recorded, left pending, and left for the discrepancy
     // report. A 500 here would put Paystack into a retry schedule that fails identically forever.
     pwtPost(pwtBody($transaction->reference))->assertOk()->assertJsonPath('outcome', 'could_not_book');
 
     expect(DB::table('finance_payments')->count())->toBe(0)
-        ->and(DB::table('finance_gateway_transaction_events')->count())->toBe(1)
+        // TWO ROWS, NOT ONE: the delivery that arrived AND the authority's answer to it. The
+        // verify response is recorded before the outcome is decided, so a provider that
+        // disagrees with the webhook leaves the disagreement on file rather than in a log.
+        ->and(DB::table('finance_gateway_transaction_events')->count())->toBe(2)
         ->and($transaction->fresh()->status->value)->toBe('pending');
 });
 
 it('pays into the CONFIGURED settlement account, not merely one of the school\'s accounts', function () {
     $transaction = pwtTransaction();
+    pwtVerifyReturns($transaction->reference);
 
     pwtPost(pwtBody($transaction->reference))->assertOk();
 
@@ -250,6 +304,8 @@ it('cannot book when the school has configured no settlement account', function 
     ActiveSchool::runFor($transaction->school_id, fn () => SchoolFinanceSettings::where('school_id', $transaction->school_id)
         ->update(['settlement_bank_account_id' => null]));
 
+    pwtVerifyReturns($transaction->reference);
+
     // THE ARM THE FIXTURE CLAIMED EXISTED AND DID NOT. This is the most likely real could_not_book:
     // a school onboarded without a settlement account, discovered only once a parent has already
     // been charged. SettlementBankAccount throws BusinessRuleException; the webhook must catch it
@@ -257,12 +313,16 @@ it('cannot book when the school has configured no settlement account', function 
     pwtPost(pwtBody($transaction->reference))->assertOk()->assertJsonPath('outcome', 'could_not_book');
 
     expect(DB::table('finance_payments')->count())->toBe(0)
-        ->and(DB::table('finance_gateway_transaction_events')->count())->toBe(1)
+        // TWO ROWS, NOT ONE: the delivery that arrived AND the authority's answer to it. The
+        // verify response is recorded before the outcome is decided, so a provider that
+        // disagrees with the webhook leaves the disagreement on file rather than in a log.
+        ->and(DB::table('finance_gateway_transaction_events')->count())->toBe(2)
         ->and($transaction->fresh()->status->value)->toBe('pending');
 });
 
 it('files the payment on the LAGOS date, not the UTC one', function () {
     $transaction = pwtTransaction();
+    pwtVerifyReturns($transaction->reference);
 
     pwtPost(pwtBody($transaction->reference))->assertOk();
 
@@ -276,10 +336,12 @@ it('files the payment on the LAGOS date, not the UTC one', function () {
 
 it('never stores the reusable authorization code, and says so rather than staying silent', function () {
     $transaction = pwtTransaction();
+    pwtVerifyReturns($transaction->reference);
 
     pwtPost(pwtBody($transaction->reference))->assertOk();
 
-    $event = DB::table('finance_gateway_transaction_events')->first();
+    // NAMED, not `first()`: there are two rows now and the ordering between them is not the point.
+    $event = DB::table('finance_gateway_transaction_events')->where('source', 'webhook')->first();
     $payload = json_decode($event->payload, true);
 
     expect($payload['data']['authorization'])->not->toHaveKey('authorization_code')
@@ -299,6 +361,17 @@ it('never stores the reusable authorization code, and says so rather than stayin
     // And it is a STRIP, not a retention redaction: those are different operations with different
     // signals, and conflating them would claim the payload is gone while it is sitting right there.
     expect($event->redacted_at)->toBeNull();
+
+    // THE VERIFY ROW CARRIES THE SAME CREDENTIAL AND MUST BE STRIPPED TOO. It is a second copy of
+    // the authorization block, arriving by a different door, and a redaction that covered only the
+    // webhook would store the reusable token anyway while every assertion above stayed green.
+    $verified = DB::table('finance_gateway_transaction_events')->where('source', 'verify')->first();
+    $verifiedPayload = json_decode($verified->payload, true);
+
+    expect($verifiedPayload['data']['authorization'])->not->toHaveKey('authorization_code')
+        ->and($verifiedPayload['data']['authorization'])->not->toHaveKey('signature')
+        ->and($verifiedPayload['data']['authorization']['last4'])->toBe('4081')
+        ->and($verified->event)->toBeNull();
 });
 
 it('records only what was actually removed, never what was merely looked for', function () {
@@ -311,6 +384,7 @@ it('records only what was actually removed, never what was merely looked for', f
 
 it('is idempotent: a redelivered webhook does not pay the invoice twice', function () {
     $transaction = pwtTransaction();
+    pwtVerifyReturns($transaction->reference);
 
     pwtPost(pwtBody($transaction->reference))->assertOk()->assertJsonPath('outcome', 'settled');
     pwtPost(pwtBody($transaction->reference))->assertOk()->assertJsonPath('outcome', 'already_settled');
@@ -318,11 +392,16 @@ it('is idempotent: a redelivered webhook does not pay the invoice twice', functi
     expect(DB::table('finance_payments')->count())->toBe(1)
         // BOTH deliveries are on file even though only one settled — that is the whole point of
         // committing T1 before T2 decides anything.
-        ->and(DB::table('finance_gateway_transaction_events')->count())->toBe(2);
+        // FOUR: each delivery is recorded, and each asks the authority again. Re-verifying a replay
+        // is deliberate rather than wasteful — a redelivery is exactly how a transaction recovers
+        // when an EARLIER verify was unreachable, so short-circuiting on `payment_id` would close
+        // the recovery path the unavailable-branch depends on.
+        ->and(DB::table('finance_gateway_transaction_events')->count())->toBe(4);
 });
 
 it('the compare-and-swap refuses a second claim on an already-claimed row', function () {
     $transaction = pwtTransaction();
+    pwtVerifyReturns($transaction->reference);
     pwtPost(pwtBody($transaction->reference))->assertOk();
 
     $settled = $transaction->fresh();
@@ -376,23 +455,28 @@ it('the compare-and-swap refuses a second claim on an already-claimed row', func
 it('records the delivery but writes no payment when the provider does not report its fee', function () {
     $transaction = pwtTransaction();
 
-    $body = pwtBody($transaction->reference);
-    unset($body['data']['fees']);
+    // DROPPED FROM THE AUTHORITY'S ANSWER, not from the delivery: `settle()` reads the verify body,
+    // so a `fees` missing only from the webhook would now prove nothing at all.
+    pwtVerifyReturns($transaction->reference, drop: ['fees']);
 
-    pwtPost($body)->assertOk()->assertJsonPath('outcome', 'fee_not_reported');
+    pwtPost(pwtBody($transaction->reference))->assertOk()->assertJsonPath('outcome', 'fee_not_reported');
 
     // §7's fifth case. The net amount is unknowable, so nothing is guessed: the row stays pending
     // for the discrepancy report to find, and the delivery is on file to explain why.
     expect(DB::table('finance_payments')->count())->toBe(0)
-        ->and(DB::table('finance_gateway_transaction_events')->count())->toBe(1)
+        // TWO ROWS, NOT ONE: the delivery that arrived AND the authority's answer to it. The
+        // verify response is recorded before the outcome is decided, so a provider that
+        // disagrees with the webhook leaves the disagreement on file rather than in a log.
+        ->and(DB::table('finance_gateway_transaction_events')->count())->toBe(2)
         ->and($transaction->fresh()->status->value)->toBe('pending')
         ->and($transaction->fresh()->payment_id)->toBeNull();
 });
 
-it('refuses to book a delivery whose amount is not the one we initiated', function (array $override, string $why) {
+it('refuses to book when the PROVIDER reports an amount that is not the one we initiated', function (array $override, string $why) {
     $transaction = pwtTransaction();
+    pwtVerifyReturns($transaction->reference, $override);
 
-    pwtPost(pwtBody($transaction->reference, ['data' => $override]))
+    pwtPost(pwtBody($transaction->reference))
         ->assertOk()
         ->assertJsonPath('outcome', 'amount_mismatch');
 
@@ -400,20 +484,47 @@ it('refuses to book a delivery whose amount is not the one we initiated', functi
     // downstream takes the GROSS from our own row, so without this check a provider reporting a
     // different amount would never be noticed — the two numbers simply never meet.
     expect(DB::table('finance_payments')->count())->toBe(0)
-        ->and(DB::table('finance_gateway_transaction_events')->count())->toBe(1)
+        // TWO ROWS, NOT ONE: the delivery that arrived AND the authority's answer to it. The
+        // verify response is recorded before the outcome is decided, so a provider that
+        // disagrees with the webhook leaves the disagreement on file rather than in a log.
+        ->and(DB::table('finance_gateway_transaction_events')->count())->toBe(2)
         ->and($transaction->fresh()->status->value)->toBe('pending');
 })->with([
     'a different amount' => [['amount' => 4_137_499], 'one kobo under'],
     'a different currency' => [['currency' => 'USD'], 'not the invoice currency'],
-    // ABSENT MUST FAIL, NOT PASS. Treating a missing field as matching puts the check back where it
-    // started, which is the usual way a validation of this shape is written wrong.
-    'no amount at all' => [['amount' => null], 'missing is not matching'],
 ]);
+
+it('refuses an answer with no amount in it — as unreadable, not as a mismatch', function () {
+    $transaction = pwtTransaction();
+    pwtVerifyReturns($transaction->reference, ['amount' => null]);
+
+    // ABSENT MUST FAIL, NOT PASS — the rule this arm has always been about. What CHANGED with the
+    // authority is WHICH refusal it earns, and the distinction is worth keeping rather than
+    // flattening: a body with no amount is an answer this system could not read, not a provider
+    // reporting a different charge. `verifyWithPayload` refuses it at the DTO construction, before
+    // `matchesCharge` is ever reached, so the outcome is the unreachable-provider one.
+    //
+    // Asserted by NAME. Both outcomes exit through the same 200 and would satisfy an arm that only
+    // checked "nothing was booked", and the two mean very different things to whoever reads the
+    // discrepancy report: one says ask Paystack what is wrong with our integration, the other says
+    // ask why they charged a different amount.
+    pwtPost(pwtBody($transaction->reference))
+        ->assertOk()
+        ->assertJsonPath('outcome', 'verify_unavailable');
+
+    expect(DB::table('finance_payments')->count())->toBe(0)
+        ->and($transaction->fresh()->status->value)->toBe('pending')
+        // The unreadable body is NOT recorded: recordDelivery runs only after the answer parses, so
+        // there is exactly the webhook row. Nothing is invented into the evidence table.
+        ->and(DB::table('finance_gateway_transaction_events')->count())->toBe(1);
+});
 
 it('refuses a negative fee rather than crediting more than the payer was charged', function () {
     $transaction = pwtTransaction();
 
-    pwtPost(pwtBody($transaction->reference, ['data' => ['fees' => -50_000]]))
+    pwtVerifyReturns($transaction->reference, ['fees' => -50_000]);
+
+    pwtPost(pwtBody($transaction->reference))
         ->assertOk()
         ->assertJsonPath('outcome', 'fee_is_negative');
 
@@ -421,7 +532,10 @@ it('refuses a negative fee rather than crediting more than the payer was charged
     // one below zero. A negative fee makes `amount - fee` GREATER than the gross, so the invoice is
     // credited more than the payer ever paid — money invented, on an append-only table.
     expect(DB::table('finance_payments')->count())->toBe(0)
-        ->and(DB::table('finance_gateway_transaction_events')->count())->toBe(1)
+        // TWO ROWS, NOT ONE: the delivery that arrived AND the authority's answer to it. The
+        // verify response is recorded before the outcome is decided, so a provider that
+        // disagrees with the webhook leaves the disagreement on file rather than in a log.
+        ->and(DB::table('finance_gateway_transaction_events')->count())->toBe(2)
         ->and($transaction->fresh()->status->value)->toBe('pending');
 });
 
@@ -430,7 +544,9 @@ it('still refuses a fee at or above the amount — the OTHER side of the same gu
 
     // BOTH SIDES ASSERTED TOGETHER, so a future edit cannot fix one direction by breaking the other
     // and see a green suite. This is the arm that existed; the one above is the one that did not.
-    pwtPost(pwtBody($transaction->reference, ['data' => ['fees' => 4_137_500]]))
+    pwtVerifyReturns($transaction->reference, ['fees' => 4_137_500]);
+
+    pwtPost(pwtBody($transaction->reference))
         ->assertOk()
         ->assertJsonPath('outcome', 'fee_exceeds_amount');
 
@@ -489,4 +605,72 @@ it('records a non-settlement event without settling on it', function () {
     expect(DB::table('finance_gateway_transaction_events')->count())->toBe(1)
         ->and(DB::table('finance_payments')->count())->toBe(0)
         ->and($transaction->fresh()->status->value)->toBe('pending');
+});
+
+// ── THE AUTHORITY ─────────────────────────────────────────────────────────────────────────────
+//
+// These three are the fix. Step 4 shipped settling from the webhook body, which three docblocks and
+// a decision document forbade; nothing in the suite could tell, because every fixture made the two
+// bodies identical and a wrong implementation therefore passed by coincidence.
+
+it('takes the money facts from VERIFY, not from the delivery that announced them', function () {
+    $transaction = pwtTransaction();
+
+    // THE ONLY ARM THAT CAN SEE WHICH BODY WAS READ. Every other test in this file passes whichever
+    // one settle() takes, because their webhook and their verify response agree — the fixture's
+    // degrees of freedom collapse and the axis under test disappears. Here they DISAGREE, so the
+    // payment amount names the source: 4_137_500 − 72_062 = 4_065_438 from the authority, against
+    // 4_137_500 − 999_999 = 3_137_501 from the wire.
+    pwtVerifyReturns($transaction->reference, ['fees' => 72_062]);
+
+    pwtPost(pwtBody($transaction->reference, ['data' => ['fees' => 999_999]]))
+        ->assertOk()
+        ->assertJsonPath('outcome', 'settled');
+
+    $payment = ActiveSchool::runFor($transaction->school_id, fn () => Payment::firstOrFail());
+
+    expect($payment->amount->toKobo())->toBe(4_065_438)
+        ->and($transaction->fresh()->fee->toKobo())->toBe(72_062);
+});
+
+it('books nothing when the delivery claims success and the provider will not corroborate it', function () {
+    $transaction = pwtTransaction();
+
+    // THE CASE THE VERIFY CALL EXISTS FOR. The signature on this delivery is valid — it is computed
+    // with the real secret, exactly as a holder of that secret would. What it cannot do is make
+    // Paystack's own API agree, and that is the whole difference between trusting the wire and
+    // trusting the provider.
+    pwtVerifyReturns($transaction->reference, ['status' => 'failed']);
+
+    pwtPost(pwtBody($transaction->reference))
+        ->assertOk()
+        ->assertJsonPath('outcome', 'not_successful_at_provider');
+
+    expect(DB::table('finance_payments')->count())->toBe(0)
+        ->and($transaction->fresh()->payment_id)->toBeNull()
+        ->and($transaction->fresh()->status->value)->toBe('pending')
+        // BOTH bodies are kept. The disagreement between them is the evidence, and it is the thing
+        // a human will want when they are asked why a parent says they paid and the portal says not.
+        ->and(DB::table('finance_gateway_transaction_events')->count())->toBe(2);
+});
+
+it('leaves the row pending, and answers 200, when the provider cannot be reached', function () {
+    $transaction = pwtTransaction();
+    pwtVerifyUnavailable();
+
+    // §7's fifth failure row, decided 2026-08-29 in
+    // docs/handoff/decisions/webhook-arrives-but-verify-is-unreachable.md and UNREACHABLE IN CODE
+    // until the verify call it depends on was actually made. "We could not find out" is not "it
+    // failed": marking this failed would strand a parent who has genuinely paid.
+    pwtPost(pwtBody($transaction->reference))
+        ->assertOk()
+        ->assertJsonPath('outcome', 'verify_unavailable');
+
+    expect(DB::table('finance_payments')->count())->toBe(0)
+        ->and($transaction->fresh()->status->value)->toBe('pending')
+        ->and($transaction->fresh()->payment_id)->toBeNull()
+        // ONE row, and asserting WHICH: the delivery arrived and is on file; no verify body exists
+        // to record, because none came back. A second row here would mean something was invented.
+        ->and(DB::table('finance_gateway_transaction_events')->count())->toBe(1)
+        ->and(DB::table('finance_gateway_transaction_events')->value('source'))->toBe('webhook');
 });

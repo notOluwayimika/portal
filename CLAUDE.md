@@ -241,6 +241,25 @@ operational facts an agent needs most often.
   **Rebuild the frontend after any `staging` pull that touches it**, and note the
   worse cousin — a manifest that is stale but still *resolvable* passes against the
   wrong bundle instead of erroring.
+- **The DEV DATABASE IS SHARED ACROSS BRANCHES, and migrating forward never removes a column — so
+  `SHOW COLUMNS` is evidence about YOUR MACHINE, never about what a branch contains.** `migrate` on
+  branch A adds `bill_minor`; checking out `staging` does not drop it, because nothing runs `down()`
+  on a branch switch. The column then sits in the schema no matter which branch is checked out, and
+  a query naming it succeeds on all of them — including the ones whose code has never heard of it.
+  Caught on 2026-09-01 one step before it was asserted: `SHOW COLUMNS FROM
+  finance_gateway_transactions` was about to be quoted as proof that `staging` carries the bill
+  columns, which exist only in an unmerged PR's migration file.
+
+  **The migration FILES on the branch are the instrument**, because they are what a fresh database
+  would replay — `git ls-tree -r --name-only <branch>` for presence, `git diff --name-only
+  staging...<branch>` for what the branch adds. Ask "what would `migrate` from zero produce here",
+  never "what does my schema have".
+
+  Same shared-mutable-artifact family as the Vite manifest one entry up — rebuilt by whatever ran
+  last, invisible in every diff, re-diagnosed from scratch on each machine. But it is the sharper
+  form, because the manifest fails LOUDLY and this one **succeeds**: it is a real measurement of the
+  wrong object, and a genuine `SHOW COLUMNS` output is the most credible-looking wrong claim
+  available. Same shape as reading refs rather than recollection, one layer down.
 - **Never build a test's input from the value under test.** A cap test written as
   `while (count($ids) <= MAX_BATCH) { … }` submits "cap + 1" whatever the cap is, so
   it proves a limit exists and is _structurally incapable_ of noticing that limit

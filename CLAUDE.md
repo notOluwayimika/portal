@@ -63,6 +63,44 @@ operational facts an agent needs most often.
   And read `git diff --stat` against your own model of the change before
   pushing — no gate objects to a commit full of correct formatting, and none
   should.
+- **Re-verify a consolidated document against current state IMMEDIATELY before sending it.**
+  Consolidating several asks into one message buys the reader's attention — five arrivals become
+  one — and it is paid for with the FRESHNESS OF THE EARLIEST ITEMS. The longer a note is held in
+  order to consolidate it, the likelier its first item has been overtaken by a reply, a merge or a
+  ruling.
+
+  Bit within hours (2026-08-31 → 09-01): a five-item note asked Developer 1 to choose between two
+  fee arithmetics. His reply of 30 August had ALREADY settled it — "the parent is charged bill + fee
+  and the school receives the full bill" IS solve-for-gross. Sending it would have asked him to
+  re-rule a settled question, in a week he was also doing cutover Section 0, while omitting the item
+  that actually was open. A second item in the same note described as *proposed* work that had since
+  been *built*.
+
+  **The document is a recollection; the repo and their replies are the instrument** — the board rule
+  one level up, and the same failure this file records everywhere else. Re-read the source you are
+  citing, not your summary of it, at the moment of SENDING rather than at the moment of drafting.
+
+- **Before starting any task: run `bin/board`, READ THE DIVERGENCE SECTION, then compile against the
+  base you intend to branch from.** One step, three questions — **is it already built**, **does it
+  still branch cleanly**, **does it compile**. The board fetches, so the divergence answer describes
+  the remote rather than how stale your clone is.
+
+  **The scar, because the abstract version of this rule does not get followed:** a
+  `SettlementBankAccount` stub was built against a resolver Developer 1 had ALREADY LANDED on
+  `staging`. One fetch at task start would have caught it. Four dependency surprises in a single day
+  were every one of them found by CHECKING rather than by planning — branch topology and other
+  people's merges are invisible from inside a task, and they keep changing while you work.
+
+  **Read the SUBJECTS, not the count.** "12 commits behind" tells you to rebase;
+  `feat(finance): withhold un-reviewed invoices from the parent feed` tells you somebody has built
+  the thing you were about to start. Recognition is the whole value, and only the subject line
+  produces it.
+
+  It is folded into `bin/board` rather than written here as a habit, so it runs because the
+  instrument runs and not because somebody remembered — the same reason `bin/db-exclusive` is a
+  script and not a sentence. A failed fetch prints **UNKNOWN** and exits 2, never an empty list:
+  "nothing landed" and "I could not look" must not render identically, which is the no-signal class
+  the board exists to close.
 - **A command whose exit code matters is NEVER the left side of a pipe — and an ad-hoc shell
   inherits none of this repo's safety.** `bin/quality`, `.githooks/pre-push`, `bin/board` and
   `bin/db-exclusive` all `set -uo pipefail`, so the scripts are fine. A one-off command typed at a

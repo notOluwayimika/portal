@@ -1145,6 +1145,20 @@ class GuardianService
             ->exists();
     }
 
+    /**
+     * `$event` is a parameter, so no static reading can resolve it.
+     * bin/ci-activity-catalogue-lint.php refuses to skip what it cannot parse; the five values its
+     * callers pass are declared here and then held to the catalogue like any other emitter.
+     *
+     * Callers: `attached` (:570), the `login_enabled` / `login_disabled` / `pivot_updated` match
+     * (:615-619, and :803-808), and `detached` (:887).
+     *
+     * @activity-emits guardian.attached
+     * @activity-emits guardian.detached
+     * @activity-emits guardian.login_enabled
+     * @activity-emits guardian.login_disabled
+     * @activity-emits guardian.pivot_updated
+     */
     private function logPivotEvent(Guardian $guardian, Student $student, string $event, array $properties = []): void
     {
         activity('guardian')

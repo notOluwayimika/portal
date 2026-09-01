@@ -101,6 +101,36 @@ operational facts an agent needs most often.
   script and not a sentence. A failed fetch prints **UNKNOWN** and exits 2, never an empty list:
   "nothing landed" and "I could not look" must not render identically, which is the no-signal class
   the board exists to close.
+- **A command whose exit code matters is NEVER the left side of a pipe — and an ad-hoc shell
+  inherits none of this repo's safety.** `bin/quality`, `.githooks/pre-push`, `bin/board` and
+  `bin/db-exclusive` all `set -uo pipefail`, so the scripts are fine. A one-off command typed at a
+  prompt is not: `git push -u origin <branch> | tail -6` exits with **tail's** status, which is 0
+  whatever the push did. Bit on 2026-08-31 — the pre-push gate REFUSED the push (one ratchet
+  regression), and the command reported success. Worse, the harness's own completion notification
+  reported `exit code 0` too, because it reports the pipeline's status: **the false signal was
+  echoed back by the tooling, not just produced by it**, so there was no second opinion to catch it.
+  What caught it was `git rev-parse origin/<branch>` — the ref, not the code — which is the same
+  discipline `bin/landed` exists to enforce one level up. Three earlier pushes the same day reported
+  success without moving the remote for three DIFFERENT reasons (hook aborted by a branch switch, a
+  gate poisoned by a concurrent suite, DNS), so this is the fourth instance of one class: **a
+  wrapper's exit status is a claim about the wrapper.** Either drop the pipe when you need the
+  status, or verify the effect instead of the code — and prefer the latter, because it is the only
+  form that survives someone else adding a pipe later.
+
+- **`git commit -m "…"` runs backticks as commands. Write the message to a FILE and use `-F`.**
+  Double quotes stop word-splitting and globbing; they do NOT stop command substitution. A commit
+  message that names identifiers the way this repo's messages do — `payment_id IS NULL`,
+  `withoutGlobalScope`, `redacted_at` — hands every one of them to the shell to EXECUTE. Bit once
+  (2026-08-31) on `feat/paystack-webhook`: nine identifiers were substituted away and the commit
+  landed with sentences like "a compare-and-swap on  whose affected-row count is asserted". The
+  only visible sign was a few `command not found` lines scrolling past ABOVE the successful commit
+  hash, which reads as noise from an earlier step. **The commit still succeeds**, which is what
+  makes it dangerous: nothing fails, and the message is wrong in exactly the places that carried
+  the technical content. Same class as the pint scalar-vs-array trap one entry down — a
+  substitution that does not expand to what you think it does — and the same fix shape: take the
+  shell out of the path (`-F file`) rather than escaping harder, because escaping is a rule you
+  have to remember every time and a file is a rule you cannot forget. Heredocs with a QUOTED
+  delimiter (`<<'EOF'`) are safe and are why the file-writing steps in the same session were fine.
 
 - Tests alone are not verification — migrate the dev DB and drive the affected
   flows in the running app.

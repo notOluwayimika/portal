@@ -82,6 +82,19 @@ class StudentDiscountAward extends Model
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
+            // `finance`, to land in the same bucket as the Action that writes this row:
+            // AwardStudentDiscount:274 calls `activity('finance')`. Without this the model
+            // half fell through to `config('activitylog.default_log_name')` — `default` —
+            // so the two halves of one award were split across two log names and a
+            // `log_name = finance` filter showed the intent without the field diff.
+            //
+            // `useLogName()` AND NOT `protected static $logName`: Spatie resolves the name
+            // in `LogsActivity::getLogNameToUse()` from `$this->activitylogOptions->logName`
+            // and never reads a static property. Twenty-three sibling models carry the
+            // static form and it does nothing — a separate, larger sweep with its own
+            // ticket (`docs/handoff/tickets/model-log-name-is-declared-as-a-static-property-spatie-never-reads.md`),
+            // deliberately not touched here.
+            ->useLogName('finance')
             ->logOnly(['school_id', 'student_id', 'discount_policy_id'])
             ->logOnlyDirty();
     }

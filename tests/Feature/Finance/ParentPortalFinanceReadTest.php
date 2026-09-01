@@ -4,8 +4,15 @@
  * THE PARENT PORTAL'S ONE FINANCE READ — GET /api/parent/finance/wards.
  *
  * The guardian-facing payment portal is being built against the shape this endpoint returns, so the
- * shape freezes when this lands. Three properties are load-bearing and each is planted-and-broken
+ * shape freezes when this lands. Four properties are load-bearing and each is planted-and-broken
  * below rather than merely asserted:
+ *
+ *   0. INTERNAL AUDIT HAS RELEASED IT. Since 31 August 2026 every bill is reviewed by an Internal
+ *      Auditor before it reaches a parent (docs/handoff/brookstone-answers-31-august.md §6), and
+ *      the bill COUNTS AGAINST THE BALANCE the whole time it is waiting. The gate therefore had to
+ *      land on BOTH keys of this response or the screen would print a positive balance above the
+ *      words "Nothing outstanding" — the compliance gate manufacturing a falsehood of its own. §2b
+ *      below holds both halves, and the staff surface's indifference to all of it.
  *
  *   1. OWN WARDS ONLY, derived server-side. There is no identifier on the request, so there is no
  *      uuid to tamper with — the test that matters is that a second guardian's child in the same
@@ -46,6 +53,8 @@ use App\Support\Money;
 use App\Support\SchoolDay;
 use Database\Seeders\RbacSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
@@ -96,8 +105,16 @@ function ppf_guardian(School $school, array $students): array
     return [$user, $guardian];
 }
 
-/** An issued invoice for a FRESH enrollment episode of $student, for $kobo. */
-function ppf_invoice(School $school, Student $student, int $kobo): Invoice
+/**
+ * An issued invoice for a FRESH enrollment episode of $student, for $kobo, **NOT yet reviewed by
+ * Internal Audit** — which since 31 August 2026 is what `GenerateInvoice` actually produces.
+ *
+ * Every arm about the parent's LIST or the parent's BALANCE must state which side of the review gate
+ * its fixture sits on, so this is deliberately the raw production state and `ppf_invoice()` below is
+ * the one that releases. Naming the unreleased case after the Action is what keeps a future arm from
+ * acquiring visibility it never asked for.
+ */
+function ppf_unreviewed(School $school, Student $student, int $kobo): Invoice
 {
     return ActiveSchool::runFor($school->id, function () use ($school, $student, $kobo) {
         $enrollment = StudentCurriculum::create([
@@ -112,6 +129,36 @@ function ppf_invoice(School $school, Student $student, int $kobo): Invoice
             InvoiceKind::Scheduled,
         );
     });
+}
+
+/**
+ * Release a bill to parents — what an Internal Auditor's review will stamp when that action is
+ * built. Written as a direct column write ON PURPOSE: there is no review Action in the tree yet
+ * (this commit is the gate, not the feature), and inventing a helper that pretends otherwise would
+ * be a fixture asserting a capability the application does not have.
+ */
+function ppf_release(Invoice $invoice): Invoice
+{
+    Invoice::withoutGlobalScopes()->whereKey($invoice->getKey())->update([
+        'reviewed_at' => now(),
+        'reviewed_by_user_id' => null,
+    ]);
+
+    return $invoice->refresh();
+}
+
+/**
+ * An issued invoice that Internal Audit HAS released — a bill the parent may see.
+ *
+ * THIS IS WHAT EVERY ARM WRITTEN BEFORE 31 AUGUST MEANT BY "an invoice", which is why the name kept
+ * the plain spelling: those arms are about settlement, isolation, wire shape and gating, and each
+ * one needs a bill that reaches the payer for its assertion to be about anything. Making the review
+ * gate their precondition rather than re-pointing them at the unreleased state keeps each arm
+ * testing the axis it was written for.
+ */
+function ppf_invoice(School $school, Student $student, int $kobo): Invoice
+{
+    return ppf_release(ppf_unreviewed($school, $student, $kobo));
 }
 
 function ppf_pay(School $school, Invoice $invoice, int $kobo): void
@@ -272,6 +319,270 @@ it('EXCLUDES a void invoice', function () {
     $invoices = ppf_hit($school, $me)->assertOk()->json('data.0.invoices');
 
     expect(collect($invoices)->pluck('id')->all())->toBe([$open->uuid]);
+});
+
+/*
+|--------------------------------------------------------------------------
+| 2b · The Internal Audit review gate (Brookstone, 31 August 2026 — §2, §6)
+|--------------------------------------------------------------------------
+|
+| Every bill is reviewed by an Internal Auditor before it is released to parents. The bill is
+| created and COUNTS AGAINST THE BALANCE immediately; only its visibility to the payer is gated.
+|
+| So there are two claims here and they are not the same claim:
+|
+|   1. an unreleased bill does not reach the parent — the list AND the total;
+|   2. the staff side is untouched by any of it.
+|
+| The second is what the whole one-predicate design rests on, and it is the one a reader would
+| otherwise have to take on trust from a docblock.
+*/
+
+it('WITHHOLDS a bill Internal Audit has not reviewed, and shows one it has', function () {
+    $school = al_makeSchool();
+    $ward = ppf_student($school, 'Ada');
+    [$me] = ppf_guardian($school, [$ward]);
+
+    $reviewed = ppf_invoice($school, $ward, 300000);
+    $pending = ppf_unreviewed($school, $ward, 80000);
+
+    $invoices = ppf_hit($school, $me)->assertOk()->json('data.0.invoices');
+
+    // THE REVIEWED INVOICE IS THE CONTROL, and it is doing real work: an empty list would also pass
+    // an endpoint that had simply broken, and a list of both would pass one where the predicate was
+    // never applied. Only this exact pair distinguishes "withheld" from either.
+    expect(collect($invoices)->pluck('id')->all())->toBe([$reviewed->uuid])
+        ->and(collect($invoices)->pluck('id')->all())->not->toContain($pending->uuid);
+});
+
+it('SHOWS the same bill once it is released — the gate opens, it does not merely close', function () {
+    $school = al_makeSchool();
+    $ward = ppf_student($school, 'Ada');
+    [$me] = ppf_guardian($school, [$ward]);
+
+    $invoice = ppf_unreviewed($school, $ward, 300000);
+
+    // Withheld first, so the transition is asserted rather than the endpoint's two endpoints. A
+    // predicate that hides EVERYTHING passes the arm above; nothing but this catches it.
+    expect(ppf_hit($school, $me)->assertOk()->json('data.0.invoices'))->toBe([]);
+
+    ppf_release($invoice);
+
+    $invoices = ppf_hit($school, $me)->assertOk()->json('data.0.invoices');
+
+    expect(collect($invoices)->pluck('id')->all())->toBe([$invoice->uuid])
+        ->and($invoices[0]['outstanding'])->toBe(['amount_minor' => 300000, 'currency' => 'NGN']);
+});
+
+it('EXCLUDES a withheld bill from the balance too, so "nothing outstanding" is TRUE', function () {
+    $school = al_makeSchool();
+    $ward = ppf_student($school, 'Ada');
+    [$me] = ppf_guardian($school, [$ward]);
+
+    ppf_unreviewed($school, $ward, 850000);
+
+    $row = ppf_hit($school, $me)->assertOk()->json('data.0');
+
+    // THE FALSEHOOD THIS ARM EXISTS TO FORBID. The `WardCard` component in
+    // resources/js/pages/parent/finance.tsx renders a green tick and
+    // "Nothing outstanding for Ada right now" whenever `invoices` is empty, beside `account.balance`
+    // in the header. Withhold the bill from the list alone and this screen reads:
+    //
+    //     Ada Child                        Account balance
+    //                                            ₦850,000
+    //     ✅ Nothing outstanding for Ada right now.
+    //
+    // Both keys are gated together, so the pair is asserted together.
+    expect($row['invoices'])->toBe([])
+        ->and($row['account']['balance'])->toBe(['amount_minor' => 0, 'currency' => 'NGN'])
+        ->and($row['account']['available_credit'])->toBe(['amount_minor' => 0, 'currency' => 'NGN']);
+});
+
+/**
+ * THE INVARIANT, DERIVED FROM THE RESPONSE AND NOT FROM THE RULE.
+ *
+ * The expectation here is summed out of the `invoices` array the endpoint actually returned — an
+ * INDEPENDENT path. It never spells `balance − Σ(withheld charges)`, which is the implementation and
+ * would only assert that the code equals itself. What it says is the property a payer screen must
+ * have: **the total you are shown equals the bills you are shown.**
+ *
+ * The fixture is deliberately not degenerate. Two released bills rather than one (so a balance that
+ * tracked only the newest, or only the first, is visible), one part-paid (so the sum is over
+ * OUTSTANDING and not over totals — an implementation reading `total` passes with one unpaid
+ * invoice and fails here), and two withheld at different amounts (so an adjustment that subtracted
+ * a single invoice, or a fixed one, cannot survive).
+ */
+it('the balance a parent is shown EQUALS the sum of the invoices a parent is shown', function () {
+    $school = al_makeSchool();
+    $ward = ppf_student($school, 'Ada');
+    [$me] = ppf_guardian($school, [$ward]);
+
+    $partPaid = ppf_invoice($school, $ward, 300000);
+    ppf_pay($school, $partPaid, 120000);   // 180000 remains
+    ppf_invoice($school, $ward, 90000);    // 90000 remains
+
+    ppf_unreviewed($school, $ward, 850000);
+    ppf_unreviewed($school, $ward, 45000);
+
+    $row = ppf_hit($school, $me)->assertOk()->json('data.0');
+
+    $visible = collect($row['invoices'])->sum(fn (array $invoice) => $invoice['outstanding']['amount_minor']);
+
+    expect($row['invoices'])->toHaveCount(2)
+        ->and($row['account']['balance']['amount_minor'])->toBe($visible)
+        // Named too, so a reader can see the arm is not vacuously comparing two zeros.
+        ->and($visible)->toBe(270000);
+});
+
+/**
+ * THE CLAIM THE WHOLE DESIGN RESTS ON. `outstandingForStudent()` has exactly one caller and it is
+ * the parent controller; the staff statement reads `forStudent()` and `accountPositionForStudent()`,
+ * neither of which may acquire the predicate. Per Brookstone the bill is real and the balance keeps
+ * counting it — a staff surface that stopped showing an unreviewed bill would hide it from the
+ * bursar and from the Auditor who is supposed to review it.
+ *
+ * Driven over HTTP as a bursar rather than against the read model, because the claim is about the
+ * SURFACE. A read-model arm would stay green if someone moved the filter into the controller.
+ */
+it('leaves the STAFF statement showing the withheld bill, and counting it', function () {
+    $school = al_makeSchool();
+    $ward = ppf_student($school, 'Ada');
+    [$me] = ppf_guardian($school, [$ward]);
+
+    $reviewed = ppf_invoice($school, $ward, 300000);
+    $pending = ppf_unreviewed($school, $ward, 850000);
+
+    // The parent sees one bill and ₦300,000 …
+    $parent = ppf_hit($school, $me)->assertOk()->json('data.0');
+    expect(collect($parent['invoices'])->pluck('id')->all())->toBe([$reviewed->uuid])
+        ->and($parent['account']['balance'])->toBe(['amount_minor' => 300000, 'currency' => 'NGN']);
+
+    $bursar = al_makeUser($school->id);
+    setPermissionsTeamId($school->id);
+    $bursar->assignRole('accounts_officer');
+    setPermissionsTeamId(null);
+    $bursar->schools()->syncWithoutDetaching([$school->id]);
+
+    $statement = test()->actingAs($bursar)
+        ->withSession(['school_id' => $school->id])
+        ->getJson("/api/v1/finance/students/{$ward->uuid}/invoices")
+        ->assertOk()
+        ->json();
+
+    // … while the bursar sees BOTH, and the full ₦1,150,000. Same student, same instant.
+    expect(collect($statement['invoices'])->pluck('id')->sort()->values()->all())
+        ->toBe(collect([$reviewed->uuid, $pending->uuid])->sort()->values()->all())
+        ->and($statement['account']['balance'])->toBe(['amount_minor' => 1150000, 'currency' => 'NGN'])
+        ->and($statement['billed_total'])->toBe(['amount_minor' => 1150000, 'currency' => 'NGN']);
+});
+
+/**
+ * THE DOCUMENTED RESIDUAL, PINNED SO IT CANNOT DRIFT SILENTLY.
+ *
+ * A payment is NOT subtracted with the bill it was taken against, and that is a decision rather than
+ * an oversight: `RecordPayment` posts one ledger row per PAYMENT carrying the full amount received,
+ * while its allocations may span several invoices, so there is no per-invoice row to remove — and
+ * the money genuinely arrived. Under "as if the bill did not exist" it becomes unapplied credit,
+ * which is what a parent who handed over money and can see no bill is in fact owed.
+ *
+ * Reachable today: a bursar may record a payment against any issued invoice with something
+ * outstanding, and an unreviewed invoice is issued. It is asserted here so that whoever changes the
+ * derivation has to decide about this case deliberately rather than discover it in production.
+ */
+it('treats money taken against a withheld bill as CREDIT, not as a hidden reduction', function () {
+    $school = al_makeSchool();
+    $ward = ppf_student($school, 'Ada');
+    [$me] = ppf_guardian($school, [$ward]);
+
+    $pending = ppf_unreviewed($school, $ward, 300000);
+    ppf_pay($school, $pending, 120000);
+
+    $row = ppf_hit($school, $me)->assertOk()->json('data.0');
+
+    // Balance = 300000 − 120000 = 180000; the withheld charge of 300000 comes out; −120000 remains.
+    expect($row['invoices'])->toBe([])
+        ->and($row['account']['balance'])->toBe(['amount_minor' => -120000, 'currency' => 'NGN'])
+        ->and($row['account']['available_credit'])->toBe(['amount_minor' => 120000, 'currency' => 'NGN']);
+});
+
+/**
+ * A CREDIT NOTE AGAINST A WITHHELD BILL IS WITHHELD WITH IT, and this is the arm that separates the
+ * two halves of the adjustment. A credit note is not money that moved — it is the school forgiving
+ * part of one named invoice. Leave its ledger row in and the parent is told the school owes them
+ * money it does not, which is the same falsehood as the balance arm above pointing the other way.
+ */
+it('withholds a credit note written against a withheld bill', function () {
+    $school = al_makeSchool();
+    $ward = ppf_student($school, 'Ada');
+    [$me] = ppf_guardian($school, [$ward]);
+
+    $pending = ppf_unreviewed($school, $ward, 300000);
+    ppf_creditOff($school, $pending, 50000);
+
+    $row = ppf_hit($school, $me)->assertOk()->json('data.0');
+
+    // Balance = 300000 − 50000 = 250000. Subtracting the charge alone leaves −50000 and the parent
+    // is shown ₦50,000 of credit that does not exist; subtracting both leaves zero.
+    expect($row['invoices'])->toBe([])
+        ->and($row['account']['balance'])->toBe(['amount_minor' => 0, 'currency' => 'NGN'])
+        ->and($row['account']['available_credit'])->toBe(['amount_minor' => 0, 'currency' => 'NGN']);
+});
+
+/**
+ * THE BACKFILL — the half that decides whether 6 September works.
+ *
+ * SEEDED IN THE PRE-MIGRATION SHAPE AND THEN MIGRATED, which is the only way to say anything about
+ * the rows that already exist in production. An arm starting from post-migration rows would be
+ * describing rows the migration created, not rows it had to survive.
+ *
+ * THE PRE-MIGRATION SHAPE IS RECONSTRUCTED BY DROPPING THE COLUMNS, not by `migrate:rollback
+ * --step=N`: `--step` counts from the branch's latest migrations, so a sibling landing on top would
+ * be rolled back instead and this would pass having tested nothing — the failure this repository has
+ * already been bitten by once (docs/testing.md). The precedent is
+ * ScholarshipKindAndRunExclusionTest's own migration arm.
+ *
+ * DDL COMMITS IMPLICITLY, so RefreshDatabase's transaction will not undo the drop. The `finally`
+ * re-runs `up()`, which is idempotent by construction, so a failed assertion cannot leave the schema
+ * broken for the rest of the run.
+ */
+it('keeps a PRE-EXISTING invoice visible to its parent after the migration runs', function () {
+    $school = al_makeSchool();
+    $ward = ppf_student($school, 'Ada');
+    [$me] = ppf_guardian($school, [$ward]);
+
+    $invoice = ppf_unreviewed($school, $ward, 300000);
+
+    $migration = require database_path('migrations/2026_08_31_100000_finance_invoices_internal_audit_review.php');
+
+    try {
+        // ── Back to the pre-migration shape: an invoice with no review concept at all ──────────
+        Schema::table('finance_invoices', function ($table) {
+            $table->dropIndex('finance_invoices_school_student_reviewed_index');
+            $table->dropColumn(['reviewed_at', 'reviewed_by_user_id']);
+        });
+
+        expect(Schema::hasColumn('finance_invoices', 'reviewed_at'))->toBeFalse();
+
+        $migration->up();
+
+        // ── The row is stamped from its OWN created_at, never from the migration's clock ───────
+        $row = DB::table('finance_invoices')->where('id', $invoice->id)
+            ->first(['reviewed_at', 'reviewed_by_user_id', 'created_at']);
+
+        expect($row->reviewed_at)->not->toBeNull()
+            ->and($row->reviewed_at)->toBe($row->created_at)
+            // Nobody reviewed it. A fabricated reviewer is the one thing an audit column must never
+            // carry, so the grandfathered state is "released, by no one".
+            ->and($row->reviewed_by_user_id)->toBeNull();
+
+        // ── And the parent can still see it, which is the whole point of the backfill ──────────
+        $parent = ppf_hit($school, $me)->assertOk()->json('data.0');
+
+        expect(collect($parent['invoices'])->pluck('id')->all())->toBe([$invoice->uuid])
+            ->and($parent['account']['balance'])->toBe(['amount_minor' => 300000, 'currency' => 'NGN']);
+    } finally {
+        $migration->up();
+    }
 });
 
 /*

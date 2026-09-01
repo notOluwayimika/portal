@@ -47,6 +47,13 @@ class GuardianFinanceController extends Controller
      * portal's identity feed (`/api/parent/wards`) is where richer ward data belongs, behind its own
      * decision.
      *
+     * ONLY BILLS INTERNAL AUDIT HAS RELEASED APPEAR, ON BOTH KEYS. Brookstone ruled on 31 August
+     * 2026 that every bill is reviewed by an Internal Auditor before it reaches a parent (§6). An
+     * unreleased bill is real — it is `issued`, it holds the enrollment's active slot and it has
+     * posted its ledger charge, so it counts on every staff surface — but this endpoint is the payer
+     * channel and it does not carry it. The two keys are gated together on purpose: see the comment
+     * on `account` below for what a response that withheld one and not the other would print.
+     *
      * QUERIES ARE PER-WARD (invoices + account position), and that is bounded rather than an N+1
      * worth engineering away: a guardian has a handful of wards, and each read is already one
      * aggregate query rather than a per-invoice one.
@@ -72,11 +79,19 @@ class GuardianFinanceController extends Controller
                 'invoices' => GuardianInvoiceResource::collection(
                     $invoices->outstandingForStudent($student->id)
                 ),
-                // The account-level position, the same derivation the staff statement reads. This is
-                // where credit carries — a parent in credit has no outstanding invoice to show it on
-                // (Sec 10 C1), so a response listing invoices alone would report their position as
-                // zero when the school in fact owes them. Both figures are the Money wire shape.
-                'account' => $invoices->accountPositionForStudent($student->id),
+                // The account-level position AS A PAYER MAY SEE IT. This is where credit carries — a
+                // parent in credit has no outstanding invoice to show it on (Sec 10 C1), so a
+                // response listing invoices alone would report their position as zero when the
+                // school in fact owes them. Both figures are the Money wire shape.
+                //
+                // NOT `accountPositionForStudent()`, WHICH IS THE STAFF STATEMENT'S READ AND STAYS
+                // THAT WAY. Since 31 August a bill counts against the student's balance from the
+                // moment it is raised but is not visible to parents until Internal Audit releases it
+                // (§6). The `invoices` key above withholds the unreleased ones; if this key still
+                // totalled them, the screen would print a positive balance directly above "Nothing
+                // outstanding". The two keys must answer about the same set of bills or the response
+                // is internally contradictory, and the contradiction lands on the payer.
+                'account' => $invoices->guardianAccountPositionForStudent($student->id),
             ])
             ->values();
 

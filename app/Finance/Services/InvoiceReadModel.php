@@ -7,6 +7,7 @@ use App\Finance\Enums\InvoiceKind;
 use App\Finance\Enums\VoidRequestStatus;
 use App\Finance\Models\CreditNote;
 use App\Finance\Models\Invoice;
+use App\Finance\Models\LedgerTransaction;
 use App\Finance\Models\Payment;
 use App\Finance\Models\StudentAccount;
 use App\Finance\Models\VoidRequest;
@@ -61,11 +62,18 @@ final class InvoiceReadModel
      * (docs/handoff/tickets/three-spellings-of-the-settlement-aggregates.md) counts the spellings
      * that exist, and a third one added by this commit would be a fourth thing to converge.
      *
-     * TWO EXCLUSIONS, BOTH DELIBERATE:
+     * THREE EXCLUSIONS, ALL DELIBERATE:
      *   • VOID — `excludingVoid()`, the reporting default. A void charge was reversed; asking a
      *     parent to pay it is asking for money the school has said it is not owed.
      *   • SETTLED — an invoice whose outstanding has reached zero, by payment or by approved credit
      *     note or by both. Nothing is owed on it, so it is not on the payer's list.
+     *   • NOT YET REVIEWED — `reviewed()`. Brookstone ruled on 31 August 2026 that every bill must
+     *     be reviewed by an Internal Auditor before it is released to parents
+     *     (docs/handoff/brookstone-answers-31-august.md §6). The bill EXISTS and COUNTS from the
+     *     moment it is raised — it holds the enrollment's active slot and has posted its ledger
+     *     charge — so this is a visibility gate and emphatically not a draft state. It is the ONLY
+     *     one of the three that is parent-specific, which is why it lives on this method and not on
+     *     `forStudent()`: the bursar, the statement and the Auditor must all keep seeing it.
      * An invoice that is PART paid stays, carrying its REMAINING amount. A student with no debt gets
      * an empty collection — which is information, not an error.
      *
@@ -88,6 +96,7 @@ final class InvoiceReadModel
         return Invoice::query()
             ->where('student_id', $studentId)
             ->excludingVoid()
+            ->reviewed()
             ->tap($this->settlementSums(...))
             ->orderBy('id')
             ->get()
@@ -365,6 +374,128 @@ final class InvoiceReadModel
         }
 
         return ['balance' => $account->balance, 'available_credit' => $account->availableCredit()];
+    }
+
+    /**
+     * THE SAME POSITION AS A PARENT MAY SEE IT — the account balance with every bill Internal Audit
+     * has not yet released taken back out of it.
+     *
+     * ── WHY THIS EXISTS AT ALL, WHICH IS NOT A PRESENTATION PREFERENCE ───────────────────────────
+     *
+     * `outstandingForStudent()` withholds unreleased invoices from the payer's LIST. If the payer's
+     * TOTAL still counted them, the parent portal would render a positive "Account balance" directly
+     * above the sentence "Nothing outstanding for {name} right now"
+     * (the `WardCard` component in resources/js/pages/parent/finance.tsx, which branches on an empty
+     * invoice array). That
+     * is not an inconsistency a reader can resolve — it is the screen stating a falsehood, produced
+     * by the compliance gate itself, in the falsely-reassuring direction. The withhold is not
+     * shippable without this.
+     *
+     * ── IT IS A DERIVATION FROM THE PROJECTION, NOT A SECOND DEFINITION OF THE BALANCE ───────────
+     *
+     * The distinction is load-bearing, because a second definition of a money figure is exactly the
+     * defect `finance:reconcile-accounts` exists to detect and this method must not become a source
+     * of drift it cannot see.
+     *
+     * `finance_student_accounts.balance_minor` is defined as SUM(signed ledger amount_minor) per
+     * (school, student), maintained by the single writer `SubledgerPoster::post()`. This method does
+     * not recompute that, does not read invoice totals, and does not spell the balance a second time.
+     * It reads the AUTHORITATIVE balance through `accountPositionForStudent()` above — the same
+     * method the staff statement reads, unchanged and deliberately untouched — and subtracts a sum
+     * taken from THE SAME LEDGER ROWS the projection is made of. Both sides come from one source. If
+     * the projection drifts, this drifts identically and `finance:reconcile-accounts` still sees it;
+     * there is no path by which this method is right while the balance is wrong, or the reverse.
+     *
+     * The staff side keeps counting the bill — per Brookstone the invoice is real from the moment it
+     * is raised. Only the payer's view of it is deferred.
+     *
+     * ── WHICH LEDGER ROWS COME OUT, AND WHY A PAYMENT IS NOT ONE OF THEM ─────────────────────────
+     *
+     * The question this answers is "what would this account read if the bills you cannot see did not
+     * exist", so what comes out is every ledger movement that exists ONLY BECAUSE a withheld invoice
+     * exists:
+     *
+     *   • ITS CHARGE — `source_type = 'invoice'`, the row `GenerateInvoice` posts
+     *     (the `Charge` post inside `GenerateInvoice::handle()`). This is the ordinary case and usually the
+     *     only one. Subtracting it is the exact inverse of the write that created it.
+     *   • A CREDIT NOTE AGAINST IT — `source_type = 'credit_note'`
+     *     (the post inside `ApproveCreditNote::handle()`). A credit note is not money that moved; it
+     *     is the school forgiving part of ONE named invoice. If the parent cannot see the bill, they
+     *     must not see it being forgiven either — otherwise the school appears to owe them money it
+     *     does not. Unapproved notes post no ledger row and so contribute nothing; no status filter
+     *     is needed and none is written, because filtering on one would be a second spelling of
+     *     ApproveCreditNote's own rule.
+     *
+     * A PAYMENT IS DELIBERATELY NOT SUBTRACTED, and it is not an omission — it is not attributable in
+     * the first place. `RecordPayment` posts one ledger row per PAYMENT
+     * (`source_type = 'payment'`, inside `RecordPayment::handle()`) carrying the full amount
+     * received, while its ALLOCATIONS may span several invoices; there is no ledger row per
+     * allocation to remove. Nor should there be: the money genuinely arrived. Under "as if the bill
+     * did not exist" a payment taken against a withheld invoice becomes unapplied credit, which is
+     * what a parent who handed over money and can see no bill is in fact owed. That is the honest
+     * answer rather than the convenient one, and it is pinned in ParentPortalFinanceReadTest §2b.
+     *
+     * A VOID invoice is not in the withheld set at all (`excludingVoid()`), so its charge and its
+     * reversal both stay in the balance where they net to zero — the same treatment they get on the
+     * staff side, arrived at by not making an exception rather than by making one.
+     *
+     * ── CURRENCY ────────────────────────────────────────────────────────────────────────────────
+     *
+     * The adjustment is summed in minor units and carried in the ACCOUNT's currency rather than the
+     * ledger rows'. That is safe because the two cannot diverge: `SubledgerPoster::applyToAccount()`
+     * refuses — with a LogicException, before the write — any ledger row whose currency differs from
+     * the account it would move — `applyToAccount()`, the currency check at the top of it. The invariant is
+     * enforced upstream at the single writer, so re-deriving it here would be a second guard over a
+     * case that cannot reach this method.
+     *
+     * School isolation is automatic on both queries — Invoice and LedgerTransaction use
+     * BelongsToSchool.
+     *
+     * @return array{balance: Money, available_credit: Money}
+     */
+    public function guardianAccountPositionForStudent(int $studentId): array
+    {
+        $position = $this->accountPositionForStudent($studentId);
+
+        $withheldIds = Invoice::query()
+            ->where('student_id', $studentId)
+            ->excludingVoid()
+            ->whereNull('reviewed_at')
+            ->pluck('id')
+            ->all();
+
+        if ($withheldIds === []) {
+            return $position;
+        }
+
+        // The credit notes written against those invoices. Their ledger rows are keyed on the NOTE,
+        // so the invoice link has to be resolved here rather than in the sum below.
+        $noteIds = CreditNote::query()
+            ->whereIn('invoice_id', $withheldIds)
+            ->pluck('id')
+            ->all();
+
+        $withheldKobo = (int) LedgerTransaction::query()
+            ->where(function (Builder $query) use ($withheldIds, $noteIds) {
+                $query->where(fn (Builder $q) => $q->where('source_type', 'invoice')->whereIn('source_id', $withheldIds));
+
+                if ($noteIds !== []) {
+                    $query->orWhere(fn (Builder $q) => $q->where('source_type', 'credit_note')->whereIn('source_id', $noteIds));
+                }
+            })
+            ->sum('amount_minor');
+
+        $balance = $position['balance'];
+        $adjusted = Money::fromKobo($balance->toKobo() - $withheldKobo, $balance->currency);
+
+        // `available_credit` is re-derived from the ADJUSTED balance through StudentAccount's own
+        // method rather than re-stated here. A transient, unsaved model is the cheapest way to reach
+        // that one spelling of the rule; writing `max(0, −balance)` again in this file would be the
+        // second copy of a derivation whose whole design note (StudentAccount::availableCredit) is
+        // that it is derived and never stored.
+        $projected = new StudentAccount(['balance' => $adjusted]);
+
+        return ['balance' => $projected->balance, 'available_credit' => $projected->availableCredit()];
     }
 
     /**

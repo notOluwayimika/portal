@@ -19,12 +19,12 @@ use App\Enums\ScholarshipKind;
  * lookups return null by construction". Two different things are wrong with that as a blanket
  * claim, so here is the split, per method:
  *
- *   AMBIENT — findByUuid(), currentForStudent(), displayFor(), matchingStudentIds(),
- *   admissionNumberIndex(). These take no School and read the ACTIVE one: a School-scoped
- *   Academics model filters them, so a cross-School lookup resolves to null / drops out of the
- *   map. Note what that is and is not: a filter turns a wrong-School read into "not found", never
- *   into a refusal, which is why the billing path also carries an explicit cross-School guard in
- *   the Action rather than trusting the scope to object.
+ *   AMBIENT — findByUuid(), currentForStudent(), currentForStudents(), displayFor(),
+ *   matchingStudentIds(), admissionNumberIndex(). These take no School and read the ACTIVE one: a
+ *   School-scoped Academics model filters them, so a cross-School lookup resolves to null / drops
+ *   out of the map. Note what that is and is not: a filter turns a wrong-School read into "not
+ *   found", never into a refusal, which is why the billing path also carries an explicit
+ *   cross-School guard in the Action rather than trusting the scope to object.
  *
  *   ARGUMENT — listForCohort(), listUnplaceableForSchool(). These take a School as a PARAMETER
  *   and deliberately STRIP the ambient scope, so the argument is the only thing that decides what
@@ -48,6 +48,41 @@ interface BillableEnrollmentProvider
      * student, and the cross-School guard in the Action rejects a mismatch.
      */
     public function currentForStudent(int $studentId): ?BillableEnrollment;
+
+    /**
+     * {@see currentForStudent()} for MANY students, in ONE read — `student_id => BillableEnrollment`,
+     * placeable students only.
+     *
+     * A STUDENT THE RESOLVER CANNOT PLACE IS SIMPLY ABSENT FROM THE MAP. That is the same answer
+     * currentForStudent() gives as null, and it is deliberate rather than convenient: a caller keeps
+     * counting what it SELECTED rather than what survived resolution, which is what
+     * `finance_manual_invoice_runs.target_count` means and why the targets table is keyed on the
+     * student. A shape that returned a padded map, or that dropped the unplaceable from the caller's
+     * own list, would quietly turn a selection of 96 into a balanced report of 90.
+     *
+     * WHY IT EXISTS, AND THE NUMBER IS MEASURED RATHER THAN ARGUED. {@see currentForStudent()} is
+     * NOT one query: the row carries `App\Academics\BillableEnrollmentAdapter`'s five snapshot
+     * relation paths — named in prose rather than through `{@see}` on purpose, because the import
+     * that would earn is a Finance -> Academics reference and this port's whole point is that the
+     * arrow runs the other way. They expand to seven eager loads on top of the root select: EIGHT queries
+     * per student, the same eight the cohort read pays ONCE (`CohortEnrollmentPortTest`, "the cohort
+     * read costs EIGHT queries, at any cohort size"). Over 611 students on a copy of production
+     * data, calling it in a loop measured 4888 queries / 1647 ms; this method measured 8 queries /
+     * 82.7 ms for the same 611. A caller resolving a list must use this one.
+     *
+     * ISOLATION IS AMBIENT, exactly as currentForStudent() is — see this interface's per-method
+     * split above. That is a deliberate match and not an endorsement: this method was added to
+     * replace one call site of currentForStudent(), and giving it the ARGUMENT convention instead
+     * would have left the port carrying both conventions for one question, with the caller free to
+     * pick. WHETHER THE AMBIENT HALF SHOULD MOVE TO THE ARGUMENT CONVENTION IS OPEN — if it is right
+     * it is right for findByUuid(), currentForStudent(), displayFor(), matchingStudentIds() and
+     * admissionNumberIndex() together, as one change with its own isolation proofs, not as a
+     * side-effect of a batch read.
+     *
+     * @param  list<int>  $studentIds
+     * @return array<int, BillableEnrollment> keyed by student_id, placeable only
+     */
+    public function currentForStudents(array $studentIds): array;
 
     /**
      * Batch student directory for a Finance LIST (the accounts index). Finance holds

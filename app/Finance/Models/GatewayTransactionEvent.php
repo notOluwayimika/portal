@@ -60,6 +60,10 @@ class GatewayTransactionEvent extends Model
 
     protected $casts = [
         'payload' => 'array',
+        // Added with the column (2026_08_31_100000). Without a cast the writer's array reaches PDO
+        // raw and the insert dies on "Array to string conversion" — a failure that names the driver
+        // and not the missing cast.
+        'redacted_fields' => 'array',
         'redacted_at' => 'datetime',
     ];
 

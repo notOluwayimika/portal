@@ -2,6 +2,7 @@
 
 use App\Exceptions\DutySeparationViolationException;
 use App\Finance\Console\AuditLedgerCoherence;
+use App\Finance\Console\CapturePaystackSandbox;
 use App\Finance\Console\ImportOpeningBalances;
 use App\Finance\Console\ReconcileAccounts;
 use App\Finance\Providers\FinanceServiceProvider;
@@ -51,6 +52,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withCommands([
         ReconcileAccounts::class,
         AuditLedgerCoherence::class,
+        CapturePaystackSandbox::class,
         ImportOpeningBalances::class,
     ])
     ->withMiddleware(function (Middleware $middleware): void {

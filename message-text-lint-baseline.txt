@@ -1,0 +1,11 @@
+? 2026_07_19_100000_create_fee_invoices_tables.php  built from an expression: '{$message}'
+? 2026_07_19_100002_create_fee_payments_tables.php  built from an expression: '{$tableName} is append-only (Constitution §15C): {$event} is denied.'
+? 2026_07_19_110000_rename_fee_tables_to_finance.php  built from an expression: '{$escaped}'
+? 2026_07_23_120000_create_finance_credit_notes.php  built from an expression: 'finance_credit_notes is append-only (Constitution §15C): {$event} is
+? 2026_08_01_100000_fix_discount_policy_guard_message_quoting.php  built from an expression: \'finance_discount_policies: '.$messageTail.'\'
+? 2026_08_17_100000_maker_checker_and_payment_origin_as_triggers.php  built from an expression: '{$table}: the checker must not be the maker.'
+? 2026_08_22_100000_finance_allocation_provenance_pairing.php  built from an expression: \''.self::MSG_ACTOR_REQUIRED.'\'
+? 2026_08_22_100000_finance_allocation_provenance_pairing.php  built from an expression: \''.self::MSG_ACTOR_FORBIDDEN.'\'
+? 2026_08_22_100000_finance_allocation_provenance_pairing.php  built from an expression: \''.self::MSG_REASON_PAIRING.'\'
+? 2026_08_22_100000_finance_allocation_provenance_pairing.php  built from an expression: \''.self::MSG_OVERRIDE_RULE.'\'
+? 2026_08_30_100000_create_finance_manual_invoice_run_tables.php  built from an expression: '{$message}'

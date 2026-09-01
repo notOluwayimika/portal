@@ -49,6 +49,8 @@ use RuntimeException;
  * @property Carbon|null $settled_at
  * @property Carbon $created_at
  * @property Carbon $updated_at
+ * @property Money|null $bill what the SCHOOL is owed, as against `amount` which is what the PAYER is
+ *                            charged. NULL on rows raised before 2026_09_01_110000 — never zero.
  * @property-read Invoice|null $invoice
  * @property-read Payment|null $payment
  * @property-read Collection<int, GatewayTransactionEvent> $events
@@ -67,6 +69,10 @@ class GatewayTransaction extends Model
         // reported yet" and can mean nothing else — the update guard makes every provider-reported
         // fact write-once, so a value here was never overwritten by a later delivery.
         'fee' => MoneyCast::class.':fee_minor,fee_currency',
+        // What the SCHOOL is owed, as against `amount` which is what the PAYER is charged. Added by
+        // 2026_09_01_110000 so settlement credits the bill rather than gross-minus-reported-fee, and
+        // so step 7 has something to compare a residual against. NULL on rows raised before it.
+        'bill' => MoneyCast::class.':bill_minor,bill_currency',
         'status' => GatewayTransactionStatus::class,
         // A MOMENT, not a business day — unlike finance_payments.received_at, which is a date. This
         // is the instant the PROVIDER says the money was collected, and it is where the payment's

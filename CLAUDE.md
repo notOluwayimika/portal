@@ -63,6 +63,23 @@ operational facts an agent needs most often.
   And read `git diff --stat` against your own model of the change before
   pushing — no gate objects to a commit full of correct formatting, and none
   should.
+- **Re-verify a consolidated document against current state IMMEDIATELY before sending it.**
+  Consolidating several asks into one message buys the reader's attention — five arrivals become
+  one — and it is paid for with the FRESHNESS OF THE EARLIEST ITEMS. The longer a note is held in
+  order to consolidate it, the likelier its first item has been overtaken by a reply, a merge or a
+  ruling.
+
+  Bit within hours (2026-08-31 → 09-01): a five-item note asked Developer 1 to choose between two
+  fee arithmetics. His reply of 30 August had ALREADY settled it — "the parent is charged bill + fee
+  and the school receives the full bill" IS solve-for-gross. Sending it would have asked him to
+  re-rule a settled question, in a week he was also doing cutover Section 0, while omitting the item
+  that actually was open. A second item in the same note described as *proposed* work that had since
+  been *built*.
+
+  **The document is a recollection; the repo and their replies are the instrument** — the board rule
+  one level up, and the same failure this file records everywhere else. Re-read the source you are
+  citing, not your summary of it, at the moment of SENDING rather than at the moment of drafting.
+
 - **Before starting any task: run `bin/board`, READ THE DIVERGENCE SECTION, then compile against the
   base you intend to branch from.** One step, three questions — **is it already built**, **does it
   still branch cleanly**, **does it compile**. The board fetches, so the divergence answer describes

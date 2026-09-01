@@ -23,6 +23,7 @@ use App\Finance\Actions\RecordPayment;
 use App\Finance\DTOs\InvoiceLineSpec;
 use App\Finance\Enums\GatewayTransactionStatus;
 use App\Finance\Enums\InvoiceKind;
+use App\Finance\Services\GatewayReference;
 use App\Models\Curriculum;
 use App\Models\School;
 use App\Models\Student;
@@ -94,7 +95,11 @@ function gtxRow(array $ctx, array $overrides = []): array
         'school_id' => $ctx['school'],
         'invoice_id' => $ctx['invoice'],
         'provider' => 'paystack',
-        'reference' => 'REF-'.Str::random(12),
+        // MINTED, not hand-built. Until 2026_09_01_100000 the reference format was enforced only by
+        // `GatewayTransaction::booted()`, which does not fire on this file's raw-builder inserts —
+        // so this fixture was the standing proof that the guard was bypassable. The insert guard
+        // now carries the rule, and every row here must satisfy it like any other writer.
+        'reference' => GatewayReference::mint((int) $ctx['school']),
         'provider_reference' => null,
         'amount_minor' => 500000,
         'amount_currency' => 'NGN',
@@ -314,19 +319,45 @@ it('one attempt per (provider, reference) — and the uniqueness is NOT school-s
     $a = gtxSchool();
     $b = gtxSchool();
 
-    gtxInsert($a, ['reference' => 'REF-COLLIDE']);
+    // WITHOUT THE INSERT GUARD, and that is the point rather than a workaround.
+    //
+    // Since 2026_09_01_100000 the reference must be minted for the ROW'S OWN school, so two schools
+    // can no longer be given the same reference — the trigger refuses the second one before the
+    // unique index is ever consulted. That is defence in depth working, and it also makes the index
+    // UNREACHABLE by the only path that could demonstrate its scope.
+    //
+    // The index is still what protects against a collision at the provider, so it still has to be
+    // proven. `withoutDatabaseTrigger()` exists for exactly this: writing a row the way it could be
+    // written before a guard existed. Removing the trigger here proves the INDEX; the trigger's own
+    // arms are proven in GatewayReferenceTriggerTest.
+    withoutDatabaseTrigger('finance_gateway_transactions_insert_guard', function () use ($a, $b) {
+        gtxInsert($a, ['reference' => 'REF-COLLIDE']);
 
-    // Same school, same provider, same reference.
-    gtxExpectCode(1062, fn () => gtxInsert($a, ['reference' => 'REF-COLLIDE']));
+        // Same school, same provider, same reference.
+        gtxExpectCode(1062, fn () => gtxInsert($a, ['reference' => 'REF-COLLIDE']));
 
-    // ANOTHER SCHOOL, same reference. This is the axis that matters and the one a school-scoped
-    // index would get wrong: the reference crosses the wire to a third party, so two schools sharing
-    // one would collide at the provider, not here. A `(school_id, provider, reference)` index would
-    // pass every other arm in this file and fail exactly this one.
-    gtxExpectCode(1062, fn () => gtxInsert($b, ['reference' => 'REF-COLLIDE']));
+        // ANOTHER SCHOOL, same reference. This is the axis that matters and the one a school-scoped
+        // index would get wrong: the reference crosses the wire to a third party, so two schools
+        // sharing one would collide at the provider, not here. A `(school_id, provider, reference)`
+        // index would pass every other arm in this file and fail exactly this one.
+        gtxExpectCode(1062, fn () => gtxInsert($b, ['reference' => 'REF-COLLIDE']));
 
-    // Negative arm: a different provider is a different namespace, so the same string is free there.
-    expect(gtxInsert($a, ['provider' => 'flutterwave', 'reference' => 'REF-COLLIDE']))->toBeGreaterThan(0);
+        // Negative arm: a different provider is a different namespace, so the string is free there.
+        expect(gtxInsert($a, ['provider' => 'flutterwave', 'reference' => 'REF-COLLIDE']))->toBeGreaterThan(0);
+    });
+});
+
+it('and the insert guard refuses the cross-school collision BEFORE the index is consulted', function () {
+    $a = gtxSchool();
+    $b = gtxSchool();
+
+    $reference = GatewayReference::mint((int) $a['school']);
+    gtxInsert($a, ['reference' => $reference]);
+
+    // 1644, not 1062: the trigger, not the index. Which layer refuses is the whole content of this
+    // arm — it pins that the two guards are ordered, and it is what the test above had to suspend
+    // the trigger to work around.
+    gtxExpectCode(1644, fn () => gtxInsert($b, ['reference' => $reference]));
 });
 
 it('one attempt per (provider, provider_reference) — but many attempts may have none yet', function () {
@@ -687,6 +718,13 @@ it('a redaction may change the payload and nothing else, and no row is born reda
         // Renumbering a delivery under cover of a redaction reorders the evidence chain the
         // (gateway_transaction_id, id) index exists to read oldest-first. The loop was blind to it.
         ['id' => 999000002],
+        // ADDED WITH THE COLUMN, and it was not: `redacted_fields` reached this table in
+        // 2026_08_31_100000 while the guard and this loop both kept their old lists, so a redaction
+        // could rewrite the one column whose whole job is to be trusted about what was removed.
+        // The guard is an ENUMERATION and this loop is its mirror, so adding a column is a
+        // THREE-part act — table, trigger, loop — with no reminder attached to the last two. Caught
+        // by cold review, one column after the notes describing exactly this class.
+        ['redacted_fields' => json_encode(['data.something.invented'])],
     ] as $smuggled) {
         gtxExpectCode(1644, fn () => DB::table(GTX_EVENTS)->where('id', $event)
             ->update(array_merge(['redacted_at' => now(), 'payload' => null], $smuggled)));

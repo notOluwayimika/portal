@@ -2,6 +2,7 @@
 
 namespace App\Finance\Services;
 
+use App\Finance\Console\CapturePaystackSandbox;
 use App\Finance\DTOs\PaystackCheckout;
 use App\Finance\DTOs\PaystackTransaction;
 use App\Finance\Exceptions\PaystackUnavailable;
@@ -132,13 +133,70 @@ final class PaystackClient
     }
 
     /**
+     * The verify response as Paystack sent it, decoded and otherwise untouched.
+     *
+     * WHY THIS EXISTS ALONGSIDE `verify()`, WHICH IS THE ONE PRODUCTION USES. A DTO can only carry
+     * the fields we already knew to ask for, and the calibration question is precisely *what is in
+     * the payload that we did not anticipate* — most sharply, whether `fees` is measured against the
+     * gross we charged or the net settled, which `amount` and `requested_amount` answer together.
+     * Capturing through the DTO would discard the evidence before anyone read it.
+     *
+     * NOTHING IN PRODUCTION MAY CALL THIS. Its only caller is
+     * {@see CapturePaystackSandbox}, which refuses to run on anything but a
+     * `sk_test_` key. Recording a payment from an unshaped array is exactly the "trust the wire"
+     * failure `verify()` exists to prevent — the DTO is the boundary, and this deliberately steps
+     * outside it for a tool that writes nothing.
+     *
+     * THE SETTLEMENT PATH DOES READ A RAW BODY, AND IT DOES NOT COME THROUGH HERE.
+     * {@see verifyWithPayload} returns the body alongside the DTO **from the same response**, with
+     * the DTO constructed first — so the validation has run on exactly the bytes the caller then
+     * stores as evidence and settles from. The distinction this prohibition draws is not
+     * "array bad, object good"; it is that no production caller may hold a verify body the DTO
+     * construction has not already passed over.
+     *
+     * @return array<string, mixed>
+     *
+     * @throws PaystackUnavailable when Paystack did not answer, or answered unreadably.
+     */
+    public function verifyRaw(string $reference): array
+    {
+        return $this->fetchVerify($reference);
+    }
+
+    /**
      * Ask Paystack what actually happened to a reference. THE AUTHORITY — see the class docblock.
      *
      * @throws PaystackUnavailable when Paystack did not answer, or answered unreadably.
      */
     public function verify(string $reference): PaystackTransaction
     {
-        $body = $this->get('/transaction/verify/'.rawurlencode($reference));
+        return $this->verifyWithPayload($reference)['transaction'];
+    }
+
+    /**
+     * The same single call, returning BOTH the validated transaction and the body it was read from.
+     *
+     * WHY BOTH, AND WHY THIS IS NOT A HOLE IN THE DTO BOUNDARY. A caller that must WRITE a payment
+     * needs two things this class had no way to hand over together: the DTO, whose construction is
+     * the validation (status/reference/amount present, currency through `Money`'s constructor), and
+     * the raw body, because `finance_gateway_transaction_events` exists to hold **what the provider
+     * actually said** and a payload rebuilt from a DTO is a paraphrase stored as evidence.
+     *
+     * The DTO is still the boundary: it is built here, from these bytes, before either is returned.
+     * What is refused is a caller reading the array WITHOUT that construction having happened, which
+     * is why {@see verifyRaw} keeps its prohibition and this method does not call it.
+     *
+     * ONE GET, NOT TWO. Calling `verify()` for the DTO and `verifyRaw()` for the body would ask
+     * Paystack the same question twice and — since the answers are separate responses — could get
+     * two different ones, settling from a body the DTO never validated.
+     *
+     * @return array{transaction: PaystackTransaction, body: array<string, mixed>}
+     *
+     * @throws PaystackUnavailable when Paystack did not answer, or answered unreadably.
+     */
+    public function verifyWithPayload(string $reference): array
+    {
+        $body = $this->fetchVerify($reference);
         $data = $body['data'] ?? null;
 
         if (! is_array($data) || ! isset($data['status'], $data['reference'], $data['amount'])) {
@@ -153,7 +211,7 @@ final class PaystackClient
             ? $data['currency']
             : Money::DEFAULT_CURRENCY;
 
-        return new PaystackTransaction(
+        $transaction = new PaystackTransaction(
             status: (string) $data['status'],
             reference: (string) $data['reference'],
             providerReference: isset($data['id']) ? (string) $data['id'] : null,
@@ -169,6 +227,21 @@ final class PaystackClient
             gatewayResponse: isset($data['gateway_response']) ? (string) $data['gateway_response'] : null,
             channel: isset($data['channel']) ? (string) $data['channel'] : null,
         );
+
+        return ['transaction' => $transaction, 'body' => $body];
+    }
+
+    /**
+     * The GET itself, written once so `verifyRaw` and `verifyWithPayload` cannot come to disagree
+     * about which URL the verify call is.
+     *
+     * @return array<string, mixed>
+     *
+     * @throws PaystackUnavailable
+     */
+    private function fetchVerify(string $reference): array
+    {
+        return $this->get('/transaction/verify/'.rawurlencode($reference));
     }
 
     /** @return array<string, mixed> */

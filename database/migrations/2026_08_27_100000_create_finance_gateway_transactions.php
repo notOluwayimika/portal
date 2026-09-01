@@ -531,9 +531,22 @@ return new class extends Migration
      * a dispute six months from now is answered by what the provider actually sent, not by what this
      * system concluded from it.
      *
-     * IT RECORDS REJECTED DELIVERIES TOO — that is what `source` is for and why nothing here asserts
-     * the payload was trusted. A delivery whose signature failed verification is exactly the one an
-     * investigation wants to read.
+     * IT DOES **NOT** RECORD SIGNATURE-REJECTED DELIVERIES, and an earlier version of this
+     * paragraph said it did. Corrected 2026-09-01 (`feat/paystack-webhook`) after a cold review
+     * measured the gap: `PaystackWebhookController` verifies the HMAC as its FIRST statement and
+     * returns 401 having written nothing, which is the right call — this table is append-only and
+     * DELETE is denied on it, so anyone who learned the URL could otherwise fill it permanently with
+     * rows nobody can remove.
+     *
+     * The paragraph was worse than merely wrong. A rotated or mistyped `services.paystack.secret_key`
+     * 401s EVERY genuine delivery, and the first person investigating "payments stopped being
+     * recorded" would have come here, read this claim, queried the table and found nothing — and
+     * concluded the deliveries never arrived. A false statement about where evidence lives sends the
+     * investigation to the one place that cannot answer, which is worse than silence.
+     *
+     * A rejected delivery now leaves a LOG line (`paystack.webhook.signature_rejected`), carrying no
+     * body and no reference — an unauthenticated request must not choose what we write down. The log
+     * is the trace; this table is not.
      *
      * ── RETENTION, DECIDED HERE RATHER THAN BY OMISSION ─────────────────────────────────────────
      *
@@ -551,9 +564,22 @@ return new class extends Migration
      * shipping the door now makes the retention policy a code change against a schema that already
      * permits it rather than a schema change against live money data.
      *
-     * SO THE FULL PAYLOAD IS KEPT — a live dispute is answered by what the provider actually sent,
-     * and §7's "the payer succeeded and our handler threw" is diagnosed from exactly the fields a
-     * write-time redaction would have discarded — AND `redacted_at` is the one door out.
+     * SO THE PAYLOAD IS KEPT — a live dispute is answered by what the provider actually sent, and
+     * §7's "the payer succeeded and our handler threw" is diagnosed from exactly the fields a
+     * blanket write-time redaction would have discarded — AND `redacted_at` is the one door out.
+     *
+     * AMENDED 2026-08-31 (`feat/paystack-webhook`), because this paragraph originally said the FULL
+     * payload is kept and that is no longer true. Two named fields are now stripped BEFORE the
+     * insert — `data.authorization.authorization_code`, which Paystack marks `reusable: true` and
+     * which can initiate a future charge against the payer's card, and `data.authorization.
+     * signature`, a card fingerprint that correlates across every school on a platform whose only
+     * isolation boundary is `school_id`. Neither is needed to reconcile a payment.
+     *
+     * The reasoning above still holds for everything else, and the two mechanisms remain distinct:
+     * write-time stripping records itself in `redacted_fields` and leaves the row STORED, while
+     * `redacted_at` is retention redaction and means the payload is GONE. See
+     * `App\Finance\Services\GatewayEventRedactor` for the list, which is the thing being
+     * maintained.
      *
      * REDACTION HAS TO PROVE ITSELF, and the first version of this guard did not make it. It required
      * `redacted_at` to move and said NOTHING about the payload, so

@@ -11,8 +11,21 @@
 # collation rule whose violation produced no failure signal: it propagates by memory alone, and
 # memory does not propagate. The instrument is the fix; knowing about the class is not.
 #
-# Reads refs only. Fetches first (its one mutation) so "remote" means the remote, not a stale
-# tracking ref — the same reason `bin/landed` fetches.
+# Fetches first (its one mutation) so "remote" means the remote, not a stale tracking ref — the same
+# reason `bin/landed` fetches.
+#
+# ── WHAT IT COVERS, STATED AS THREE THINGS RATHER THAN ONE ──────────────────────────────────────
+#
+#   1. COMMITTED-BUT-UNPUSHED work in this working copy   — the branch table
+#   2. UNCOMMITTED work in this working copy               — the dirty-tree banner
+#   3. DIVERGENCE from the base                            — what landed on origin/staging without you
+#
+# Each was added after the previous scope statement turned out to be narrower than it read. (1) alone
+# was described as "nothing unpushed here", which (2) proved false. (1) and (2) together still said
+# nothing about what OTHER PEOPLE had landed, which is (3).
+#
+# AND IT STILL SAYS NOTHING ABOUT ANY OTHER MACHINE. All three read this clone. A colleague's
+# unpushed branch, uncommitted or committed, is invisible to every one of them — see caveat 3.
 #
 # ── TWO THINGS THIS DOES NOT SAY, BOTH OF WHICH GET READ INTO IT ────────────────────────────────
 #
@@ -22,7 +35,17 @@
 #    became "so don't push it", which is a non sequitur that costs backups and reviewability.
 #    Push freely. Propose deliberately.
 #
-# 2. IT SWEEPS ONE WORKING COPY — THIS ONE. A clean board means "nothing unpushed HERE", never
+# 2. IT READS REFS, SO IT IS BLIND TO UNCOMMITTED WORK. The honest scope is not "nothing unpushed
+#    here" — it is "nothing COMMITTED-but-unpushed here". Uncommitted work has no ref, so the
+#    instrument built to stop status coming from recall cannot see it at all.
+#    Not hypothetical: on 2026-08-31 the artisan command that produced the Paystack fee calibration
+#    was written, run against the live sandbox, used to settle the formula — and never committed. It
+#    rode the working tree across four branch switches, one `git checkout -f` from gone, and the
+#    board printed a clean table throughout. That is why the dirty-tree check below is LOUD rather
+#    than informational: a true report about refs, silent about the thing actually at risk, is the
+#    same failure this tool exists to prevent, one layer down.
+#
+# 3. IT SWEEPS ONE WORKING COPY — THIS ONE. A clean board means "nothing unpushed HERE", never
 #    "nothing unpushed". The same condition can hold on a colleague's machine and no ref in this
 #    repository would show it. That is not hypothetical: this tool's first run found a nine-commit
 #    branch, two weeks old, that had never appeared in any hand-written board — so the class is
@@ -32,9 +55,44 @@
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
-git fetch -q origin 2>/dev/null || { echo "fetch failed — cannot report on refs I could not read" >&2; exit 2; }
+# THE FETCH IS THE POINT, AND IT IS THE PART THAT WOULD GET DROPPED. `origin/staging` is a LOCAL
+# CACHE of the remote, not the remote: reading it without fetching measures how stale your clone is,
+# and reports it with total confidence. Same shape as a cached config reporting a key that is no
+# longer in .env.
+#
+# A FAILED FETCH NO LONGER ABORTS. It used to `exit 2` before printing anything, which was loud but
+# withheld the two sections that need no network at all — the dirty tree and the local-only branches
+# — on the grounds that a third section was unavailable. Offline is exactly when you most want to
+# know what is sitting uncommitted.
+#
+# What the abort was protecting is kept: with a stale cache the REMOTE column and the AHEAD count are
+# ALSO cache-derived, not just the divergence section, so the banner covers every remote fact rather
+# than only the new one. And the exit code stays 2 — a human reads the banner, a script reads the
+# code, and returning 0 because we printed something useful would make an offline board
+# indistinguishable from a healthy one.
+FETCH_OK=1
+git fetch -q origin 2>/dev/null || FETCH_OK=0
 
 base="${1:-origin/staging}"
+
+if [ "$FETCH_OK" -eq 0 ]; then
+    printf '\033[31m✗  FETCH FAILED — every REMOTE fact below is from a local cache of unknown age.\033[0m\n'
+    printf '\033[31m   The REMOTE column, the STATE column, AHEAD OF BASE and the divergence section\033[0m\n'
+    printf '\033[31m   are all derived from remote-tracking refs. Treat none of them as current.\033[0m\n\n'
+fi
+
+# LOUD, NOT INFORMATIONAL — see caveat 2. A clean table over a dirty tree is the failure this
+# tool lived through; reporting it quietly at the bottom would reproduce it.
+dirty=$(git status --porcelain | grep -v '^??' || true)
+untracked=$(git status --porcelain | grep '^??' || true)
+
+if [ -n "$dirty" ] || [ -n "$untracked" ]; then
+    printf '\033[33m⚠  UNCOMMITTED WORK IN THIS WORKING COPY — no ref, so nothing below describes it.\033[0m\n'
+    [ -n "$dirty" ]     && printf '%s\n' "$dirty"     | sed 's/^/    modified: /'
+    [ -n "$untracked" ] && printf '%s\n' "$untracked" | sed 's/^/    untracked: /'
+    printf '\n'
+fi
+
 printf '%-42s %-9s %-9s %-14s %s\n' BRANCH LOCAL REMOTE STATE 'AHEAD OF BASE'
 printf '%.0s─' {1..96}; printf '\n'
 
@@ -54,3 +112,36 @@ while read -r b; do
 
     printf '%-42s %-9s %-9s %-14s %s\n' "$b" "$l" "$r" "$state" "$ahead"
 done
+
+# ── WHAT LANDED ON THE BASE WHILE YOU WERE NOT LOOKING ──────────────────────────────────────────
+#
+# THIS EXISTS BECAUSE A SettlementBankAccount STUB WAS BUILT AGAINST A RESOLVER DEVELOPER 1 HAD
+# ALREADY LANDED ON STAGING. One fetch at task start would have caught it. Four dependency surprises
+# in a single day were all found by CHECKING rather than by planning — branch topology and other
+# people's merges are invisible from inside a task, and the check costs seconds.
+#
+# THE SUBJECT LINES, NOT JUST A COUNT. "7 commits behind" tells you to rebase; it does not tell you
+# that one of them is the thing you were about to build. The subject is what produces recognition,
+# and recognition is the entire value of this section.
+#
+# UNKNOWN IS NOT EMPTY. If the fetch failed, this prints UNKNOWN rather than an empty list — a
+# failed fetch and a genuinely clean base must never render identically. That is the no-signal class
+# this whole tool exists to close, and it would be embarrassing to reintroduce it here.
+printf '\n'
+printf 'ON %s, NOT IN %s\n' "$base" "$(git rev-parse --abbrev-ref HEAD)"
+printf '%.0s─' {1..96}; printf '\n'
+
+if [ "$FETCH_OK" -eq 0 ]; then
+    printf '\033[31m  UNKNOWN — the fetch failed, so this cannot be answered. NOT the same as "nothing".\033[0m\n'
+else
+    divergence=$(git log --oneline "HEAD..$base" 2>/dev/null || true)
+    if [ -z "$divergence" ]; then
+        printf '  up to date with %s\n' "$base"
+    else
+        printf '  %s commit(s) on %s that this branch does not have:\n' "$(printf '%s\n' "$divergence" | wc -l | tr -d ' ')" "$base"
+        printf '%s\n' "$divergence" | sed 's/^/    /'
+        printf '\n  Read these BEFORE starting: one of them may be the thing you are about to build.\n'
+    fi
+fi
+
+[ "$FETCH_OK" -eq 1 ] || exit 2

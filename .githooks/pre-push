@@ -138,6 +138,21 @@ fi
 printf '\033[1mpre-push:\033[0m running bin/quality (local is the enforcement floor)\n'
 
 if "$repo_root/bin/quality"; then
+    # THE GATE LEAVES A TRACE ON THE COMMIT, so "was this verified or pushed with --no-verify?" is
+    # ANSWERABLE rather than trusted. A cold review reported that limit honestly — "I cannot tell
+    # whether --no-verify was used" — and an unverifiable claim becomes verifiable here for the cost
+    # of one line.
+    #
+    # A GIT NOTE, not a gitignored file. Notes are attached to the COMMIT and live under refs/, so a
+    # `git clone --local` (which is how reviews are run) carries them; a gitignored marker would not
+    # travel and would answer nothing for the one reader who asks. `git push origin
+    # refs/notes/quality` publishes them when that is wanted.
+    #
+    # IT IS EVIDENCE, NOT ENFORCEMENT, and the distinction is the honest limit already recorded
+    # above: anyone who bypasses with --no-verify also writes no note, which is exactly what makes
+    # the ABSENCE of a note informative. It proves a gate ran for this SHA; it proves nothing about
+    # anyone's intent, and a determined bypass remains a bypass.
+    git notes --ref=quality add -f -m "quality: PASS $(date -u +%Y-%m-%dT%H:%M:%SZ) $(uname -s)" HEAD 2>/dev/null || true
     exit 0
 fi
 

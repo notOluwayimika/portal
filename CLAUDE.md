@@ -63,6 +63,125 @@ operational facts an agent needs most often.
   And read `git diff --stat` against your own model of the change before
   pushing — no gate objects to a commit full of correct formatting, and none
   should.
+- **A GATE REPORTS COVERAGE, NOT JUST FINDINGS — and its FIRST green is the least trustworthy green
+  it will ever produce.** It is the only one taken before anyone has established what the instrument
+  cannot see, so "no violations" is unfalsifiable until the denominator is stated.
+
+  Measured 2026-09-01. The SIGNAL-length lint reported a clean run while reading **61 of 117**
+  messages — it knew the heredoc form of a SQL string and not the escaped form inside a PHP
+  single-quoted string, and nothing in its output could have revealed that. Asking the same question
+  of the two OLDER gates then found a real hole in one of them: the collation tripwire's matcher had
+  no `LIKE` at all, and `LIKE` is collation-sensitive (`'a' LIKE 'A'` is TRUE under
+  `utf8mb4_unicode_ci`). It had been clean by luck — the repository's only two `LIKE`s happened to
+  carry `COLLATE`. The same question found a SECOND gap in the same file: comparisons against a
+  declared local variable, which the right-hand side had never accepted.
+
+  **REPORT THREE NUMBERS, NOT TWO.** *Examined*, *excluded with a stated reason*, and
+  **unrecognised** — constructs the instrument could not classify at all. Only the third is
+  dangerous, and an aggregate hides it: `LIKE` sat inside a "61 skipped" that looked like deliberate
+  exclusion. Assert the third is zero, so a new unclassifiable form reds instead of vanishing. Same
+  UNKNOWN discipline as `bin/board`'s failed fetch, applied to coverage.
+
+  **AND WIDEN THE MATCHER TO RECOGNISE MORE THAN IT JUDGES.** A numeric literal is not a collation
+  concern, but the matcher must PARSE `NEW.flag = 1` in order to exclude it on column type —
+  otherwise it lands in unrecognised and the honest bucket fills with noise. Recognise broadly,
+  judge narrowly.
+
+  **A PARTIAL FIX TO A GATE IS WORSE THAN THE GAP**, because it converts a known blind spot into an
+  unknown one. When two gaps overlap, the bite-proof must be the case that survives either fix
+  alone — here a bare `LIKE` with a `CONCAT(...)` right-hand side.
+
+- **WHEN YOU ASSERT A NEGATIVE, ASSERT *WHICH* NEGATIVE.** An assertion satisfiable by more than one
+  state does not distinguish them, and this repository's guards are STACKED — so when your assertion
+  is loose, something else almost always refuses first and the test passes for the wrong reason.
+
+  Three instances in a single round on `feat/gateway-initiate`, each caught by a different accident:
+
+  - a ward-authorisation test used a guardian from ANOTHER school, so `SchoolScope` resolved the
+    invoice to null and the refusal came from isolation — deleting `mayPay()` left it green;
+  - a trigger bite-proof asserted "an exception was thrown", which **1648** (`MESSAGE_TEXT` over
+    128 chars, so the `SIGNAL` itself failed) satisfies exactly as well as the intended **1644**;
+  - a gross-up took the FIRST candidate that "recovers the bill" — a predicate several formulas
+    satisfy — and so over-charged a large payer by ₦13,228 while every arm stayed green.
+
+  The operational form: name the error CODE, not "it threw". Name the MECHANISM, not "it was
+  refused". Name WHICH candidate, not "one that works". And build the fixture so the mechanism under
+  test is the only one that can fire — a same-school guardian for a ward check, not a cross-school
+  one, with isolation as its own separate arm because the two refuse for different reasons and one
+  test covering both goes green if either is removed.
+
+  This is the parent of "the fixture must make the axis the only thing that can pass it": that rule
+  is about the INPUT, this one is about the ASSERTION, and either alone leaves the other hole open.
+
+- **Re-verify a consolidated document against current state IMMEDIATELY before sending it.**
+  Consolidating several asks into one message buys the reader's attention — five arrivals become
+  one — and it is paid for with the FRESHNESS OF THE EARLIEST ITEMS. The longer a note is held in
+  order to consolidate it, the likelier its first item has been overtaken by a reply, a merge or a
+  ruling.
+
+  Bit within hours (2026-08-31 → 09-01): a five-item note asked Developer 1 to choose between two
+  fee arithmetics. His reply of 30 August had ALREADY settled it — "the parent is charged bill + fee
+  and the school receives the full bill" IS solve-for-gross. Sending it would have asked him to
+  re-rule a settled question, in a week he was also doing cutover Section 0, while omitting the item
+  that actually was open. A second item in the same note described as *proposed* work that had since
+  been *built*.
+
+  **The document is a recollection; the repo and their replies are the instrument** — the board rule
+  one level up, and the same failure this file records everywhere else. Re-read the source you are
+  citing, not your summary of it, at the moment of SENDING rather than at the moment of drafting.
+
+- **Before starting any task: run `bin/board`, READ THE DIVERGENCE SECTION, then compile against the
+  base you intend to branch from.** One step, three questions — **is it already built**, **does it
+  still branch cleanly**, **does it compile**. The board fetches, so the divergence answer describes
+  the remote rather than how stale your clone is.
+
+  **The scar, because the abstract version of this rule does not get followed:** a
+  `SettlementBankAccount` stub was built against a resolver Developer 1 had ALREADY LANDED on
+  `staging`. One fetch at task start would have caught it. Four dependency surprises in a single day
+  were every one of them found by CHECKING rather than by planning — branch topology and other
+  people's merges are invisible from inside a task, and they keep changing while you work.
+
+  **Read the SUBJECTS, not the count.** "12 commits behind" tells you to rebase;
+  `feat(finance): withhold un-reviewed invoices from the parent feed` tells you somebody has built
+  the thing you were about to start. Recognition is the whole value, and only the subject line
+  produces it.
+
+  It is folded into `bin/board` rather than written here as a habit, so it runs because the
+  instrument runs and not because somebody remembered — the same reason `bin/db-exclusive` is a
+  script and not a sentence. A failed fetch prints **UNKNOWN** and exits 2, never an empty list:
+  "nothing landed" and "I could not look" must not render identically, which is the no-signal class
+  the board exists to close.
+- **A command whose exit code matters is NEVER the left side of a pipe — and an ad-hoc shell
+  inherits none of this repo's safety.** `bin/quality`, `.githooks/pre-push`, `bin/board` and
+  `bin/db-exclusive` all `set -uo pipefail`, so the scripts are fine. A one-off command typed at a
+  prompt is not: `git push -u origin <branch> | tail -6` exits with **tail's** status, which is 0
+  whatever the push did. Bit on 2026-08-31 — the pre-push gate REFUSED the push (one ratchet
+  regression), and the command reported success. Worse, the harness's own completion notification
+  reported `exit code 0` too, because it reports the pipeline's status: **the false signal was
+  echoed back by the tooling, not just produced by it**, so there was no second opinion to catch it.
+  What caught it was `git rev-parse origin/<branch>` — the ref, not the code — which is the same
+  discipline `bin/landed` exists to enforce one level up. Three earlier pushes the same day reported
+  success without moving the remote for three DIFFERENT reasons (hook aborted by a branch switch, a
+  gate poisoned by a concurrent suite, DNS), so this is the fourth instance of one class: **a
+  wrapper's exit status is a claim about the wrapper.** Either drop the pipe when you need the
+  status, or verify the effect instead of the code — and prefer the latter, because it is the only
+  form that survives someone else adding a pipe later.
+
+- **`git commit -m "…"` runs backticks as commands. Write the message to a FILE and use `-F`.**
+  Double quotes stop word-splitting and globbing; they do NOT stop command substitution. A commit
+  message that names identifiers the way this repo's messages do — `payment_id IS NULL`,
+  `withoutGlobalScope`, `redacted_at` — hands every one of them to the shell to EXECUTE. Bit once
+  (2026-08-31) on `feat/paystack-webhook`: nine identifiers were substituted away and the commit
+  landed with sentences like "a compare-and-swap on  whose affected-row count is asserted". The
+  only visible sign was a few `command not found` lines scrolling past ABOVE the successful commit
+  hash, which reads as noise from an earlier step. **The commit still succeeds**, which is what
+  makes it dangerous: nothing fails, and the message is wrong in exactly the places that carried
+  the technical content. Same class as the pint scalar-vs-array trap one entry down — a
+  substitution that does not expand to what you think it does — and the same fix shape: take the
+  shell out of the path (`-F file`) rather than escaping harder, because escaping is a rule you
+  have to remember every time and a file is a rule you cannot forget. Heredocs with a QUOTED
+  delimiter (`<<'EOF'`) are safe and are why the file-writing steps in the same session were fine.
+
 - Tests alone are not verification — migrate the dev DB and drive the affected
   flows in the running app.
 - **ONE CONSUMER OF `portal_testing` AT A TIME — and a `git push` IS a suite run.** `bin/quality`
@@ -172,6 +291,25 @@ operational facts an agent needs most often.
   **Rebuild the frontend after any `staging` pull that touches it**, and note the
   worse cousin — a manifest that is stale but still *resolvable* passes against the
   wrong bundle instead of erroring.
+- **The DEV DATABASE IS SHARED ACROSS BRANCHES, and migrating forward never removes a column — so
+  `SHOW COLUMNS` is evidence about YOUR MACHINE, never about what a branch contains.** `migrate` on
+  branch A adds `bill_minor`; checking out `staging` does not drop it, because nothing runs `down()`
+  on a branch switch. The column then sits in the schema no matter which branch is checked out, and
+  a query naming it succeeds on all of them — including the ones whose code has never heard of it.
+  Caught on 2026-09-01 one step before it was asserted: `SHOW COLUMNS FROM
+  finance_gateway_transactions` was about to be quoted as proof that `staging` carries the bill
+  columns, which exist only in an unmerged PR's migration file.
+
+  **The migration FILES on the branch are the instrument**, because they are what a fresh database
+  would replay — `git ls-tree -r --name-only <branch>` for presence, `git diff --name-only
+  staging...<branch>` for what the branch adds. Ask "what would `migrate` from zero produce here",
+  never "what does my schema have".
+
+  Same shared-mutable-artifact family as the Vite manifest one entry up — rebuilt by whatever ran
+  last, invisible in every diff, re-diagnosed from scratch on each machine. But it is the sharper
+  form, because the manifest fails LOUDLY and this one **succeeds**: it is a real measurement of the
+  wrong object, and a genuine `SHOW COLUMNS` output is the most credible-looking wrong claim
+  available. Same shape as reading refs rather than recollection, one layer down.
 - **Never build a test's input from the value under test.** A cap test written as
   `while (count($ids) <= MAX_BATCH) { … }` submits "cap + 1" whatever the cap is, so
   it proves a limit exists and is _structurally incapable_ of noticing that limit

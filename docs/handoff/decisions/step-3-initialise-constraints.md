@@ -18,9 +18,24 @@ concatenation is accepted by Paystack, the parent is charged, the delivery arriv
 finds nothing. The webhook answers 200. The symptom is indistinguishable from a delivery for a
 transaction we never issued: money taken, no payment recorded, one log line.
 
-**Already enforced**, so this is a description rather than a request: `GatewayTransaction` refuses
-on `creating` any reference that does not route to its own `school_id`. The mistake fails at the
-write, before anyone is charged. Do not route around it.
+`GatewayTransaction` refuses, on `creating`, any reference that does not route to its own
+`school_id`. The mistake fails at the write, before anyone is charged. Do not route around it.
+
+⚠️ **BUT THE GUARD IS ELOQUENT-ONLY, AND AN EARLIER VERSION OF THIS DOCUMENT DID NOT SAY SO.** It
+read "already enforced", which is a guarantee wider than the artifact — the same overclaim this
+project keeps paying for, here in the constraint list written to prevent one.
+
+`static::creating` does not fire on `DB::table()->insert()`, `->upsert()`, or any query-builder
+write. `tests/Feature/Finance/GatewayTransactionSchemaTest.php` already inserts hand-built
+references by raw builder and passes.
+
+**This matters specifically for step 3.** `bin/ci-boundary-lint.php` forbids `DB::table` on a
+`finance_` literal only OUTSIDE `app/Finance`, and step 3 lives inside it — so the component this
+guard protects is the one permitted to walk around it. Use the model. If a raw insert is ever
+genuinely needed, the trigger must exist first:
+`docs/handoff/tickets/gateway-reference-guard-is-eloquent-only.md`, **required before step 3**.
+
+Found by the second cold review, not by writing this list.
 
 ## 2. Round the gross UP
 

@@ -6,11 +6,13 @@ use App\Exceptions\BusinessRuleException;
 use App\Finance\Enums\GatewaySettlementOutcome;
 use App\Finance\Enums\GatewayTransactionStatus;
 use App\Finance\Exceptions\GatewayClaimLost;
+use App\Finance\Exceptions\PaystackUnavailable;
 use App\Finance\Models\GatewayTransaction;
 use App\Finance\Models\GatewayTransactionEvent;
 use App\Finance\Models\Invoice;
 use App\Finance\Models\Payment;
 use App\Finance\Services\GatewayEventRedactor;
+use App\Finance\Services\PaystackClient;
 use App\Finance\Services\SettlementBankAccount;
 use App\Support\Money;
 use Illuminate\Support\Carbon;
@@ -19,6 +21,20 @@ use Illuminate\Support\Facades\Log;
 
 /**
  * Turns a provider delivery into, at most, one Payment.
+ *
+ * ── WHERE THE MONEY FACTS COME FROM: `verify()`, NEVER THE DELIVERY ──
+ *
+ * A webhook is a NOTIFICATION. Its signature proves the sender holds the Paystack secret and proves
+ * nothing about whether its contents match Paystack's ledger — anyone holding that secret could sign
+ * a body claiming a `charge.success` that never happened, and nobody can make Paystack's own API
+ * return a transaction that does not exist. So the webhook supplies the TRIGGER and the REFERENCE;
+ * every amount, fee, status and instant that reaches a money column comes from
+ * {@see settleFromProvider}, which asks the provider directly.
+ *
+ * This is stated at the top because step 4 shipped without it — `handle()` passed the webhook body
+ * straight to `settle()` while three docblocks and a decision document said it must not, and the
+ * gap went unnoticed for exactly as long as nobody re-read the premise. See
+ * `docs/handoff/tickets/webhook-records-a-payment-without-calling-verify.md`.
  *
  * ── THE TWO TRANSACTIONS, AND WHY THEY ARE TWO ──
  *
@@ -69,20 +85,28 @@ final class SettleGatewayTransaction
     public const SCHOOL_TIMEZONE = 'Africa/Lagos';
 
     public function __construct(
+        private readonly PaystackClient $paystack,
         private readonly RecordPayment $payments,
         private readonly SettlementBankAccount $settlementAccount,
         private readonly GatewayEventRedactor $redactor,
     ) {}
 
     /**
-     * The whole sequence for one delivery: record it, then decide about it.
+     * The whole sequence for ONE WEBHOOK DELIVERY: record it, then ask the provider what is true.
      *
      * THE ORDER IS THE POINT and it lives here rather than in the controller, because the reason
      * for it is the reason documented on this class. A caller that recorded the delivery only for
      * outcomes it liked would produce exactly the gap T1/T2 exists to close, and would do so while
      * looking perfectly reasonable at the call site.
      *
-     * @param  array<string, mixed>  $body  the full webhook body, as delivered
+     * WHAT THIS METHOD DOES NOT DO IS SETTLE FROM `$body`. The webhook is the trigger, not the
+     * evidence: it tells this system WHEN to look and which reference to look at, and nothing else
+     * in it is trusted. {@see settleFromProvider} is the only path to the money, and it reads
+     * Paystack's own answer. The distinction matters because a signature proves possession of the
+     * secret and says nothing about whether the contents are true.
+     *
+     * @param  array<string, mixed>  $body  the full webhook body, as delivered — recorded as
+     *                                      evidence of what arrived, never read for its amounts
      */
     public function handle(GatewayTransaction $transaction, string $source, ?string $event, array $body): GatewaySettlementOutcome
     {
@@ -93,8 +117,72 @@ final class SettleGatewayTransaction
             return GatewaySettlementOutcome::NotASettlementEvent;
         }
 
+        // THE WEBHOOK SAYS "LOOK AGAIN"; IT DOES NOT SAY WHAT HAPPENED. The body is NOT settled
+        // from — see settleFromProvider, which is the only path to the money.
+        return $this->settleFromProvider($transaction);
+    }
+
+    /**
+     * THE ONLY PATH THAT WRITES MONEY, and it settles from the provider's own answer.
+     *
+     * ── WHY THIS METHOD EXISTS AT ALL ──
+     *
+     * It did not, and that was the defect. Step 4 shipped calling `settle()` with the WEBHOOK body,
+     * which three docblocks and a decision document forbid in as many words: a signature proves a
+     * body came from the holder of the secret and says nothing about whether its contents match
+     * Paystack's ledger. Anyone holding the secret could sign a body claiming a `charge.success`
+     * that never happened; nobody can make Paystack's own API return a transaction that does not
+     * exist. That gap is the entire difference between trusting the wire and trusting the provider,
+     * and closing it is what `verify()` is for.
+     *
+     * ── AND WHY IT IS ONE METHOD RATHER THAN ONE PER CALLER ──
+     *
+     * Verify-on-return (§6 step 6) is the second caller and arrives with the same job: given a
+     * transaction, ask the authority and settle from the answer. Written twice, the two would agree
+     * on the day they were written and drift the first time either changed — the shape this
+     * codebase has now hit three times in one day (the release predicate, the fee calculator, and
+     * this). So step 6 calls THIS, and does not grow its own copy.
+     *
+     * ── THE UNREACHABLE-PROVIDER BRANCH IS NOT NEW POLICY ──
+     *
+     * It was decided on 2026-08-29, before the handler existed:
+     * `docs/handoff/decisions/webhook-arrives-but-verify-is-unreachable.md`. Acknowledge, persist,
+     * leave `pending`, let a later delivery or the discrepancy report recover it. What is built here
+     * is that decision executing for the first time — the case was unreachable while there was no
+     * verify call to fail.
+     */
+    public function settleFromProvider(GatewayTransaction $transaction): GatewaySettlementOutcome
+    {
         try {
-            return $this->settle($transaction, is_array($body['data'] ?? null) ? $body['data'] : []);
+            $answer = $this->paystack->verifyWithPayload($transaction->reference);
+        } catch (PaystackUnavailable $e) {
+            // NOT a failure of the payment — a failure to find out. Recorded as its own outcome
+            // precisely so it can never be read as "the charge did not succeed".
+            Log::warning('paystack.verify.unavailable', [
+                'transaction' => $transaction->getKey(),
+                'reason' => $e->getMessage(),
+            ]);
+
+            return GatewaySettlementOutcome::VerifyUnavailable;
+        }
+
+        // The authority's answer is evidence in its own right and is kept whether or not it settles
+        // anything — `event` is null because a verify response is not an event. Recorded BEFORE the
+        // success test, so a provider that disagrees with the webhook leaves the disagreement on
+        // file rather than only in a log line.
+        $this->recordDelivery($transaction, GatewayTransactionEvent::SOURCE_VERIFY, null, $answer['body']);
+
+        if (! $answer['transaction']->isSuccessful()) {
+            Log::error('paystack.verify.not_successful', [
+                'transaction' => $transaction->getKey(),
+                'status' => $answer['transaction']->status,
+            ]);
+
+            return GatewaySettlementOutcome::NotSuccessfulAtProvider;
+        }
+
+        try {
+            return $this->settle($transaction, is_array($answer['body']['data'] ?? null) ? $answer['body']['data'] : []);
         } catch (GatewayClaimLost) {
             // The race resolved and this delivery lost; its payment and ledger entry are rolled
             // back and the winner's stand. Indistinguishable, correctly, from arriving second.
@@ -128,7 +216,9 @@ final class SettleGatewayTransaction
      * an error. A duplicate delivery is Paystack behaving as documented, and the caller answers 200
      * to it either way — a webhook that 500s on its own retry teaches the provider to retry harder.
      *
-     * @param  array<string, mixed>  $body  the provider's `data` object
+     * @param  array<string, mixed>  $body  the provider's `data` object, AS RETURNED BY `verify()`.
+     *                                      Never a webhook payload — see {@see settleFromProvider},
+     *                                      which is the only caller that should ever build it.
      */
     public function settle(GatewayTransaction $transaction, array $body): GatewaySettlementOutcome
     {
@@ -203,9 +293,9 @@ final class SettleGatewayTransaction
         // account credit — on `finance_payments`, which is append-only and cannot be corrected in
         // place. Money invented, not merely misfiled.
         //
-        // Reachable only if Paystack itself sends it, since the body is HMAC-authenticated. That is
-        // an argument about likelihood, not about consequence, and the fix is one line beside a
-        // refusal already built for the sibling input.
+        // Reachable only if Paystack itself reports it: `$body` is the provider's own verify answer,
+        // not a webhook payload. That is an argument about likelihood, not about consequence, and
+        // the fix is one line beside a refusal already built for the sibling input.
         if ($fee->isNegative()) {
             Log::error('paystack.webhook.fee_is_negative', ['transaction' => $transaction->getKey()]);
 

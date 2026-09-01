@@ -30,10 +30,10 @@ beforeEach(function () {
     (new RbacSeeder)->run();
     config([
         'services.paystack.secret_key' => 'sk_test_git_fixture',
-        // The minimum has NO default in config/finance.php — deliberately. Every arm that is not
-        // about the minimum sets it explicitly, so an unset value can never be the silent reason a
-        // test passes or fails.
-        'finance.gateway.minimum_part_payment_minor' => 300_000,
+        // NGN 1,000 — the ruled value (Segun, 2026-09-01), not an arbitrary fixture number. Set
+        // explicitly in every arm, because config/finance.php has no default: an unset value must
+        // never be the silent reason a test passes or fails.
+        'finance.gateway.minimum_part_payment_minor' => 100_000,
     ]);
     Http::fake([
         'api.paystack.co/transaction/initialize' => Http::response([
@@ -72,8 +72,17 @@ function gitFixture(bool $reviewed = true, string $status = 'issued'): array
             'billed_to_name' => 'Ada Obi',
             'academic_context' => '2026/2027 First Term',
             'total' => Money::fromKobo(10_000_000),
-            // NULL means Internal Audit has not released it to the payer.
-            'reviewed_at' => $reviewed ? now() : null,
+            // UNRELEASED IS THE NATURAL DEFAULT — the column is simply not set, never explicitly
+            // nulled. Nulling it would test the column through a wrapper, and would keep passing
+            // when the predicate's meaning changes (rejection modelling is open: a rejected bill
+            // may end up stamping this column).
+            //
+            // THE RELEASED SIDE IS THE HONEST GAP. Nothing in the codebase writes `reviewed_at`
+            // yet — the Internal Audit review action is not built — so there is no releasing
+            // mechanism to route this through, and stamping it here stands in for one. It must be
+            // replaced with the real action when it lands; the predicate's own known-negative
+            // belongs in Finance, not here. This file asserts only that the gateway REFUSES.
+            ...($reviewed ? ['reviewed_at' => now()] : []),
         ]);
     });
 
@@ -113,8 +122,14 @@ it('starts a payment and charges the gross, recording the bill beside it', funct
         ->and($transaction->status)->toBe('pending')
         ->and(GatewayReference::schoolIdFrom($transaction->reference))->toBe((int) $invoice->school_id);
 
+    // THREE NUMBERS BEFORE THE PAYER COMMITS: credited, fee, charged. Under parent-bears they pay
+    // more than they typed, and a surprise on a card statement is a chargeback. Asserting all three
+    // — and that they reconcile — is what stops a screen showing two of them and inferring the third.
     $response->assertJsonPath('bill.amount_minor', 10_000_000)
+        ->assertJsonPath('fee.amount_minor', 162_437)
         ->assertJsonPath('amount.amount_minor', 10_162_437);
+
+    expect(10_000_000 + 162_437)->toBe(10_162_437);
 });
 
 it('REFUSES an unreviewed invoice server-side, whatever the client offered', function () {
@@ -144,11 +159,11 @@ it('accepts the same request once the invoice IS released — the known negative
 it('refuses an amount below the configured minimum, and accepts one at it', function () {
     [$invoice, $guardian] = gitFixture();
 
-    gitPost($invoice, $guardian, 299_999)->assertStatus(422);
+    gitPost($invoice, $guardian, 99_999)->assertStatus(422);
     expect(DB::table('finance_gateway_transactions')->count())->toBe(0);
 
     // The boundary from the accepting side, so an off-by-one reds in both directions.
-    gitPost($invoice, $guardian, 300_000)->assertCreated();
+    gitPost($invoice, $guardian, 100_000)->assertCreated();
     expect(DB::table('finance_gateway_transactions')->count())->toBe(1);
 });
 
@@ -163,6 +178,27 @@ it('refuses to take any payment at all when no minimum is configured', function 
 
     expect(DB::table('finance_gateway_transactions')->count())->toBe(0);
     Http::assertNothingSent();
+});
+
+it('refuses a minimum configured BELOW the floor', function () {
+    [$invoice, $guardian] = gitFixture();
+    config(['finance.gateway.minimum_part_payment_minor' => 50_000]);
+
+    // NGN 500. The dead band's unreachability rests on the minimum sitting above it, so a minimum
+    // set too low silently reintroduces a case the gross-up has no handling for — and puts small
+    // payers in the 5.3% band the NGN 1,000 ruling exists to keep them out of. Enforced rather than
+    // documented: a precondition resting on a value someone may later change is not a precondition.
+    gitPost($invoice, $guardian, 10_000_000)->assertStatus(422);
+
+    expect(DB::table('finance_gateway_transactions')->count())->toBe(0);
+});
+
+it('accepts the floor exactly — the known negative for the floor check', function () {
+    [$invoice, $guardian] = gitFixture();
+    config(['finance.gateway.minimum_part_payment_minor' => 100_000]);
+
+    // Without this the floor check could refuse every configured value and read as correct.
+    gitPost($invoice, $guardian, 10_000_000)->assertCreated();
 });
 
 it('permits an OVERPAYMENT — the ruling allows it and nothing here caps at outstanding', function () {

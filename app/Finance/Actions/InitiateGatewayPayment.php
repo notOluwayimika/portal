@@ -32,12 +32,18 @@ use Illuminate\Support\Facades\DB;
  * survives a crafted POST, a stale tab, or a client the school did not write. The check is repeated
  * here against the invoice the request actually named.
  *
- * ── RELEASE WITHDRAWN AFTER THIS POINT IS NOT THIS ACTION'S PROBLEM, AND NOT THE WEBHOOK'S ──
+ * ── RELEASE IS ONE-WAY, SO THE WINDOW HERE IS NOT A NEW ONE ──
  *
- * Release is a school-side act and can move between here and settlement. The webhook deliberately
- * does NOT re-check it: refusing at settlement does not un-take the money, it only detaches the
- * evidence from the invoice the parent chose. Detection belongs to step 7's report — the fifth
- * class, `docs/handoff/tickets/discrepancy-report-fifth-class-release-withdrawn.md`.
+ * Segun signed off on 2026-09-01: release only ever moves toward LESS payable. That puts it in the
+ * same family as void, settled and currency — axes this system already has a time-of-check window
+ * on, between a payer starting and the delivery arriving.
+ *
+ * SO THE WINDOW IS THE ONE THOSE THREE ALREADY HAVE. It is not handled, and saying it were would be
+ * the overclaim: what is true is that it is not a NEW class needing new machinery. The webhook
+ * records whatever arrives, because money that has landed is a fact and refusing at settlement does
+ * not un-take it — it only detaches the evidence from the invoice the parent chose. Detection
+ * belongs to step 7's report:
+ * docs/handoff/tickets/discrepancy-report-fifth-class-release-withdrawn.md
  *
  * ── OVERPAYMENT NEEDS NO NEW MACHINERY ──
  *
@@ -65,7 +71,22 @@ final class InitiateGatewayPayment
             throw new BusinessRuleException('A payment amount must be positive.');
         }
 
-        // SERVER-SIDE RELEASE CHECK. See the class docblock: the feed hiding it is presentation.
+        // ⚠️ THIS IS A COLUMN TEST BEHIND A WRAPPER. IT IS NOT THE RELEASE CHECK.
+        //
+        // `Invoice::isReviewed()` is `reviewed_at !== null` and nothing more. Developer 1's
+        // instruction is to call a Finance-owned predicate — `isReleasedToPayers()` — rather than
+        // compare a column, because rejection modelling is still open with Brookstone. If a REJECTED
+        // bill ends up stamping `reviewed_at`, this passes a bill an auditor has just refused.
+        //
+        // That predicate DOES NOT EXIST YET (grepped 2026-09-01: zero hits in app/, resources/,
+        // tests/). It is Developer 1's to add and he has offered; implementing a private one here
+        // would create the third reader of a rule that already has two implementations.
+        //
+        // KEPT AS AN INTERIM, NOT BECAUSE IT IS SUFFICIENT. No release check at all fails OPEN on
+        // the axis that matters — a parent paying a bill Internal Audit has not released — and that
+        // is strictly worse than a check correct under the current rejection shape and wrong under
+        // one Brookstone has not chosen. Swap it the day the shared predicate lands:
+        // docs/handoff/tickets/release-predicate-has-two-implementations.md
         if (! $invoice->isReviewed()) {
             throw new BusinessRuleException(
                 'This bill has not been released for payment yet. It is with Internal Audit for review.'

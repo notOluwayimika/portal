@@ -38,6 +38,26 @@ it('always recovers at least the bill, across every regime and both boundaries',
     'large, capped' => 100_000_000,
 ]);
 
+it('crosses the waiver discontinuity without a gap — the measured rows either side', function (int $billKobo, int $expectedGross, int $expectedFee) {
+    $calc = new GatewayFeeCalculator;
+    $gross = $calc->grossFor(Money::fromKobo($billKobo));
+
+    // THE DISCONTINUITY IS WHERE A SCHEDULE CHANGE WOULD FIRST SHOW. Paystack waives its flat below
+    // a NGN 2,500 GROSS, so the gross jumps NGN 101.54 as the bill crosses NGN 2,462.50 — there is a
+    // dead band on the GROSS axis (no bill produces a charge between 2,499.99 and 2,601.53) and NO
+    // gap on the bill axis. These two rows are one kobo apart and land in different regimes.
+    //
+    // The numbers are MEASURED, pasted from a run of the built calculator and checked against the
+    // sandbox calibration — not recomputed here from the same formulas the code uses, which would
+    // assert only that the implementation equals itself.
+    expect($gross->toKobo())->toBe($expectedGross)
+        ->and($calc->feeOn($gross)->toKobo())->toBe($expectedFee)
+        ->and($gross->minus($calc->feeOn($gross))->toKobo())->toBe($billKobo);
+})->with([
+    'last bill in the waived band' => [246_249, 249_999, 3_750],
+    'first bill in the flat band' => [246_250, 260_153, 13_903],
+]);
+
 it('rounds the gross UP — the residual never falls on the debt side', function () {
     $calc = new GatewayFeeCalculator;
 

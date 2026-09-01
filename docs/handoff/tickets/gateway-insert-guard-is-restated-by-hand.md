@@ -39,7 +39,17 @@ local failure signal*.
    — but migrations are dated acts and must not change behaviour when the shared source changes.
    A migration that reads today's list would rewrite history on a re-run.
 2. **Split per-rule triggers when production reaches 8.0.** Correct, and blocked on a database
-   upgrade nobody has scheduled.
+   version — but that version is about to be CHOSEN rather than merely waited for.
+
+   **THE SHARED-TO-DEDICATED SERVER MOVE IS THE OPPORTUNITY, AND IT IS IMMINENT.** If the new server
+   runs MySQL 8.0 or later, each rule can live in its own trigger and its own migration, and this
+   whole class of hand-restatement disappears. If it lands on 5.7 again the constraint is inherited
+   for the life of that box.
+
+   So this is a reason to **establish the new server's MySQL version early**, during cutover
+   planning, rather than discovering it afterwards. Raised here so it surfaces in that conversation
+   instead of being rediscovered in six months by someone restating this trigger for the fourth
+   time.
 3. **A test — not a migration — that asserts the live trigger contains every arm the schema
    claims.** Independent of migration order, fails on any drop, and costs one file.
 

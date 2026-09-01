@@ -63,6 +63,28 @@ operational facts an agent needs most often.
   And read `git diff --stat` against your own model of the change before
   pushing — no gate objects to a commit full of correct formatting, and none
   should.
+- **WHEN YOU ASSERT A NEGATIVE, ASSERT *WHICH* NEGATIVE.** An assertion satisfiable by more than one
+  state does not distinguish them, and this repository's guards are STACKED — so when your assertion
+  is loose, something else almost always refuses first and the test passes for the wrong reason.
+
+  Three instances in a single round on `feat/gateway-initiate`, each caught by a different accident:
+
+  - a ward-authorisation test used a guardian from ANOTHER school, so `SchoolScope` resolved the
+    invoice to null and the refusal came from isolation — deleting `mayPay()` left it green;
+  - a trigger bite-proof asserted "an exception was thrown", which **1648** (`MESSAGE_TEXT` over
+    128 chars, so the `SIGNAL` itself failed) satisfies exactly as well as the intended **1644**;
+  - a gross-up took the FIRST candidate that "recovers the bill" — a predicate several formulas
+    satisfy — and so over-charged a large payer by ₦13,228 while every arm stayed green.
+
+  The operational form: name the error CODE, not "it threw". Name the MECHANISM, not "it was
+  refused". Name WHICH candidate, not "one that works". And build the fixture so the mechanism under
+  test is the only one that can fire — a same-school guardian for a ward check, not a cross-school
+  one, with isolation as its own separate arm because the two refuse for different reasons and one
+  test covering both goes green if either is removed.
+
+  This is the parent of "the fixture must make the axis the only thing that can pass it": that rule
+  is about the INPUT, this one is about the ASSERTION, and either alone leaves the other hole open.
+
 - **Re-verify a consolidated document against current state IMMEDIATELY before sending it.**
   Consolidating several asks into one message buys the reader's attention — five arrivals become
   one — and it is paid for with the FRESHNESS OF THE EARLIEST ITEMS. The longer a note is held in

@@ -54,10 +54,17 @@ final class GatewayPaymentController extends Controller
         return response()->json([
             'reference' => $transaction->reference,
             'authorization_url' => $checkout->authorizationUrl,
-            // Both figures, because the payer is being charged more than the bill and the screen has
-            // to be able to say so. Sending only the gross would make the fee invisible at the one
-            // moment the parent is entitled to see it.
+            // THREE NUMBERS, BECAUSE THE CONFIRMATION SCREEN MUST SHOW THREE. Under parent-bears the
+            // payer is charged MORE than they typed, and the screen has to say so before they
+            // commit: what is credited to the bill, what the provider takes, and what their card is
+            // charged. A surprise on a card statement is a chargeback.
+            //
+            // The fee is DERIVED HERE from the two stored figures rather than stored as a third
+            // column: it is the up-front estimate, and the fee that is eventually RECORDED is the
+            // provider's reported one at settlement. Two different facts; storing this one beside
+            // `fee_minor` would invite them to be read as the same.
             'bill' => $transaction->bill,
+            'fee' => $transaction->amount->minus($transaction->bill),
             'amount' => $transaction->amount,
         ], 201);
     }

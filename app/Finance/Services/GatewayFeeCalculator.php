@@ -127,9 +127,19 @@ final class GatewayFeeCalculator
             return Money::fromKobo(min($recovering), $bill->currency);
         }
 
-        // UNREACHABLE BY CONSTRUCTION — R3 adds the maximum possible fee, so its net is always at
-        // least the bill. Reached only if the fee schedule above has been edited into incoherence,
-        // which is exactly when a silent wrong answer would be most expensive.
+        // THE ENFORCED PRECONDITION, not a defensive tail.
+        //
+        // Every bill maps to exactly one consistent regime TODAY: above the waiver boundary the R1
+        // candidate stops recovering (its net falls short once the flat applies), so R2 is both
+        // consistent and smallest; and R3 adds the maximum possible fee, so its net is always at
+        // least the bill. There is no gap on the bill axis, which is why there is no dead-band
+        // branch here — a branch no input can reach is untestable code that reads as coverage.
+        //
+        // BUT THAT IS A PROPERTY OF PAYSTACK'S CURRENT SCHEDULE, NOT OF ARITHMETIC. If the waiver
+        // threshold moves, or the flat changes, or the cap does, "no input reaches this line" stops
+        // being true — and it would stop being true SILENTLY, because nothing else in this class
+        // checks it. So the precondition is asserted rather than reasoned about: reaching here means
+        // the regimes no longer cover their own range, and the loud failure is the point.
         throw new InvalidArgumentException(
             'No gross recovers a bill of '.$bill->toKobo().' kobo under the current fee schedule. '
             .'The regimes in GatewayFeeCalculator no longer cover their own range.'

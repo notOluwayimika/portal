@@ -38,6 +38,16 @@ class LogRbacChange
             $event instanceof PermissionDetachedEvent => ['permission_detached', 'permission', $this->permissionNames($event->permissionsOrIds)],
         };
 
+        // `$action` is one of four literals chosen by the match above, which no static reading can
+        // resolve. bin/ci-activity-catalogue-lint.php refuses to SKIP what it cannot parse, so the
+        // set is declared here and the lint then holds these four keys to the catalogue like any
+        // other emitter — an unclassified one reds. The residual is that nothing checks the
+        // declaration against the match; keep them in step.
+        //
+        // @activity-emits rbac.role_attached
+        // @activity-emits rbac.role_detached
+        // @activity-emits rbac.permission_attached
+        // @activity-emits rbac.permission_detached
         activity('rbac')
             ->performedOn($event->model)
             ->event($action)

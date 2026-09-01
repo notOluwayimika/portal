@@ -69,3 +69,8 @@ app/DevNsLintFixture*.php
 tests/Feature/DevNsLintFixture*.php
 .claude/skills/CitationLintFixture*.md
 docs/handoff/tickets/CitationLintFixture*.md
+
+# Same, for tests/Arch/ActivityCatalogueLintCoverageTest.php — same plant-and-remove shape,
+# same residue on a SIGKILL. A leaked one emits an unclassified event and fails the
+# activity-catalogue lint step for everyone afterwards.
+app/ActivityCatalogueLintFixture*.php

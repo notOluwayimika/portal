@@ -63,7 +63,7 @@ STEP=0
 
 step() {
     STEP=$((STEP + 1))
-    printf '%s[%d/18]%s %s\n' "$BOLD" "$STEP" "$OFF" "$1"
+    printf '%s[%d/19]%s %s\n' "$BOLD" "$STEP" "$OFF" "$1"
 }
 
 # Run a command; record failure but keep going so one push surfaces every problem
@@ -71,7 +71,7 @@ step() {
 # locally is strictly more useful and cannot make the gate weaker — any failure
 # still fails the whole run.)
 #
-# THAT ARGUMENT HOLDS FOR A DETECTOR, AND ONLY FOR A DETECTOR. Steps 2-17 each measure a
+# THAT ARGUMENT HOLDS FOR A DETECTOR, AND ONLY FOR A DETECTOR. Steps 2-19 each measure a
 # property of the code. Step 1 measures whether the code being measured is the code that
 # was declared. When step 1 is red the later steps are not extra findings — they are
 # readings from an instrument that has just reported itself untrustworthy, and fourteen
@@ -376,6 +376,37 @@ check "test-ratchet" php bin/ci-test-ratchet.php "$QUALITY_JUNIT"
 #     branch, and this comment is the note that it is worth doing.
 step "javascript tests (vitest — the only step that executes application JS)"
 check "vitest" pnpm run test:js
+
+# 19. activity-catalogue lint. The catalogue must describe events that are actually EMITTED.
+#     Three declared keys matched no emitter for months and ~1,800 rows resolved to the `info`
+#     default, two of them unmasked — privilege grants and password resets readable by every
+#     holder of activity_log.view. Commit 73108ea8 corrected the keys; this is the floor under
+#     that correction. It enumerates every emitted "{log_name}.{event}" statically, and fails on
+#     a declared key nothing emits, on an emitter no tier classifies and no exemption names, on
+#     an exemption with an empty reason, and on a non-constant ->event() argument.
+#
+#     IT FAILS WHEN ITS OWN SCAN FINDS NOTHING — exit 2, "could not determine", and no success
+#     line. That is deliberate and it is why it exists in this shape: bin/ci-tsc-ratchet.php
+#     (step 4) reads absent input as zero errors and prints "type errors DECREASED (good!)".
+#     An instrument that answers a question it was given no input for is worse than no
+#     instrument, because a green from it stops anyone looking.
+#
+#     ONLY the dead `protected static $logName` rule is baselined (23 models, its own ticket).
+#     The two catalogue rules are NOT: they are green as of 73108ea8, and a baseline there would
+#     admit the next transposition on the day somebody wrote it.
+#
+#     IT IS LAST FOR THE REASON THE VITEST STEP ABOVE IS LAST, and the cost is the same: it runs
+#     in well under a second and belongs beside the other lints at 13-14. Appending renumbers
+#     nothing. Inserting mid-list renumbers the `# N.` headers and the `step N` prose, and that
+#     prose is ALREADY WRONG — measured on this branch: `# 12.` heads the sql-clock lint, which
+#     is the 13th step() call; `# 13.` heads citation (14th); `# 16.` heads the suite (17th);
+#     `# 17.` heads vitest (18th). A step was inserted above them and the headers never moved.
+#     QualityStepCountTest catches the printf and structurally cannot catch any of that. This
+#     step is therefore the SECOND occupant of
+#     docs/handoff/tickets/the-vitest-step-is-in-the-wrong-place-in-bin-quality.md, and that
+#     branch now has an off-by-one to correct as well as two steps to move.
+step "activity-catalogue lint (the catalogue describes events that are actually emitted)"
+check "activity-catalogue-lint" php bin/ci-activity-catalogue-lint.php
 
 # ---------------------------------------------------------------------- verdict
 echo

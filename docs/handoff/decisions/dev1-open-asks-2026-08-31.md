@@ -26,36 +26,45 @@ is the landing, not the decision. The guardian merge command is on
 date because resumption is the 6th and this sits underneath the parent-facing
 payment path — anything landing after it has to be re-verified against it.
 
-### 2. The fee ruling — **needed before the webhook handler ships (I am building it today)**
+### 2. The gateway transaction needs to carry the BILL — **before step 3 (initialise) is built**
 
-Your reply settled *who bears the fee*: the parent. What it did not settle is
-the arithmetic, and the calibration against three live sandbox charges turned
-up that the two readings are not equivalent.
+**This item changed after it was drafted, and it is now narrower — you have less to decide, not
+more.** The original version asked you to choose between two fee arithmetics. That is settled and
+you settled it: your §2 said the parent is charged bill + fee and the school receives the full
+bill, which is solve-for-gross — `G = (B + flat) / (1 − 0.015)`, confirmed exactly against three
+live sandbox charges. Nothing to re-rule.
 
-Paystack charges **1.5% + ₦100** (flat waived under ₦2,500) measured on the
-**gross** — the amount actually charged, not the amount you wanted to net. So
-"parent bears the fee" has two implementations:
+What the same paragraph also said, and what nothing yet implements, is the second-order clause:
 
-- **Add the fee on top** — parent is charged `B + fee(B)`, school nets slightly
-  *less* than `B`, because the fee is then recomputed on the larger gross.
-- **Solve for gross** — parent is charged `G = (B + flat) / (1 − 0.015)`,
-  school nets exactly `B`.
+> the fee must be known **before** the parent is charged, so it is computed up front rather than
+> read off the settlement.
 
-The second is what "the parent bears the fee" means if the school is meant to
-receive the invoice amount whole. The first leaves a small shortfall on every
-payment. I have the formula confirmed exactly against three sandbox charges
-across all three regimes, so either is implementable today.
+Under that, the amount to credit against the invoice is **the bill** — a number fixed at
+initialise. What the webhook credits today is `gross − reported_fee`, which equals the bill only if
+our up-front gross-up and Paystack's actual deduction agree to the kobo. They need not: `G` is
+rounded to integer minor units, Paystack then rounds its own fee on the rounded `G`, and it caps
+local-card fees. `finance_gateway_transactions` has **no column for the bill**, so the residual
+cannot even be measured, let alone reported — it is silently absorbed into the payer's balance on
+an append-only table.
 
-**What I need:** which one. I will build the handler with both arms behind a
-required explicit input so it cannot ship defaulted, but one of them has to be
-chosen before the parent screen goes out.
+**What I need:** agreement that step 3 stores the bill on the transaction at initialise, so the
+webhook credits *that* and the discrepancy report treats `gross − fee ≠ bill` as a finding rather
+than as the answer. It is one column and it is cheap now; it is a backfill against live money data
+later.
 
-### 3. Item #8, promoted to sit with the fee ruling — **same date, same message**
+**Not urgent in the sense the original item was** — the webhook already refuses a delivery whose
+amount or currency is not the one we initiated, so a wrong *charge* is caught. This is about a
+kobo-level *rounding* residual, and step 3 does not exist yet. But step 3 is where the shape gets
+set, so the decision wants making before it is written rather than after.
 
-#8 was left open in the fourteen-item reply. It is promoted here because it
-turns on the same choice as item 2 and answering them apart would cost you the
-context twice. If you rule on the fee arithmetic, please rule on #8 in the same
-breath.
+### 3. Item #8, promoted to sit with item 2 — **same date, same message**
+
+#8 was left open in the fourteen-item reply. It is promoted here because it sits on the same part
+of the flow as item 2, and answering them apart would cost you the context twice.
+
+**Note the change above:** item 2 is no longer the fee-arithmetic question #8 was originally paired
+with — that is settled. If #8 turns specifically on the arithmetic rather than on the initialise
+shape, it may already be answered; say so and I will drop it.
 
 ---
 

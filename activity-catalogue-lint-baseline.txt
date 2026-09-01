@@ -1,0 +1,40 @@
+# activity-catalogue-lint baseline — models declaring the dead `protected static $logName`.
+# MAY ONLY SHRINK.
+#
+# Key: rule \t path \t class \t COUNT.
+#
+# ONLY rule `dead-static-log-name` is baselined. `catalogue-key-not-emitted` and
+# `emitter-is-unclassified` are NOT, deliberately: the correction commit made them green, and a
+# baseline there would admit the next transposition on the day somebody wrote it.
+#
+# Spatie never reads `protected static $logName` — LogsActivity::getLogNameToUse() reads
+# `$this->activitylogOptions->logName` and otherwise returns config('activitylog.default_log_name'),
+# so every model here writes to `default` while reading as configured. Burn one down by moving the
+# name into `->useLogName()` inside getActivitylogOptions(), then regenerate:
+#
+#   php bin/ci-activity-catalogue-lint.php generate
+#
+# Ticket: docs/handoff/tickets/model-log-name-is-declared-as-a-static-property-spatie-never-reads.md
+dead-static-log-name	app/Models/AcademicSession.php	AcademicSession	1
+dead-static-log-name	app/Models/Arm.php	Arm	1
+dead-static-log-name	app/Models/ClassLevel.php	ClassLevel	1
+dead-static-log-name	app/Models/ClassLevelArm.php	ClassLevelArm	1
+dead-static-log-name	app/Models/ClassLevelArmProgression.php	ClassLevelArmProgression	1
+dead-static-log-name	app/Models/ClassLevelExamType.php	ClassLevelExamType	1
+dead-static-log-name	app/Models/ClassLevelTermParticipation.php	ClassLevelTermParticipation	1
+dead-static-log-name	app/Models/CommentBand.php	CommentBand	1
+dead-static-log-name	app/Models/CommentEntry.php	CommentEntry	1
+dead-static-log-name	app/Models/Curriculum.php	Curriculum	1
+dead-static-log-name	app/Models/CurriculumSubject.php	CurriculumSubject	1
+dead-static-log-name	app/Models/ExamType.php	ExamType	1
+dead-static-log-name	app/Models/GradeBoundary.php	GradeBoundary	1
+dead-static-log-name	app/Models/MarkingComponent.php	MarkingComponent	1
+dead-static-log-name	app/Models/Score.php	Score	1
+dead-static-log-name	app/Models/Stream.php	Stream	1
+dead-static-log-name	app/Models/StudentCurriculum.php	StudentCurriculum	1
+dead-static-log-name	app/Models/StudentResult.php	StudentResult	1
+dead-static-log-name	app/Models/StudentSubject.php	StudentSubject	1
+dead-static-log-name	app/Models/Subject.php	Subject	1
+dead-static-log-name	app/Models/SubjectResultStatus.php	SubjectResultStatus	1
+dead-static-log-name	app/Models/TeacherCurriculumSubject.php	TeacherCurriculumSubject	1
+dead-static-log-name	app/Models/Term.php	Term	1

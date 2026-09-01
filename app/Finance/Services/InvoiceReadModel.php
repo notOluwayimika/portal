@@ -67,8 +67,8 @@ final class InvoiceReadModel
      *     parent to pay it is asking for money the school has said it is not owed.
      *   • SETTLED — an invoice whose outstanding has reached zero, by payment or by approved credit
      *     note or by both. Nothing is owed on it, so it is not on the payer's list.
-     *   • NOT YET REVIEWED — `reviewed()`. Brookstone ruled on 31 August 2026 that every bill must
-     *     be reviewed by an Internal Auditor before it is released to parents
+     *   • NOT RELEASED — `releasedToPayers()`. Brookstone ruled on 31 August 2026 that every bill
+     *     must be reviewed by an Internal Auditor before it is released to parents
      *     (docs/handoff/brookstone-answers-31-august.md §6). The bill EXISTS and COUNTS from the
      *     moment it is raised — it holds the enrollment's active slot and has posted its ledger
      *     charge — so this is a visibility gate and emphatically not a draft state. It is the ONLY
@@ -96,7 +96,7 @@ final class InvoiceReadModel
         return Invoice::query()
             ->where('student_id', $studentId)
             ->excludingVoid()
-            ->reviewed()
+            ->releasedToPayers()
             ->tap($this->settlementSums(...))
             ->orderBy('id')
             ->get()
@@ -460,7 +460,7 @@ final class InvoiceReadModel
         $withheldIds = Invoice::query()
             ->where('student_id', $studentId)
             ->excludingVoid()
-            ->whereNull('reviewed_at')
+            ->withheldFromPayers()
             ->pluck('id')
             ->all();
 

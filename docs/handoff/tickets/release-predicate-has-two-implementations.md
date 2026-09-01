@@ -1,5 +1,26 @@
 # The release rule has TWO implementations, and they will diverge on a known trigger
 
+> **RESOLVED — 2026-09-01, `refactor/one-definition-released-to-payers`.**
+>
+> There were THREE, not two: the ticket below counts `isReviewed()` and `scopeReviewed()`, and a
+> third inline `whereNull('reviewed_at')` sat in `InvoiceReadModel::guardianAccountPositionForStudent()`
+> — the withheld half of the parent balance projection.
+>
+> All three now route through `Invoice::RELEASE_STAMP_COLUMN`, read by exactly two members:
+> `isReleasedToPayers()` (PHP) and `scopeReleasedToPayers(bool $released = true)` (SQL, both
+> directions, with `withheldFromPayers()` a call INTO it rather than its own predicate). Renamed
+> for the question the caller asks rather than for the column, so a rejection shape that STAMPS a
+> refused bill does not silently make the name true.
+>
+> **NO DEPRECATED ALIAS.** `isReviewed()` and `scopeReviewed()` are gone, not wrapped. An alias kept
+> "for safety" is the thing that never gets removed, and the whole point of the commit is that one
+> definition exists.
+>
+> The redundancy the three copies provided — an accidental cross-check, where updating one could
+> expose the others — is replaced by prevention rather than deleted:
+> `tests/Arch/ReleasedToPayersHasOneDefinitionTest.php` asserts the column name appears in app/
+> CODE exactly once, at the constant. A fourth spelling cannot be written without a red.
+
 **Raised:** 2026-09-01 · **From:** `feat/gateway-initiate` · **For:** Developer 1 · **Severity:** fix, before the rejection answer lands
 
 ## The ask, concretely

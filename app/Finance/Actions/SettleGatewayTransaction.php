@@ -161,6 +161,23 @@ final class SettleGatewayTransaction
             return GatewaySettlementOutcome::FeeNotReported;
         }
 
+        // ── RELEASE WITHDRAWN AFTER THE CHARGE: THIS PATH DOES NOTHING, DELIBERATELY ──
+        //
+        // `finance_invoices.reviewed_at` gates whether an invoice is released to the payer, and that
+        // check belongs at INITIATION. Release is a school-side act, so it can move between a parent
+        // starting to pay and the delivery arriving.
+        //
+        // Refusing here would NOT un-take the money. It would only detach the evidence from the
+        // invoice the parent actually chose, leaving an orphaned charge and a human reconciliation —
+        // strictly worse than recording the payment and raising an alert. Same reasoning as §11
+        // decision 4. Detection belongs in step 7's report, which compares the invoice's release and
+        // void state at `created_at` against `paid_at`:
+        // docs/handoff/tickets/discrepancy-report-fifth-class-release-withdrawn.md
+        //
+        // Written here rather than left implicit because the NEXT reader's question is "why is there
+        // no payability check on the money path", and an unanswered why gets answered by someone
+        // adding the refusal.
+
         // THE SUBTRACTION IS THE FEE RULING, NOT ARITHMETIC — and it is NOT policy-independent.
         //
         // Dev 1 settled it (docs/handoff/payments-decisions-30-august.md §2, 2026-08-30): the PARENT
@@ -179,6 +196,22 @@ final class SettleGatewayTransaction
         // configuration knob exists because the ruling is settled, not because the policies agree.
         // If the ruling ever moves, this line moves with it — and so does §11 decision 4, where the
         // credit banked against a cancelled invoice is the RECORDED PAYMENT AMOUNT.
+        // THE RANGE GUARD WAS ONE-SIDED, WHICH IS HOW IT READ AS COVERED. `FeeExceedsAmount` below
+        // catches a fee too LARGE; nothing caught a fee below zero. `Money::fromKobo` takes any int,
+        // so `fees: -50000` yields a net GREATER than the gross: the invoice is credited more than
+        // the payer was ever charged, allocated up to outstanding, and the remainder banked as
+        // account credit — on `finance_payments`, which is append-only and cannot be corrected in
+        // place. Money invented, not merely misfiled.
+        //
+        // Reachable only if Paystack itself sends it, since the body is HMAC-authenticated. That is
+        // an argument about likelihood, not about consequence, and the fix is one line beside a
+        // refusal already built for the sibling input.
+        if ($fee->isNegative()) {
+            Log::error('paystack.webhook.fee_is_negative', ['transaction' => $transaction->getKey()]);
+
+            return GatewaySettlementOutcome::FeeIsNegative;
+        }
+
         $net = $transaction->amount->minus($fee);
 
         if ($net->isZero() || $net->isNegative()) {

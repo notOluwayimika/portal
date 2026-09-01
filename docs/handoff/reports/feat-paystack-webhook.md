@@ -34,8 +34,14 @@ Banking it misclassified the input and then applied the right rule to the wrong 
 `writePayment()` now delegates to `RecordPayment`, which locks the invoice, caps the allocation at
 outstanding, and writes it under `RULE_PAYMENT_AGAINST_NAMED_INVOICE`. That also closed four of the
 reviewer's tickets at once — `external_reference`, the void-invoice refusal, the invoice-currency
-refusal, and the concurrency-doc question (there is no new lock site; the anchor is taken inside
-`RecordPayment`).
+refusal, and the invoice-lock question — the anchor is taken inside `RecordPayment`.
+
+**That last clause was stated too widely and a cold review caught it.** It is true of the INVOICE
+lock and false of the transaction: `settle()` takes `SELECT … FOR UPDATE` on
+`finance_gateway_transactions` and holds it across the invoice lock, the sequence lock and the
+account increment. That IS a new lock site — the outermost one on the newest money path.
+`docs/finance/concurrency.md` now records the order
+(`gateway_transactions → invoice → sequences → account`) and the absence of any inverse path.
 
 **Why no test caught it:** a payment that banks as unnamed credit produces an *identical* `Payment`
 row. The old fixture asserted that row's amount and nothing about the invoice, so the two outcomes
@@ -130,17 +136,33 @@ known-negative, because a guard that refused everything would pass the refusal a
 - `App\Finance\Providers\FinanceServiceProvider` — Paystack bindings, inside the module because
   `App\Finance\Services` is private to it.
 
-## Verification — raw
+## Verification — raw, RE-MEASURED at this tree
+
+**The previous block was stale and said so nowhere.** It read `passed=12/12` for
+`PaystackWebhookTest`, measured two commits earlier, and omitted
+`GatewayReferenceRoutingTest` entirely — while sitting directly above a watched-red table naming
+arms that did not exist when it was taken. A reader could not tell which arms the greens covered.
+That is the "instrument reported clean" class this same report documents twice, in the section whose
+whole job is to be the evidence.
+
+Re-derive rather than quoting these: `git diff --stat origin/staging...HEAD`, and re-run.
 
 ```
-pest tests/Feature/Finance/PaystackWebhookTest.php   passed=12/12 failed=0
-pest --group=arch                                    passed=115/115 failed=0
-bin/ci-boundary-lint.php   OK — no new boundary violations (8 known)
-bin/ci-authz-lint.php      OK — 0 known
-bin/ci-money-lint.php      OK — 0 known
-composer analyse           {"tool":"phpstan","result":"passed","errors":0}
-pint                       {"tool":"pint","result":"passed"}
+pest PaystackWebhookTest + GatewayReferenceRoutingTest + GatewayTransactionSchemaTest
+                            tests=61 passed=61 failed=0 errors=0
+pest --group=arch           tests=115 passed=115 failed=0 errors=0
+bin/ci-boundary-lint.php    OK — 8 known temporary exceptions
+bin/ci-authz-lint.php       OK — 0 known
+bin/ci-money-lint.php       OK — 0 known
+composer analyse            {"tool":"phpstan","result":"passed","errors":0}
+pint                        {"tool":"pint","result":"passed"}
 ```
+
+`bin/quality` is **18** steps — re-derived, not carried; `finance-context` still records 15.
+
+**The reader counts errors, not just failures.** Two of the mutations below kill as Pest ERRORS
+rather than failures and would read as survivors under a summariser that parses only the `failures`
+bucket — which this branch shipped with, and which hid an erroring known-negative for a while.
 
 ### Watched reds — planted against the FINAL code, after the refactor
 
@@ -157,6 +179,9 @@ pint                       {"tool":"pint","result":"passed"}
 | Drop `AND payment_id IS NULL` **alone** | **RED** — the extracted-CAS arm (was unkillable before) |
 | `matchesCharge()` always true | **RED ×3** — all amount/currency dataset cases |
 | Revert the events guard to its pre-fix column list | **RED** — twice, by two independent detectors |
+| Remove the signature-rejection log line | **RED** — the 401 arm |
+| Remove the negative-fee guard | **RED** — the negative-fee arm |
+| Pay into the school's first account, not the configured one | **RED ×2** — destination arm and the no-account arm |
 
 The survivor is deliberate and is the proof that the CAS is live, not a hole: with the early return
 gone, the second delivery still produced **one** payment and `already_settled`, which can only

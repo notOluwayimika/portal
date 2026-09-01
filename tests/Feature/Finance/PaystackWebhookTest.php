@@ -3,6 +3,7 @@
 use App\Finance\Actions\SettleGatewayTransaction;
 use App\Finance\Enums\InvoiceKind;
 use App\Finance\Enums\InvoiceStatus;
+use App\Finance\Models\BankAccount;
 use App\Finance\Models\GatewayTransaction;
 use App\Finance\Models\Invoice;
 use App\Finance\Models\Payment;
@@ -18,6 +19,7 @@ use App\Support\ActiveSchool;
 use App\Support\Money;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Testing\TestResponse;
 
 /**
@@ -48,12 +50,28 @@ function pwtTransaction(?School $school = null, ?string $reference = null, int $
     return ActiveSchool::runFor($school->id, function () use ($school, $student, $curriculum, $reference, $amountKobo) {
         // A REAL PRECONDITION, not fixture noise: a gateway payment names the settlement account the
         // provider paid out into, and the origin-pairing trigger refuses a `gateway` row with a NULL
-        // bank_account_id. A school with no settlement account configured cannot take one — which is
-        // the correct refusal, and is asserted on its own further down.
+        // bank_account_id.
+        //
+        // TWO ACCOUNTS, AND THE SETTLEMENT ONE IS NOT THE ONLY ONE. `testBankAccountId()` is a
+        // firstOrCreate keyed on (school_id, 'TEST-<id>') — one account per school — so with it
+        // alone "the configured settlement account" and "any account this school has" are the SAME
+        // ROW, and a wrong destination rule passes indistinguishably. The decoy is created FIRST so
+        // it takes the lower id: a destination rule that picked "the school's first account" would
+        // then land on it and red, which is the whole point of the second row.
+        $decoy = BankAccount::withoutGlobalScopes()->create([
+            'school_id' => $school->id,
+            'account_number' => 'DECOY-'.$school->id,
+            'label' => 'Not the settlement account',
+            'bank_name' => 'Decoy Bank',
+        ]);
+
         SchoolFinanceSettings::updateOrCreate(
             ['school_id' => $school->id],
             ['settlement_bank_account_id' => testBankAccountId($school->id)],
         );
+
+        // Referenced so the decoy is unmistakably deliberate rather than stray fixture.
+        expect($decoy->id)->toBeLessThan(testBankAccountId($school->id));
 
         $enrollment = StudentCurriculum::create([
             'student_id' => $student->id,
@@ -123,10 +141,17 @@ function pwtPost(array $body, ?string $signature = null): TestResponse
     );
 }
 
-it('refuses an unsigned delivery with 401 and writes absolutely nothing', function () {
+it('refuses an unsigned delivery with 401, records nothing, but leaves a trace', function () {
     $transaction = pwtTransaction();
+    Log::spy();
 
     pwtPost(pwtBody($transaction->reference), signature: 'not-the-signature')->assertStatus(401);
+
+    // A REJECTED DELIVERY LEAVES A TRACE. Not for the attacker case — for the ROTATED SECRET case,
+    // where every genuine delivery 401s and the platform would otherwise be silent about why.
+    Log::shouldHaveReceived('warning')
+        ->withArgs(fn (string $message) => $message === 'paystack.webhook.signature_rejected')
+        ->once();
 
     // NOT MERELY "no payment": no EVENT ROW either. The table is append-only and DELETE is denied
     // on it, so anyone who learned the URL could otherwise fill it permanently.
@@ -197,6 +222,38 @@ it('refuses to book against a void invoice, loudly, without a 500', function () 
     // The payer has already been charged, so this is money with no payment against it. 200 because
     // redelivery cannot fix our data — but recorded, left pending, and left for the discrepancy
     // report. A 500 here would put Paystack into a retry schedule that fails identically forever.
+    pwtPost(pwtBody($transaction->reference))->assertOk()->assertJsonPath('outcome', 'could_not_book');
+
+    expect(DB::table('finance_payments')->count())->toBe(0)
+        ->and(DB::table('finance_gateway_transaction_events')->count())->toBe(1)
+        ->and($transaction->fresh()->status->value)->toBe('pending');
+});
+
+it('pays into the CONFIGURED settlement account, not merely one of the school\'s accounts', function () {
+    $transaction = pwtTransaction();
+
+    pwtPost(pwtBody($transaction->reference))->assertOk();
+
+    [$payment, $settlementId] = ActiveSchool::runFor($transaction->school_id, fn () => [
+        Payment::firstOrFail(),
+        (int) SchoolFinanceSettings::where('school_id', $transaction->school_id)->value('settlement_bank_account_id'),
+    ]);
+
+    // The fixture carries a decoy account with a LOWER id, so this cannot pass by picking "the
+    // school's first account". Previously untestable: there was only ever one account per school.
+    expect($payment->bank_account_id)->toBe($settlementId);
+});
+
+it('cannot book when the school has configured no settlement account', function () {
+    $transaction = pwtTransaction();
+
+    ActiveSchool::runFor($transaction->school_id, fn () => SchoolFinanceSettings::where('school_id', $transaction->school_id)
+        ->update(['settlement_bank_account_id' => null]));
+
+    // THE ARM THE FIXTURE CLAIMED EXISTED AND DID NOT. This is the most likely real could_not_book:
+    // a school onboarded without a settlement account, discovered only once a parent has already
+    // been charged. SettlementBankAccount throws BusinessRuleException; the webhook must catch it
+    // into an outcome rather than 500 into Paystack's retry schedule.
     pwtPost(pwtBody($transaction->reference))->assertOk()->assertJsonPath('outcome', 'could_not_book');
 
     expect(DB::table('finance_payments')->count())->toBe(0)
@@ -352,6 +409,33 @@ it('refuses to book a delivery whose amount is not the one we initiated', functi
     // started, which is the usual way a validation of this shape is written wrong.
     'no amount at all' => [['amount' => null], 'missing is not matching'],
 ]);
+
+it('refuses a negative fee rather than crediting more than the payer was charged', function () {
+    $transaction = pwtTransaction();
+
+    pwtPost(pwtBody($transaction->reference, ['data' => ['fees' => -50_000]]))
+        ->assertOk()
+        ->assertJsonPath('outcome', 'fee_is_negative');
+
+    // The range guard was one-sided: FeeExceedsAmount catches a fee too LARGE, and nothing caught
+    // one below zero. A negative fee makes `amount - fee` GREATER than the gross, so the invoice is
+    // credited more than the payer ever paid — money invented, on an append-only table.
+    expect(DB::table('finance_payments')->count())->toBe(0)
+        ->and(DB::table('finance_gateway_transaction_events')->count())->toBe(1)
+        ->and($transaction->fresh()->status->value)->toBe('pending');
+});
+
+it('still refuses a fee at or above the amount — the OTHER side of the same guard', function () {
+    $transaction = pwtTransaction();
+
+    // BOTH SIDES ASSERTED TOGETHER, so a future edit cannot fix one direction by breaking the other
+    // and see a green suite. This is the arm that existed; the one above is the one that did not.
+    pwtPost(pwtBody($transaction->reference, ['data' => ['fees' => 4_137_500]]))
+        ->assertOk()
+        ->assertJsonPath('outcome', 'fee_exceeds_amount');
+
+    expect(DB::table('finance_payments')->count())->toBe(0);
+});
 
 it('acknowledges a reference it never minted without writing anything', function () {
     // Someone else's integration on the same Paystack account, or the dashboard's test button.

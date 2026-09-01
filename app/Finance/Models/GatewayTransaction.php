@@ -96,8 +96,23 @@ class GatewayTransaction extends Model
      * `GatewayReference::mint()` passes; building the string by hand fails loudly, at the write,
      * with the reason named — before anyone is charged.
      *
+     * ⚠️ IT GUARDS THE ELOQUENT WRITE ONLY, AND THAT IS NARROWER THAN IT READS. `static::creating`
+     * does not fire on `DB::table()->insert()`, `->upsert()`, or any query-builder write. This
+     * repository ALREADY writes past it: `tests/Feature/Finance/GatewayTransactionSchemaTest.php`
+     * inserts hand-built references by raw builder and passes.
+     *
+     * That matters because `bin/ci-boundary-lint.php` forbids `DB::table` on a `finance_` literal
+     * only OUTSIDE `app/Finance` — which is exactly where step 3 will live. So the component this
+     * guard was written to protect is the one that can walk around it.
+     *
+     * THE REAL ANSWER IS A TRIGGER, and this project knows it: the sibling rule (`origin` pairing)
+     * is a trigger precisely so "a bad argument is a 1644, not a bad row". Tracked in
+     * `docs/handoff/tickets/gateway-reference-guard-is-eloquent-only.md` and REQUIRED BEFORE STEP 3,
+     * not after. Until then this docblock claims the Eloquent write and nothing wider.
+     *
      * This is the collation-tripwire argument one seam over: a rule with no mechanism behind it is
-     * a wish, and this one had a whole component's worth of correctness resting on it.
+     * a wish — and a rule whose mechanism covers one of two write paths is a smaller version of the
+     * same thing, which is harder to see because something IS enforcing something.
      */
     protected static function booted(): void
     {

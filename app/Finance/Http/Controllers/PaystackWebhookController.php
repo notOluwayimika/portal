@@ -57,8 +57,29 @@ final class PaystackWebhookController extends Controller
         $raw = $request->getContent();
 
         if (! $signature->verify($raw, $request->header(PaystackSignature::HEADER))) {
-            // 401 and nothing else. No detail about what failed: a signature endpoint that explains
-            // itself is an oracle for guessing at it.
+            // A REJECTED DELIVERY MUST LEAVE SOMETHING. Nothing was written here before, and the
+            // failure that exposes it is not an attacker — it is a ROTATED OR MISTYPED SECRET, which
+            // 401s every GENUINE delivery. Payments then stop being recorded and this platform is
+            // entirely silent about why: no row, no log, no metric, with the only evidence sitting
+            // in Paystack's own delivery dashboard.
+            //
+            // A LOG LINE, NOT AN EVENT ROW. The events table is append-only and DELETE is denied on
+            // it, so writing there on an unauthenticated request would let anyone who learned this
+            // URL fill it permanently. The log is the right place for a fact about a request we
+            // refused to believe.
+            //
+            // IT CARRIES NO BODY AND NO REFERENCE. An unauthenticated caller must not choose what
+            // this system writes down — logging their payload makes the log an injection surface and
+            // a PII sink at once. Whether a header was present is enough to separate the two cases
+            // that matter: a misconfigured secret (header present, always failing) from a stray
+            // unsigned request (no header).
+            Log::warning('paystack.webhook.signature_rejected', [
+                'has_signature_header' => $request->hasHeader(PaystackSignature::HEADER),
+                'bytes' => strlen($raw),
+            ]);
+
+            // 401 and no detail about what failed: a signature endpoint that explains itself is an
+            // oracle for guessing at it.
             return response()->json(['status' => 'unauthorised'], 401);
         }
 

@@ -95,6 +95,34 @@ summing allocations, and it is a trap W3 must respect when it adds the account l
 the account `lockForUpdate` must precede any plain read whose result feeds the
 credit-apply decision.
 
+## The gateway settlement takes an OUTER lock, before the invoice — added 2026-09-01
+
+`SettleGatewayTransaction::settle()` (`app/Finance/Actions/SettleGatewayTransaction.php`) opens with
+
+```sql
+SELECT id, payment_id FROM finance_gateway_transactions WHERE id = ? FOR UPDATE
+```
+
+and **holds it across** `RecordPayment`'s invoice lock, `Sequences::next()`'s sequence-row lock and
+the account increment in `SubledgerPoster::post`. So the newest money path locks in the order:
+
+    finance_gateway_transactions → finance_invoices → sequences → finance_student_accounts
+
+**Why the outer lock exists:** it serialises two deliveries for the same gateway transaction — a
+Paystack retry racing the verify-on-return — so exactly one writes a payment. The compare-and-swap
+on `payment_id IS NULL` is what makes the loser KNOW it lost; the lock is what makes them take turns.
+
+**No inversion exists today.** Every `lockForUpdate` in `app/` was walked: nothing takes the invoice
+first and then a gateway-transaction row, so the order above cannot form a cycle with the
+account-before-invoice ordering recorded elsewhere in this document.
+
+**WHY THIS PARAGRAPH IS HERE AT ALL.** The branch that introduced this lock reported that it added
+*no new lock site*, on the grounds that the invoice lock is taken inside `RecordPayment` rather than
+by the new code. That is true of the **invoice** lock and false of the **transaction** lock, and a
+cold review caught the difference. Step 6 (verify-on-return) will be a second caller of this same
+order; the next author needs a recorded ordering to check an inversion against, and "no new lock
+site" would have been inherited as verified.
+
 ## The invariant that now lives in three call sites: **the invoice row is the serialization point for money actions on that invoice**
 
 Every money action whose legality depends on an invoice's current state takes

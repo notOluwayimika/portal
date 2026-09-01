@@ -64,6 +64,12 @@ enum GatewaySettlementOutcome: string
      */
     case AmountMismatch = 'amount_mismatch';
 
+    /**
+     * The provider reported a NEGATIVE fee. Refused, because the alternative is crediting the
+     * invoice MORE than the payer was charged, on a table no UPDATE can correct.
+     */
+    case FeeIsNegative = 'fee_is_negative';
+
     /** The transaction vanished between the lookup and the lock. Recorded, not settled. */
     case Unknown = 'unknown';
 }

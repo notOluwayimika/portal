@@ -531,9 +531,22 @@ return new class extends Migration
      * a dispute six months from now is answered by what the provider actually sent, not by what this
      * system concluded from it.
      *
-     * IT RECORDS REJECTED DELIVERIES TOO — that is what `source` is for and why nothing here asserts
-     * the payload was trusted. A delivery whose signature failed verification is exactly the one an
-     * investigation wants to read.
+     * IT DOES **NOT** RECORD SIGNATURE-REJECTED DELIVERIES, and an earlier version of this
+     * paragraph said it did. Corrected 2026-09-01 (`feat/paystack-webhook`) after a cold review
+     * measured the gap: `PaystackWebhookController` verifies the HMAC as its FIRST statement and
+     * returns 401 having written nothing, which is the right call — this table is append-only and
+     * DELETE is denied on it, so anyone who learned the URL could otherwise fill it permanently with
+     * rows nobody can remove.
+     *
+     * The paragraph was worse than merely wrong. A rotated or mistyped `services.paystack.secret_key`
+     * 401s EVERY genuine delivery, and the first person investigating "payments stopped being
+     * recorded" would have come here, read this claim, queried the table and found nothing — and
+     * concluded the deliveries never arrived. A false statement about where evidence lives sends the
+     * investigation to the one place that cannot answer, which is worse than silence.
+     *
+     * A rejected delivery now leaves a LOG line (`paystack.webhook.signature_rejected`), carrying no
+     * body and no reference — an unauthenticated request must not choose what we write down. The log
+     * is the trace; this table is not.
      *
      * ── RETENTION, DECIDED HERE RATHER THAN BY OMISSION ─────────────────────────────────────────
      *

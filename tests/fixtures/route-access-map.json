@@ -384,8 +384,7 @@
             "admin",
             "head_of_school",
             "internal_auditor",
-            "super_admin",
-            "teacher"
+            "super_admin"
         ]
     },
     "GET /api/activity-logs/exports/{export}": {

@@ -662,15 +662,50 @@ class CurriculumSubjectController extends Controller
         // User::teacher() carries no return type, so Larastan cannot see it, and
         // typing it there un-matched a baseline ignore and surfaced an unrelated error
         // in DashboardController — scope this slice should not absorb.
+        //
+        // THE RULE, ENFORCED UNCONDITIONALLY: a result may be submitted only by a
+        // teacher ASSIGNED to this curriculum_subject through teacher_curriculum_subjects.
+        // No seat is exempt — not admin, not head_of_school, not super_admin.
+        //
+        // It is a bare abort rather than Authz::ensure precisely because it must hold
+        // whatever `authz.enforce` is set to. Observe mode RECORDS a would-be denial and
+        // lets the request through (Authz::gate), and that is how 13 unauthorised
+        // submissions by 2 users across 12 curriculum subjects landed. The same treatment
+        // the maker≠checker guard below already gets, and for the same reason: a control
+        // behind a rollout flag is not yet a control.
+        //
+        // WHY NO PRIVILEGED-SEAT EXEMPTION — the seats were read before the guard was
+        // hardened, and none of the three candidates is meant to submit:
+        //   · `admin` and `head_of_school` hold the CHECKER side (result.approve/reject,
+        //     RbacSeeder::grantsMap $resultChecker) and deliberately NOT result.submit —
+        //     "one actor holding maker AND checker for the same result defeats SoD"
+        //     (RbacSeeder.php, ADR 0044 recommendation (a)). Refusing them here is that
+        //     same separation, not a new restriction.
+        //   · `super_admin` holds no domain grant at all (ADR 0045 B2; SUPER_ADMIN_PLATFORM
+        //     carries rbac.* and activity_log.view_system/view_cross_school only) — its
+        //     `can('result.submit')` is purely the Gate::before bypass, and it is a platform
+        //     admin, not school staff. `submitted_by` is a durable maker identity that
+        //     authorizeDecision() later compares the checker against, so a maker who is not
+        //     the assigned teacher is false provenance in an audited record.
+        // The census user holding admin+teacher is therefore refused BY DESIGN; the
+        // remedy for a teacher who genuinely teaches the subject is the assignment row,
+        // not a code exemption.
         $teacherId = Teacher::where('user_id', $user?->id)->value('id');
-        Authz::ensure(
+        abort_unless(
             $teacherId !== null
                 && TeacherCurriculumSubject::where('teacher_id', $teacherId)
                     ->where('curriculum_subject_id', $curriculumSubject->id)
                     ->exists(),
-            'curriculum_subject.owned_by_teacher',
-            'ownership',
-            'CurriculumSubjectController@submit',
+            403,
+            // A MESSAGE, not a bare abort. There is no HttpException renderable in
+            // bootstrap/app.php, so `abort(403)` returns {"message": ""} — and the panel
+            // reads `?? 'Action failed.'`, which does NOT substitute for an empty string,
+            // then renders `{error && …}`. The refusal would arrive as NOTHING AT ALL on
+            // the one screen that reaches it: the Submit button in
+            // resources/js/components/subject-result-status-panel.tsx is shown to anyone
+            // holding the `teacher` role, assigned or not. Naming the remedy matters here
+            // because the remedy is an assignment row somebody else has to create.
+            'You are not assigned to this subject. Ask an administrator to assign you to it before submitting results.',
         );
 
         $status = DB::transaction(function () use ($curriculumSubject, $user) {

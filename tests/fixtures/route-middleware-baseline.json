@@ -230,7 +230,8 @@
         "api",
         "auth:sanctum",
         "tenant",
-        "permission:activity_log.view"
+        "permission:activity_log.view",
+        "permission:activity_log.export"
     ],
     "GET /api/activity-logs/exports/{export}": [
         "api",

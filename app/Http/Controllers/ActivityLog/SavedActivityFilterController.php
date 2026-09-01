@@ -62,14 +62,43 @@ class SavedActivityFilterController extends Controller
     {
         // Restored 2026-07-20 (observe mode, ADR 0043). index() and store() above were
         // restored by the S5 sweep; destroy() was missed, so anyone could delete
-        // anyone else's saved filter. Split into its two distinct halves — the
-        // ability and the ownership — so the evidence table can tell them apart.
+        // anyone else's saved filter.
         Authz::abilityCheck($request->user(), 'activity_log.view', 'SavedActivityFilterController@destroy');
-        Authz::ensure(
-            $savedActivityFilter->user_id === $request->user()?->id,
-            'saved_activity_filter.owned_by_user',
-            'ownership',
-            'SavedActivityFilterController@destroy',
+
+        // ISOLATION, ENFORCED UNCONDITIONALLY. SavedActivityFilter carries school_id but
+        // NOT BelongsToSchool, so there is no SchoolScope on it and the route-model binding
+        // is a bare sequential integer id: a row from another school resolves normally.
+        // index() and store() above each narrow by currentSchoolId explicitly; destroy()
+        // was the one that did not, which left any holder of activity_log.view — in ANY
+        // school — able to delete any row in the table by guessing an id.
+        //
+        // 404, not 403: the house convention for a row the caller has no business seeing
+        // (StudentSubjectController@drop/@restore, StudentCurriculumController@unenroll,
+        // GuardianImportController@authorizeSchool all pass 404 for exactly this shape).
+        // A 403 would confirm the row exists.
+        //
+        // Fails closed on a missing context: a null currentSchoolId casts to 0 and matches
+        // no school_id.
+        abort_if(
+            (int) $savedActivityFilter->school_id !== (int) $this->queries->currentSchoolId($request->user()),
+            404,
+        );
+
+        // OWNERSHIP, ENFORCED UNCONDITIONALLY — a saved filter is the user's own, and
+        // holding activity_log.view is not a licence to delete a colleague's. A bare abort
+        // rather than Authz::ensure because it must hold whatever `authz.enforce` is set
+        // to; observe mode records the would-be denial and performs the delete anyway.
+        // 403 and not 404: by this line the row is in the caller's own school, so its
+        // existence is not the secret — the authority to delete it is.
+        abort_unless(
+            (int) $savedActivityFilter->user_id === (int) $request->user()?->id,
+            403,
+            // Messaged for the same reason the submit guard above is: a bare abort()
+            // renders {"message": ""} and a client reading `?? 'default'` shows nothing.
+            // The 404 above stays bare — the house convention for a row whose existence
+            // is not being confirmed, where any message is a message about a row the
+            // caller must not learn exists.
+            'This saved filter belongs to another user.',
         );
 
         $savedActivityFilter->delete();

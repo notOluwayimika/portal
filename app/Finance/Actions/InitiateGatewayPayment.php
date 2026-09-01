@@ -71,23 +71,16 @@ final class InitiateGatewayPayment
             throw new BusinessRuleException('A payment amount must be positive.');
         }
 
-        // ⚠️ THIS IS A COLUMN TEST BEHIND A WRAPPER. IT IS NOT THE RELEASE CHECK.
+        // THE RELEASE CHECK, through the one Finance-owned predicate rather than a column test.
         //
-        // `Invoice::isReviewed()` is `reviewed_at !== null` and nothing more. Developer 1's
-        // instruction is to call a Finance-owned predicate — `isReleasedToPayers()` — rather than
-        // compare a column, because rejection modelling is still open with Brookstone. If a REJECTED
-        // bill ends up stamping `reviewed_at`, this passes a bill an auditor has just refused.
-        //
-        // That predicate DOES NOT EXIST YET (grepped 2026-09-01: zero hits in app/, resources/,
-        // tests/). It is Developer 1's to add and he has offered; implementing a private one here
-        // would create the third reader of a rule that already has two implementations.
-        //
-        // KEPT AS AN INTERIM, NOT BECAUSE IT IS SUFFICIENT. No release check at all fails OPEN on
-        // the axis that matters — a parent paying a bill Internal Audit has not released — and that
-        // is strictly worse than a check correct under the current rejection shape and wrong under
-        // one Brookstone has not chosen. Swap it the day the shared predicate lands:
+        // This call site used to be `isReviewed()` with a long apology above it: that was a column
+        // test behind a wrapper, one of three independent spellings of the release rule, and the
+        // one guarding MONEY — so the rejection answer that fixed the parent feed's spelling would
+        // have left this one silently meaning the old thing. `Invoice::isReleasedToPayers()` is now
+        // the only reader of the stamp, so the day Brookstone rule on rejection this call site
+        // changes by not changing. Ticket closed:
         // docs/handoff/tickets/release-predicate-has-two-implementations.md
-        if (! $invoice->isReviewed()) {
+        if (! $invoice->isReleasedToPayers()) {
             throw new BusinessRuleException(
                 'This bill has not been released for payment yet. It is with Internal Audit for review.'
             );

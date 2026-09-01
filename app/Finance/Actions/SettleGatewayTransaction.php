@@ -253,7 +253,7 @@ final class SettleGatewayTransaction
 
         // ── RELEASE WITHDRAWN AFTER THE CHARGE: THIS PATH DOES NOTHING, DELIBERATELY ──
         //
-        // `finance_invoices.reviewed_at` gates whether an invoice is released to the payer, and that
+        // `Invoice::isReleasedToPayers()` gates whether an invoice is visible to the payer, and that
         // check belongs at INITIATION. Release is a school-side act, so it can move between a parent
         // starting to pay and the delivery arriving.
         //

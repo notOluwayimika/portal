@@ -71,7 +71,7 @@ class Invoice extends Model
         'kind' => InvoiceKind::class,
         'total' => MoneyCast::class.':total_minor,total_currency',
         'cancelled_at' => 'datetime',
-        'reviewed_at' => 'datetime',
+        self::RELEASE_STAMP_COLUMN => 'datetime',
     ];
 
     protected static function booted(): void
@@ -209,6 +209,25 @@ class Invoice extends Model
     }
 
     /**
+     * THE ONE SPELLING OF THE RELEASE STAMP COLUMN.
+     *
+     * The rule had three implementations that agreed only because all three happened to mean
+     * not-null: `isReviewed()` (PHP), `scopeReviewed()` (SQL) and an inline
+     * `whereNull('reviewed_at')` in `InvoiceReadModel::guardianAccountPositionForStudent()`. Three
+     * copies were an ACCIDENTAL CROSS-CHECK — updating one could expose the others — and one
+     * definition has none, so the redundancy is replaced by prevention rather than simply removed:
+     * `tests/Arch/ReleasedToPayersHasOneDefinitionTest.php` asserts this column name appears in
+     * app/ CODE exactly here and nowhere else, so a FOURTH spelling cannot be written without a red.
+     *
+     * NAMED FOR THE QUESTION THE CALLER IS ASKING, NOT FOR THE COLUMN, and that is the whole point
+     * of the rename. Under a future rejection shape that STAMPS a refused bill, "reviewed" becomes
+     * true for a bill that must not be shown to the payer; "released to payers" does not. The name
+     * therefore survives an answer Brookstone has not given yet, and the callers will not have to
+     * be re-read when it lands — only the two members below change.
+     */
+    public const RELEASE_STAMP_COLUMN = 'reviewed_at';
+
+    /**
      * Has Internal Audit released this bill to parents? (Brookstone, 31 August 2026 — §6.)
      *
      * FALSE DOES NOT MEAN THE BILL IS NOT REAL. An unreleased invoice is `issued`, holds the
@@ -216,14 +235,31 @@ class Invoice extends Model
      * student's balance exactly as a released one does. Only its VISIBILITY to the payer is gated.
      * That is the whole point of putting the state on this axis rather than on `status`; see
      * 2026_08_31_100000's docblock for the `active_enrollment_key` measurement that forces it.
+     *
+     * THERE IS DELIBERATELY NO "STAMPED BUT REJECTED READS AS NOT-RELEASED" ARM. It was considered
+     * and refused: under the rejection shape specified so far a refusal leaves the stamp NULL, so
+     * that state is not constructible, and an arm asserting it would pass because the row cannot
+     * exist rather than because this predicate decided anything — a green for the wrong reason,
+     * which is worse than the gap it appears to close. It goes in the day Brookstone answer
+     * otherwise, and that day changes this method and the scope below and nothing else.
      */
-    public function isReviewed(): bool
+    public function isReleasedToPayers(): bool
     {
-        return $this->reviewed_at !== null;
+        return $this->{self::RELEASE_STAMP_COLUMN} !== null;
     }
 
     /**
-     * Only bills a parent may see — invoices Internal Audit has released.
+     * The SQL half of `isReleasedToPayers()` — released when `$released`, withheld when not.
+     *
+     * BOTH DIRECTIONS IN ONE MEMBER, ON PURPOSE. The withheld side is not a second scope with its
+     * own predicate: two scopes would be two places to edit the day the rule stops meaning
+     * "stamped", and the one that got missed would be the one nobody reads. `withheldFromPayers()`
+     * below is a call INTO this method, so the negation cannot drift from the assertion.
+     *
+     * Written as an explicit `whereNull` rather than `whereNot(fn ($q) => $q->releasedToPayers())`
+     * so the emitted SQL is byte-identical to the three predicates this collapses — the withheld
+     * read is served by `finance_invoices_school_student_reviewed_index`, and a rename is not the
+     * commit in which to hand the optimiser a differently-shaped predicate.
      *
      * A NAMED SCOPE AND NEVER A GLOBAL ONE, for the reason `scopeExcludingVoid()` above records and
      * one more that is specific to this axis. Voidness is a reporting concern; release is a
@@ -232,12 +268,29 @@ class Invoice extends Model
      * duplicate guard's own read and the auditor who is supposed to review them — hiding the bill
      * from the very people the ruling puts in charge of it, and doing so with no call site to read.
      *
-     * There is exactly ONE consumer (`InvoiceReadModel::outstandingForStudent()`), and the count is
-     * the point: `accountPositionForStudent()` is shared with the staff statement and must NOT
-     * acquire this predicate — per Brookstone the balance keeps counting the bill.
+     * There are exactly TWO consumers, both in InvoiceReadModel and both parent-facing:
+     * `outstandingForStudent()` (released) and `guardianAccountPositionForStudent()` (withheld).
+     * The count is the point: `accountPositionForStudent()` is shared with the staff statement and
+     * must NOT acquire this predicate — per Brookstone the balance keeps counting the bill.
      */
-    public function scopeReviewed(Builder $query): Builder
+    public function scopeReleasedToPayers(Builder $query, bool $released = true): Builder
     {
-        return $query->whereNotNull('reviewed_at');
+        return $released
+            ? $query->whereNotNull(self::RELEASE_STAMP_COLUMN)
+            : $query->whereNull(self::RELEASE_STAMP_COLUMN);
+    }
+
+    /**
+     * The complement of `releasedToPayers()`, spelled as a call into it rather than as a predicate.
+     *
+     * Exists because the guardian balance projection reads the withheld set directly and
+     * `->releasedToPayers(false)` at that call site reads as a mistake rather than as an intent.
+     *
+     * @param  Builder<Invoice>  $query  the generic is what lets Larastan resolve the scope call
+     *                                   below; on a bare `Builder` it is a `method.notFound`
+     */
+    public function scopeWithheldFromPayers(Builder $query): Builder
+    {
+        return $query->releasedToPayers(false);
     }
 }

@@ -1,3 +1,16 @@
+# RESOLVED 2026-09-01 — `fix/gateway-reference-trigger`
+
+The trigger arm is installed by `2026_09_01_100000_gateway_reference_is_enforced_by_the_database.php`
+and held by `tests/Feature/Finance/GatewayReferenceTriggerTest.php`, which writes through the RAW
+query builder on every arm — the path the model guard cannot see.
+
+One thing the fix taught, kept here because it generalises: MySQL caps `MESSAGE_TEXT` at **128
+characters**, and overrunning it makes the `SIGNAL` fail with **1648** rather than the intended
+**1644**. The row is still refused, so a bite-proof asserting only "an exception was thrown" passes
+while the guard reports a code no caller recognises. Assert the CODE.
+
+---
+
 # The gateway reference guard is Eloquent-only — REQUIRED BEFORE STEP 3
 
 **Raised:** 2026-09-01 · **From:** `feat/paystack-webhook`, second cold review · **Severity:** fix, before step 3

@@ -78,8 +78,15 @@ it('ARM A — revokes the grant from internal_auditor and touches nothing else',
     expect($iaAfter)->not->toContain(IA_CROSS);
 
     // IA's other grants are byte-identical — the revoke was one permission wide, not a resync.
+    //
+    // The literal list is the seat as it stands today, and it moved on 2026-09-01: the seat gained
+    // `activity_log.view_all` (2026_09_01_120000). Without it `ActivityLogQueryService::baseQuery`
+    // restricted the auditor to rows it caused ITSELF, which for an audit-only seat is the empty
+    // set — and that is the same clause this file's own header names as what BOUNDED the
+    // cross-school grant. Both halves of the pair are asserted so a resync that widened or narrowed
+    // the seat reds here rather than only in the access map.
     expect($iaAfter)->toBe(collect($iaBefore)->reject(fn ($p) => $p === IA_CROSS)->values()->all())
-        ->and($iaAfter)->toBe(['activity_log.export', 'activity_log.view']);
+        ->and($iaAfter)->toBe(['activity_log.export', 'activity_log.view', 'activity_log.view_all']);
 
     // super_admin's sanctioned holding (ADR 0045 A3) is byte-identical.
     expect(iaGrants('super_admin'))->toBe($superAdminBefore)

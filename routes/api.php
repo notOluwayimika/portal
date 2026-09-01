@@ -348,9 +348,33 @@ Route::middleware(['auth:sanctum', 'tenant', 'permission:academic_data.view'])->
     Route::get('/curricula', [CurriculumController::class, 'index']);
     Route::get('/curricula/active', [CurriculumController::class, 'active']);
     Route::get('/curricula/{curriculum:uuid}', [CurriculumController::class, 'show']);
+});
 
-    // Activity log module (read-only audit feed). Fine-grained access is
-    // gated per-endpoint by activity_log.* permissions.
+/*
+ * THE AUDIT FEED IS GATED ON `activity_log.view`, NOT ON `academic_data.view`.
+ *
+ * It used to sit inside the group above, with a comment saying "fine-grained access is gated
+ * per-endpoint by activity_log.* permissions". That was half true and the wrong half was
+ * load-bearing: the per-endpoint checks go through App\Support\Authz, and `config('authz.enforce')`
+ * defaults to FALSE — OBSERVE mode, which RECORDS a would-be denial and lets the request continue.
+ * The only enforced gate on the entire audit feed was therefore the GROUP's `academic_data.view`.
+ *
+ * The consequence, measured against tests/fixtures/route-access-map.json before this change:
+ * `GET /api/activity-logs` was reachable by admin, head_of_school, key_stage_coordinator,
+ * super_admin and TEACHER — and not by `internal_auditor`, the one seat that exists to read it.
+ * The audit-only role holds `activity_log.view` and `activity_log.export` and nothing else
+ * (RbacSeeder::grantsMap), so it was refused at the door by an ACADEMIC-DATA permission, while a
+ * teacher walked in. Granting the auditor `academic_data.view` to fix that would widen an
+ * audit-only seat into academic records; the gate was simply the wrong one.
+ *
+ * `activity_log.view` is the narrower and semantically correct gate, and it is the permission every
+ * endpoint in the file already checks for itself. This NARROWS the door for anyone holding
+ * `academic_data.view` without `activity_log.view` — they were being observed-denied inside the
+ * controller anyway, and would be 403'd the moment AUTHZ_ENFORCE flips.
+ */
+Route::middleware(['auth:sanctum', 'tenant', 'permission:activity_log.view'])->group(function () {
+    // Activity log module (read-only audit feed). Finer-grained access — view_all, view_sensitive,
+    // export, cross-school — is gated per-endpoint and inside ActivityLogQueryService::baseQuery.
     require __DIR__.'/endpoints/activity-log.php';
 });
 

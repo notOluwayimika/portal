@@ -5,6 +5,7 @@ use App\Finance\Console\AuditLedgerCoherence;
 use App\Finance\Console\CapturePaystackSandbox;
 use App\Finance\Console\ImportOpeningBalances;
 use App\Finance\Console\ReconcileAccounts;
+use App\Finance\Console\SetSettlementAccount;
 use App\Finance\Providers\FinanceServiceProvider;
 use App\Http\Middleware\ApplyImpersonation;
 use App\Http\Middleware\DenyGuardianBulkRecords;
@@ -54,6 +55,7 @@ return Application::configure(basePath: dirname(__DIR__))
         AuditLedgerCoherence::class,
         CapturePaystackSandbox::class,
         ImportOpeningBalances::class,
+        SetSettlementAccount::class,
     ])
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->encryptCookies(except: ['appearance', 'sidebar_state']);

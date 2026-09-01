@@ -4,7 +4,7 @@
         "roles": [
             "admin",
             "head_of_school",
-            "key_stage_coordinator",
+            "internal_auditor",
             "super_admin",
             "teacher"
         ]
@@ -373,7 +373,7 @@
         "roles": [
             "admin",
             "head_of_school",
-            "key_stage_coordinator",
+            "internal_auditor",
             "super_admin",
             "teacher"
         ]
@@ -383,7 +383,7 @@
         "roles": [
             "admin",
             "head_of_school",
-            "key_stage_coordinator",
+            "internal_auditor",
             "super_admin",
             "teacher"
         ]
@@ -393,7 +393,7 @@
         "roles": [
             "admin",
             "head_of_school",
-            "key_stage_coordinator",
+            "internal_auditor",
             "super_admin",
             "teacher"
         ]
@@ -403,7 +403,7 @@
         "roles": [
             "admin",
             "head_of_school",
-            "key_stage_coordinator",
+            "internal_auditor",
             "super_admin",
             "teacher"
         ]
@@ -413,7 +413,7 @@
         "roles": [
             "admin",
             "head_of_school",
-            "key_stage_coordinator",
+            "internal_auditor",
             "super_admin",
             "teacher"
         ]
@@ -423,7 +423,7 @@
         "roles": [
             "admin",
             "head_of_school",
-            "key_stage_coordinator",
+            "internal_auditor",
             "super_admin",
             "teacher"
         ]
@@ -433,7 +433,7 @@
         "roles": [
             "admin",
             "head_of_school",
-            "key_stage_coordinator",
+            "internal_auditor",
             "super_admin",
             "teacher"
         ]
@@ -2337,7 +2337,7 @@
         "roles": [
             "admin",
             "head_of_school",
-            "key_stage_coordinator",
+            "internal_auditor",
             "super_admin",
             "teacher"
         ]

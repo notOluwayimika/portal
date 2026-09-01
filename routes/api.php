@@ -1,5 +1,6 @@
 <?php
 
+use App\Finance\Http\Controllers\PaystackWebhookController;
 use App\Http\Controllers\Api\AuthenticationController;
 use App\Http\Controllers\ClassLevelArmController;
 use App\Http\Controllers\ClassLevelArmProgressionController;
@@ -478,3 +479,30 @@ Route::middleware(['auth:sanctum', 'tenant', 'permission:manage_key_stage_coordi
 // role grants, so the file declares its own middleware and the ownership filter
 // in the controller is the authorization. See routes/endpoints/notifications.php.
 require __DIR__.'/endpoints/notifications.php';
+
+/*
+|--------------------------------------------------------------------------
+| Paystack webhook — OUTSIDE every auth group, on purpose
+|--------------------------------------------------------------------------
+|
+| Paystack delivers server-to-server. It has no session, no cookie and no Sanctum token, so this
+| route cannot sit inside `auth:sanctum` and cannot carry an ability: there is no user to hold one.
+| Its authentication is the `x-paystack-signature` HMAC over the raw body, checked as the first
+| statement in the controller, before any lookup and before anything is written.
+|
+| DELIBERATELY NOT gated on `parent_portal.access` + GuardianPaymentAuthorisation. That pairing is
+| the right gate for the INITIALISE route — a parent, in session, starting a payment against an
+| invoice they may pay. It is meaningless here and applying it would only guarantee a 401 for every
+| genuine delivery. The two halves of the payment path have different callers and different proofs.
+|
+| NO CSRF: api.php routes do not carry the `web` middleware group, so there is no token to exempt.
+| Stated because "add it to the CSRF except list" is the reflex, and doing so would imply this route
+| is under a protection it is not under.
+|
+| THROTTLED, but generously. Paystack retries on a schedule and a burst of legitimate deliveries
+| during a fees deadline is expected; the limit is here to bound an unsigned flood, and unsigned
+| requests are refused before they touch the database anyway.
+*/
+Route::post('/webhooks/paystack', PaystackWebhookController::class)
+    ->middleware('throttle:120,1')
+    ->name('webhooks.paystack');

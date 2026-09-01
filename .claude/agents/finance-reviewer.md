@@ -36,10 +36,20 @@ you read them in".
 
 1. Load `finance-method`, `finance-context`, and `finance-review`.
 2. Read the report file at the path you were given.
-3. `git log --oneline -5` and `git diff <base>...<branch>` on the branch you were
+3. **`git fetch origin` FIRST, then report the base SHA you actually read.** Remote-tracking refs
+   in a clone are a CACHE, and a stale one reports confidently and wrongly. Measured 2026-09-01: a
+   review's clone resolved `origin/staging` to a commit BEHIND the branch's own base, so a column
+   the branch's scope depended on (`finance_invoices.reviewed_at`) did not exist in the tree being
+   read. That reviewer correctly reported the question as *unmeasured* rather than as a negative
+   result — which is the right behaviour and is also the reason the gap was visible at all.
+
+   State, in the report: **the branch SHA, the base SHA, and what `origin/staging` resolved to for
+   you.** A review that does not say what it read cannot be checked against what shipped, and
+   "I found nothing" is unfalsifiable without it.
+4. `git log --oneline -5` and `git diff <base>...<branch>` on the branch you were
    given. Derive the base yourself from the report's stated base — then check
    that base is real, because a report that names the wrong base is a finding.
-4. Then work `finance-review`'s attack order.
+5. Then work `finance-review`'s attack order.
 
 Read the report *before* the diff, so you can see which of its claims survive.
 Read the diff *before* forming a verdict, because the report is a claim about

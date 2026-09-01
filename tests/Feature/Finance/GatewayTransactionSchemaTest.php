@@ -687,6 +687,13 @@ it('a redaction may change the payload and nothing else, and no row is born reda
         // Renumbering a delivery under cover of a redaction reorders the evidence chain the
         // (gateway_transaction_id, id) index exists to read oldest-first. The loop was blind to it.
         ['id' => 999000002],
+        // ADDED WITH THE COLUMN, and it was not: `redacted_fields` reached this table in
+        // 2026_08_31_100000 while the guard and this loop both kept their old lists, so a redaction
+        // could rewrite the one column whose whole job is to be trusted about what was removed.
+        // The guard is an ENUMERATION and this loop is its mirror, so adding a column is a
+        // THREE-part act — table, trigger, loop — with no reminder attached to the last two. Caught
+        // by cold review, one column after the notes describing exactly this class.
+        ['redacted_fields' => json_encode(['data.something.invented'])],
     ] as $smuggled) {
         gtxExpectCode(1644, fn () => DB::table(GTX_EVENTS)->where('id', $event)
             ->update(array_merge(['redacted_at' => now(), 'payload' => null], $smuggled)));

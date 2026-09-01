@@ -1,5 +1,6 @@
 <?php
 
+use App\Finance\Http\Controllers\GatewayPaymentController;
 use App\Finance\Http\Controllers\GuardianFinanceController;
 use Illuminate\Support\Facades\Route;
 
@@ -33,3 +34,37 @@ use Illuminate\Support\Facades\Route;
  */
 Route::get('/parent/finance/wards', [GuardianFinanceController::class, 'wards'])
     ->name('parent.finance.wards');
+
+/*
+ * ── STARTING A PAYMENT (step 3) ────────────────────────────────────────────────────────────────
+ *
+ * SAME GROUP, SAME ABILITY, NO NEW PERMISSION. `parent_portal.access` gates the surface; WHICH
+ * invoice this particular parent may pay is a relationship question, not a permission one, and
+ * `GuardianPaymentAuthorisation::mayPay()` answers it in the FormRequest by asking whether the
+ * invoice's student is their ward. A permission cannot express "this parent, that child", and
+ * adding one would imply it could.
+ *
+ * ⚠️ THE READ ROUTE ABOVE SAYS "DO NOT ADD A PER-STUDENT OR PER-INVOICE VARIANT", AND THIS IS ONE.
+ * The instruction is not being ignored; it is scoped to the READ. Its reason is that the wards feed
+ * derives its subject from the authenticated user, so there is nothing on the request to tamper
+ * with — a per-student read variant would reintroduce exactly the identifier the design removed.
+ *
+ * A WRITE cannot work that way: the payer must say which bill they are paying, so an identifier is
+ * unavoidable and the protection has to come from elsewhere. It does — the FormRequest resolves the
+ * uuid under `SchoolScope` and then asks `mayPay()` whether that invoice's student is this user's
+ * ward, so a tampered identifier fails authorisation rather than merely failing to be found.
+ * Recorded here because a reader meeting the two blocks together would otherwise reasonably
+ * conclude one of them is wrong.
+ *
+ * ADDRESSED BY UUID. A sequential invoice id in a URL a parent holds is an invitation to walk it;
+ * every parent-facing finance identifier in this system is a uuid for that reason. `SchoolScope`
+ * is active on the lookup, so another school's uuid resolves to nothing and is refused as
+ * unauthorised rather than as not-found — which of the two would itself disclose existence.
+ *
+ * WRITE ROUTE, SO IT IS THROTTLED TIGHTER THAN THE READ. Each accepted request creates a row and
+ * calls a third party; a parent legitimately retrying a failed checkout does so a handful of times,
+ * not dozens.
+ */
+Route::post('/parent/invoices/{invoice}/payment', [GatewayPaymentController::class, 'store'])
+    ->middleware('throttle:12,1')
+    ->name('parent.finance.payment.store');

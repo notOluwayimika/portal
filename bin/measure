@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# MEASURE A COMMAND'S EXIT CODE WITHOUT A PIPE IN THE WAY.
+#
+# ── WHY THIS EXISTS ──
+#
+# `cmd | head` exits with HEAD's status. `cmd | tail -2` exits with TAIL's. So the moment you pipe a
+# command through anything to shorten its output — which is exactly what you do when checking
+# whether a gate fired — you stop measuring the thing you meant to measure.
+#
+# This has now bitten FOUR times in one week, TWICE inside verification of a guard written to catch
+# a different silent failure:
+#
+#   · `git push … | tail -6` reported exit 0 while the pre-push gate had REFUSED the push, and the
+#     harness's own completion notification repeated the 0 — the false signal echoed back by the
+#     tooling, so there was no second opinion;
+#   · a bite-proof of the SIGNAL-length lint ran `php bin/ci-message-text-lint.php | head -2` and
+#     read `exit=0` while the lint was returning 1.
+#
+# The rule "a command whose exit code matters is never the left side of a pipe" was written into
+# CLAUDE.md after the first instance and did not stop the second. That is the adoption-gradient
+# case: a rule with no local failure signal propagates by memory, and memory does not propagate.
+# So the fix is not a better sentence — it is removing the pipe from the workflow.
+#
+# ── HOW IT HELPS ──
+#
+# EXIT CODE FIRST, OUTPUT SECOND. The status is printed before the output rather than after, so it
+# is visible whether or not you truncate what follows, and truncating what follows cannot change it.
+# There is nothing to remember and nothing to get wrong.
+#
+# ── WHAT IT DOES NOT DO ──
+#
+# It does not interpret the code. A non-zero exit is not necessarily a failure of the thing you care
+# about — a lint that finds nothing and a lint that cannot run both exit non-zero — so read the
+# output too. It removes one specific way of being wrong, not the need to look.
+set -uo pipefail
+
+if [ $# -eq 0 ]; then
+    echo "usage: bin/measure <command> [args...]" >&2
+    echo "Runs the command, prints its exit code FIRST, then its output." >&2
+    exit 2
+fi
+
+output=$("$@" 2>&1)
+status=$?
+
+printf 'exit=%d  ← the command'\''s own status, not a pipeline'\''s\n' "$status"
+printf -- '---\n'
+printf '%s\n' "$output"
+
+exit "$status"

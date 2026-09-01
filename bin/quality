@@ -63,7 +63,7 @@ STEP=0
 
 step() {
     STEP=$((STEP + 1))
-    printf '%s[%d/19]%s %s\n' "$BOLD" "$STEP" "$OFF" "$1"
+    printf '%s[%d/20]%s %s\n' "$BOLD" "$STEP" "$OFF" "$1"
 }
 
 # Run a command; record failure but keep going so one push surfaces every problem
@@ -243,6 +243,9 @@ check "grants-convergence-lint" php bin/ci-grants-convergence-lint.php "$BASE"
 
 step "money lint (UI: formatNaira, no JS money math | server: Money::format(), no number_format on money)"
 check "money-lint" php bin/ci-money-lint.php
+
+step "SIGNAL message lint (MESSAGE_TEXT over 128 chars fails as 1648, not 1644)"
+check "message-text-lint" php bin/ci-message-text-lint.php
 
 step "runtime-zero lint (S7 legacy access sources)"
 check "runtime-zero-lint" php bin/ci-runtime-zero-lint.php

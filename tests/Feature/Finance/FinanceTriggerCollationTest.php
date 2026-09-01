@@ -86,7 +86,61 @@ uses(RefreshDatabase::class);
  * arm uses, it is the majority case of this defect, and the first scan written for this class
  * omitted it and swept cleanly over the very thing it was looking for.
  */
-const FTC_MATCHER = "/(BINARY\\s+)?(NEW|OLD)\\.(\\w+)(\\s+COLLATE\\s+(\\w+))?\\s*(<=>|=|<>|NOT\\s+REGEXP|REGEXP)\\s*((BINARY\\s+)?'[^']*'|(BINARY\\s+)?(?:NEW|OLD)\\.\\w+(?:\\s+COLLATE\\s+\\w+)?)/i";
+/**
+ * AND `LIKE` WAS ABSENT UNTIL 2026-09-01, WHICH IS THE SAME OMISSION AS `<=>` ONE OPERATOR OVER.
+ *
+ * `LIKE` is collation-sensitive — under `utf8mb4_unicode_ci`, `'a' LIKE 'A'` is TRUE — so an
+ * unguarded `NEW.x LIKE '…'` is exactly this defect, and this matcher could not see it. Nothing had
+ * ever failed, because the only two `LIKE`s against a NEW column in the repository both happened to
+ * carry `COLLATE utf8mb4_bin`. Clean by luck, not by coverage.
+ *
+ * IT WAS FOUND BY ASKING FOR THE DENOMINATOR rather than by a failure: counting what this matcher
+ * hits against an independent count of comparison constructs, after the SIGNAL-length lint turned
+ * out to have been reading 61 of 117 messages while reporting clean. A gate's FIRST green is the
+ * least trustworthy green it will ever produce, because it is the only one taken before anyone has
+ * established what the instrument cannot see.
+ *
+ * TWO GAPS, AND FIXING EITHER ALONE WOULD HAVE REPORTED SUCCESS WHILE STILL BLIND. The operator
+ * list lacked `LIKE`; the right-hand side accepted only a quoted literal or a NEW/OLD column, so a
+ * FUNCTION CALL (`CONCAT('bpsk-', NEW.school_id, '-%')`) was invisible too. A partial fix converts a
+ * known blind spot into an unknown one, which is worse than the gap — so the bite-proof is a `LIKE`
+ * with a function-call RHS, the one case neither half catches on its own.
+ *
+ * GUARDED PLACEMENTS ARE UNCHANGED: either side, either mechanism — `BINARY` or `COLLATE
+ * utf8mb4_bin`, on the left operand or the right. That is what ftcBareComparisons() has always
+ * accepted, so the function-call RHS also takes a trailing `COLLATE`. Both placements are fixtured
+ * below, so the definition is pinned by a test rather than by whatever the codebase contains today.
+ *
+ * KNOWN LIMIT, DELIBERATELY NOT PAPERED OVER: `\w+\([^)]*\)` cannot match a NESTED function call.
+ * Those are not silently skipped — they fall into the UNRECOGNISED count that ftcCoverage() reports,
+ * which is the number that matters.
+ */
+const FTC_MATCHER = "/(BINARY\\s+)?(NEW|OLD)\\.(\\w+)(\\s+COLLATE\\s+(\\w+))?\\s*(<=>|=|<>|NOT\\s+REGEXP|REGEXP|NOT\\s+LIKE|LIKE)\\s*((BINARY\\s+)?'[^']*'(?:\\s+COLLATE\\s+\\w+)?|(BINARY\\s+)?(?:NEW|OLD)\\.\\w+(?:\\s+COLLATE\\s+\\w+)?|(BINARY\\s+)?\\w+\\([^)]*\\)(?:\\s+COLLATE\\s+\\w+)?|(BINARY\\s+)?[a-z_]\\w*(?:\\s+COLLATE\\s+\\w+)?|-?\\d+)/i";
+
+/**
+ * Every STRING-comparison-shaped construct, however written — the DENOMINATOR against which
+ * FTC_MATCHER's hits are the numerator. Deliberately broader and dumber than the matcher.
+ *
+ * `<` AND `>` ARE NOT IN IT, and the omission is the scope of this gate rather than an oversight.
+ * An ordering comparison on a numeric column (`NEW.fee_minor < 0`) has no collation, so it is not
+ * in the denominator at all — as against `NEW.status = OLD.status`, which this matcher DOES take and
+ * then classifies as excluded because `status` is not a string column. The difference matters:
+ * "outside the question" and "inside the question and skipped for a stated reason" are different
+ * facts, and the first version of this constant conflated them, reporting nine numeric guards as
+ * UNRECOGNISED.
+ *
+ * A NUMERIC LITERAL IS ALSO AN ACCEPTED RIGHT-HAND SIDE (`NEW.allocation_overridden = 1`), not
+ * because a collation tripwire cares about it, but because the matcher must be able to CLASSIFY a
+ * construct in order to exclude it. A form it cannot parse is unrecognised, and unrecognised is the
+ * dangerous bucket; a form it parses and then skips on column type is a stated decision. Widening
+ * the matcher to recognise MORE than it judges is what keeps the third number honest.
+ *
+ * WHAT IT CAUGHT WHILE BEING WRONG: comparisons against a DECLARED LOCAL VARIABLE
+ * (`BINARY NEW.amount_currency <> BINARY v_currency`). Those are string comparisons the matcher's
+ * right-hand side had never accepted — a second blind spot beside `LIKE`, found by the same
+ * question, and one this repository already knows is hazardous (the #95 variable-collation trap).
+ */
+const FTC_BROAD = '/(?:BINARY\\s+)?(?:NEW|OLD)\\.\\w+(?:\\s+COLLATE\\s+\\w+)?\\s*(?:<=>|<>|!=|=|NOT\\s+REGEXP|REGEXP|NOT\\s+LIKE|LIKE)/i';
 
 /**
  * The comparisons that are bare TODAY and are accepted as pre-existing.
@@ -202,6 +256,67 @@ function ftcBareComparisons(): array
     return $bare;
 }
 
+/**
+ * COVERAGE AS THREE NUMBERS, because two collapse the only one that matters.
+ *
+ *   · EXAMINED     — matched by FTC_MATCHER and on a string column: actually checked.
+ *   · EXCLUDED     — matched, but the column is not a string type. A collation tripwire has nothing
+ *                    to say about `NEW.amount_minor <= 0`, and skipping it is a DECISION with a
+ *                    reason, not a blind spot.
+ *   · UNRECOGNISED — comparison-shaped constructs FTC_MATCHER did not classify at all. THIS IS THE
+ *                    DANGEROUS NUMBER. `LIKE` lived in here, invisible, until 2026-09-01, hidden
+ *                    inside an aggregate that looked like deliberate exclusion.
+ *
+ * "139 of 200" cannot distinguish the second from the third. The same UNKNOWN discipline the board
+ * and the SIGNAL lint now carry, applied to coverage instead of to a failed fetch.
+ *
+ * @return array{examined: int, excluded: int, unrecognised: int, total: int}
+ */
+function ftcCoverage(): array
+{
+    $isString = ftcIsStringColumn();
+    $examined = $excluded = $broad = $matched = 0;
+
+    foreach (DB::select(
+        "SELECT EVENT_OBJECT_TABLE t, ACTION_STATEMENT a
+           FROM information_schema.TRIGGERS
+          WHERE TRIGGER_SCHEMA = DATABASE() AND EVENT_OBJECT_TABLE LIKE 'finance\\_%'"
+    ) as $trigger) {
+        $broad += preg_match_all(FTC_BROAD, $trigger->a);
+
+        preg_match_all(FTC_MATCHER, $trigger->a, $matches, PREG_SET_ORDER);
+        $matched += count($matches);
+
+        foreach ($matches as $m) {
+            $isString($trigger->t, $m[3]) ? $examined++ : $excluded++;
+        }
+    }
+
+    return [
+        'examined' => $examined,
+        'excluded' => $excluded,
+        // Never negative: the broad pattern is a superset by construction, and if that ever stops
+        // being true the max() hides it — so the test below asserts the relationship too.
+        'unrecognised' => max(0, $broad - $matched),
+        'total' => $broad,
+    ];
+}
+
+it('reports its own coverage, and recognises every comparison construct present', function () {
+    $c = ftcCoverage();
+
+    fwrite(STDERR, sprintf(
+        "\n  collation tripwire coverage: %d constructs — %d examined, %d excluded (non-string column), %d UNRECOGNISED\n",
+        $c['total'], $c['examined'], $c['excluded'], $c['unrecognised'],
+    ));
+
+    // THE ASSERTION, not merely the report. A coverage line nobody checks is a description, and this
+    // file has already been wrong about exactly that. If a construct appears that FTC_MATCHER cannot
+    // classify, this reds and someone decides whether it is a new guarded form or a new blind spot.
+    expect($c['unrecognised'])->toBe(0)
+        ->and($c['examined'])->toBeGreaterThan(0);
+});
+
 it('adds no NEW bare string comparison to any finance trigger', function () {
     $bare = ftcBareComparisons();
     $accepted = ftcAcceptedBare();
@@ -249,6 +364,61 @@ it('KNOWN POSITIVE — the matcher sees a bare `<=>`, the operator the freeze ar
         ->and($m[0][6])->toBe('<=>')
         ->and(trim($m[0][1] ?? ''))->toBe('')   // no BINARY prefix
         ->and(trim($m[0][5] ?? ''))->toBe('');  // no COLLATE clause
+});
+
+it('KNOWN POSITIVE — a bare `LIKE` with a FUNCTION-CALL right-hand side is seen', function () {
+    // THE ONE CASE NEITHER HALF OF THE FIX CATCHES ALONE, which is why it is the bite-proof.
+    //
+    // Until 2026-09-01 the matcher had two gaps at once: `LIKE` was absent from the operator list,
+    // and the right-hand side accepted only a quoted literal or a NEW/OLD column — so a
+    // `CONCAT(...)` was invisible too. Add `LIKE` alone and this still slips through on the RHS;
+    // widen the RHS alone and it still slips through on the operator. A partial fix would have
+    // reported success while remaining blind, turning a KNOWN blind spot into an unknown one.
+    //
+    // `LIKE` matters because it is collation-sensitive: under utf8mb4_unicode_ci, 'a' LIKE 'A' is
+    // TRUE. Nothing had ever failed here only because the repository's two LIKE comparisons both
+    // happened to carry COLLATE — clean by luck, not by coverage.
+    $bare = "IF NEW.reference NOT LIKE CONCAT('bpsk-', NEW.school_id, '-%') THEN SIGNAL; END IF;";
+
+    preg_match_all(FTC_MATCHER, $bare, $m, PREG_SET_ORDER);
+
+    expect($m)->toHaveCount(1)
+        ->and($m[0][3])->toBe('reference')
+        ->and(strtoupper(preg_replace('/\s+/', ' ', $m[0][6])))->toBe('NOT LIKE')
+        ->and(trim($m[0][1] ?? ''))->toBe('')   // no BINARY prefix
+        ->and(trim($m[0][5] ?? ''))->toBe('');  // no COLLATE — so it WOULD be reported
+});
+
+it('KNOWN NEGATIVE — a guarded `LIKE` is not reported, with COLLATE on EITHER side', function () {
+    // THE PLACEMENT QUESTION, PINNED BY FIXTURE RATHER THAN BY WHAT THE CODEBASE HAPPENS TO HOLD.
+    //
+    // `COLLATE` legitimately sits on the column OR on the pattern, and both guard. A matcher that
+    // recognised only one placement would flag correct code — which is exactly how the three
+    // previous matchers in this workstream went wrong, every one of them by over-reporting.
+    //
+    // Both forms are here so the definition is fixed by a test. The repository currently contains
+    // only the first; without the second arm, adding the second form later would look like a defect.
+    foreach ([
+        "IF NEW.reference COLLATE utf8mb4_bin NOT LIKE CONCAT('bpsk-', NEW.school_id, '-%') THEN SIGNAL; END IF;",
+        "IF NEW.reference NOT LIKE CONCAT('bpsk-', NEW.school_id, '-%') COLLATE utf8mb4_bin THEN SIGNAL; END IF;",
+        "IF BINARY NEW.reference NOT LIKE CONCAT('bpsk-', NEW.school_id, '-%') THEN SIGNAL; END IF;",
+    ] as $guarded) {
+        preg_match_all(FTC_MATCHER, $guarded, $m, PREG_SET_ORDER);
+
+        // POSITIVE, NOT `->not->`. A custom message under `->not->` never reaches the reader: Pest's
+        // OppositeExpectation runs the positive assertion, discards its exception and composes a
+        // generic sentence with the message exported and truncated. Caught by
+        // PestNegatedExpectationMessagesTest, which is a gate this file's author did not know about
+        // — and the message here is the whole value of the arm, so losing it would have been silent.
+        expect(count($m))->toBeGreaterThan(0, "the matcher did not even SEE this guarded form: {$guarded}");
+
+        $flagged = array_filter($m, fn ($x) => trim($x[1] ?? '') === ''
+            && strtolower(trim($x[5] ?? '')) !== 'utf8mb4_bin'
+            && stripos($x[7], 'BINARY') !== 0
+            && stripos($x[7], 'utf8mb4_bin') === false);
+
+        expect($flagged)->toBe([], "the sweep flagged a PROTECTED comparison: {$guarded}");
+    }
 });
 
 it('KNOWN NEGATIVE — a guarded comparison is NOT reported, under EITHER idiom', function () {

@@ -86,7 +86,6 @@ citation-missing-symbol	database/seeders/DriveCastSeeder.php	routes/web.php:353	
 citation-missing-symbol	database/seeders/RbacSeeder.php	routes/endpoints/finance.php:24	1
 citation-missing-symbol	routes/web.php	routes/endpoints/finance.php:73	1
 citation-missing-symbol	tests/Arch/BoundaryLintCoverageTest.php	app/Models/StudentCurriculum.php:97	1
-citation-missing-symbol	tests/Arch/BoundaryLintCoverageTest.php	composer.json:67	1
 citation-missing-symbol	tests/Feature/Finance/ByStudentRouteIsolationTest.php	routes/endpoints/finance.php:228	1
 citation-missing-symbol	tests/Feature/Finance/FeeScheduleTest.php	routes/web.php:216	1
 citation-missing-symbol	tests/Feature/Finance/FeeSchedulesScreenTest.php	routes/web.php:207	1

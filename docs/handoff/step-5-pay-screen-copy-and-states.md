@@ -149,7 +149,7 @@ labelled as such, because a control that lives only in the client is theatre.
 Under parent-bears the parent pays **more than they typed**, and an unexplained card statement is a
 chargeback. So nothing is initiated until this has been shown and acknowledged:
 
-> **Paying for Ada Obi**
+> **Paying for Ada Obi — Brookstone Ikoyi**
 >
 > You'll be charged **₦101,600**. This settles **₦100,000** on invoice BSS-000214. The difference is
 > the payment processing charge — if it comes to less than we've estimated, the remainder is credited
@@ -160,7 +160,7 @@ exact because we send it; the settled amount is a floor because our estimate rou
 favour. No figure here can be contradicted by what the provider actually charges — which is the test
 this wording had to pass and the reason it does not name a fee at all (§1.3).
 
-### The STUDENT'S NAME is on it, and that line is a control rather than a courtesy
+### The STUDENT AND THE SCHOOL are on it, and the SCHOOL is the discriminator
 
 The approved wording names the invoice and not the child. On a single-school family that is a
 nicety — a parent paying the newest bill because the oldest is disputed needs to see which document
@@ -178,7 +178,16 @@ Every server-side guard is doing exactly its job. The screen is internally consi
 child A and charges for child A. **The only place the mistake is visible is the name**, and it is
 visible only if the name is there.
 
-That does not make the name a control in the strong sense — "the parent will probably notice" is not
+**THE SCHOOL NAME IS THE DISCRIMINATOR, NOT THE CHILD'S.** The first version of this line carried
+the student alone, which is the wrong field for the case it was written for: a parent who has
+switched to Brookstone Ikoyi and is being served Brookstone Lekki's data is not helped by a name they
+recognise — both children are theirs. The school is the only field that distinguishes *"the wrong
+child"* from *"the wrong portal"*, and the defect produces the second.
+
+It costs nothing: `HandleInertiaRequests` already shares the active school on every page
+(`auth.school`), so this needs no change to the endpoint.
+
+**And it is still not a control in the strong sense** — "the parent will probably notice" is not
 enforcement, and this section is not an argument for shipping the endpoint defect. It is an argument
 that the confirmation costs one line to make the mistake *legible*, and that a confirmation naming a
 document number alone leaves a two-school parent nothing to check against their intention.

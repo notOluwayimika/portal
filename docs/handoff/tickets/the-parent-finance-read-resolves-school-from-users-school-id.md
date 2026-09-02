@@ -89,9 +89,41 @@ So the deadline is **before the pay screen ships**, and the browser drive is the
 it decides whether the defect is reachable in a real request at all, and that answer is needed before
 any component is built on this endpoint. Ahead of the linear-history toggle in priority.
 
-**One mitigation lands with the screen regardless of the ruling:** the confirmation names the
-student, not only the invoice number (step-5 spec §4). It does not make the mistake impossible — it
-makes it legible, which is all a confirmation can do.
+**One mitigation lands with the screen regardless of the ruling:** the confirmation names the student
+**and the school** (step-5 spec §4). The school is the discriminator — a parent served the wrong
+school's data recognises both children, so the child's name alone does not distinguish *the wrong
+child* from *the wrong portal*. It does not make the mistake impossible; it makes it legible, which
+is all a confirmation can do.
+
+## IS A SERVER-SIDE CONTROL POSSIBLE? MEASURED — not as the portal is routed today
+
+The claim *"nothing server-side can catch this"* was challenged as true only under a condition that
+had not been established: **a comparison control exists if the request carries the school the parent
+ADDRESSED**, because then the addressed school and the resolved school are both present and can be
+compared — refuse, or answer 409, rather than silently serving the other school.
+
+That condition is now measured, and it does not hold:
+
+- **No `Route::domain()` anywhere** in `routes/` or `bootstrap/` — there is no subdomain per school.
+- **No school segment on any parent-portal route.** The only `{school:uuid}` routes are
+  `/schools/{school:uuid}` in `routes/web.php`, which are the super-admin surface.
+- **School is carried in the SESSION only**, written by `SchoolSwitchController::switch`,
+  `SchoolAwareLoginResponse` and `AuthenticationController` — every one a
+  `session()->put('school_id', …)`.
+
+So a request to `/api/parent/finance/wards` contains **no addressed school**. There is nothing to
+compare the resolved school against, and the parent's INTENT is unobservable server-side. The claim
+holds — **stated conditionally, because the condition is a property of today's routing and not a
+law.**
+
+**And that makes the better fix visible.** Making the school addressed — a path segment, or an
+explicit parameter on the parent read — turns the mismatch into something the server can refuse. That
+is a genuine control rather than a legible mistake, and it is strictly better than the confirmation
+line. It is a routing change and therefore its own decision.
+
+**This also takes one question off the drive.** *Is a server-side control possible* is answered here,
+from the repository. The drive is now settling only *is the defect reachable in a real request* —
+does a browser request carry a session the middleware honours.
 
 ## What it would take to answer it
 

@@ -144,6 +144,33 @@ it('keeps the allowlist at one entry — it may shrink, it may not grow', functi
     expect(tokenIssuanceAllowed())->toBe(['app/Http/Controllers/Api/AuthenticationController.php']);
 });
 
+it('never shrinks the allowlist to zero, because at zero the gate has no witness', function () {
+    // TWO RULES THAT ARE EACH RIGHT AND COLLIDE AT THE BOUNDARY.
+    //
+    // "The allowlist may only shrink" is correct and it is what stops the gate being removed by
+    // someone adding themselves to it. Taken to its limit it removes something else: the gate's only
+    // WITNESS.
+    //
+    // A FIND-THE-THING gate proves itself by finding something. A FORBID-EVERYTHING gate has exactly
+    // one legitimate match in the whole scope — the permitted file — and nothing else it is allowed
+    // to match. At one entry, the known-positive arm below can assert the matcher finds it, so a
+    // typo'd pattern or a scan of the wrong directory reds. At ZERO entries there is nothing the
+    // matcher may legitimately find, and a broken matcher is indistinguishable from a clean
+    // repository — not merely in practice, but IN PRINCIPLE. The gate becomes unverifiable.
+    //
+    // So the rule is: **it may shrink to ONE, and no further.** If the last entry ever legitimately
+    // goes — the issuer moves out of app/, or token issuance stops entirely — the known-positive arm
+    // must be replaced by a PLANTED fixture in the same commit, so the matcher keeps a witness.
+    //
+    // ITS OWN ARM, NOT A LINE INSIDE THE PIN ABOVE. Someone editing the allowlist to `[]` edits the
+    // pin's expected value in the same motion and sees it go green again; this arm still reds. A
+    // floor asserted beside the thing it constrains is a floor that moves with it.
+    //
+    // Written at length because the person removing the final entry will be doing something that
+    // LOOKS like tightening, and every instinct will say the gate is getting stricter.
+    expect(count(tokenIssuanceAllowed()))->toBeGreaterThan(0);
+});
+
 it('finds the one permitted issuer, so the matcher is not silently blind', function () {
     // THE KNOWN POSITIVE. Without it a matcher that matches NOTHING — a typo in a pattern, a scan
     // over the wrong directory — passes the arm above with an empty offender list. Broken-closed and

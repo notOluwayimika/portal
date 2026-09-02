@@ -19,6 +19,7 @@
 // grantsMap() tomorrow is covered the moment it lands.
 
 use App\Enums\Permission as PermissionEnum;
+use App\Support\ApprovalAbility;
 use App\Support\DutySeparation;
 use Database\Seeders\DatabaseSeeder;
 use Database\Seeders\RbacSeeder;
@@ -55,6 +56,106 @@ it('super_admin holds NO maker-checker ability in grantsMap() (ADR 0040)', funct
     $held = collect(RbacSeeder::grantsMap()['super_admin'] ?? [])->filter(fn ($a) => $sides->contains($a))->values()->all();
 
     expect($held)->toBe([]);
+});
+
+// ── The pairs themselves: both sides must be permissions that EXIST ─────────
+//
+// The same "itself asserted" discipline as the isolation-crossing block below, applied one level
+// earlier — to the pair set rather than to who holds it.
+
+it('every maker and checker in DutySeparation::pairs() names a real, currently-declared permission', function () {
+    // WHAT GOES WRONG WITHOUT THIS. ApprovalAbility::matchingMakerFor() is string surgery: it
+    // replaces the terminal segment with `submit` and NEVER checks the result exists. So a checker
+    // whose real maker is not `<prefix>.submit` still produces a pair — one naming a permission
+    // nobody can hold. pairs() emits it, enforcedPairs() includes it if it starts with `finance.`,
+    // and violations() then asks holds($user, $school, <fictional>), which is false for everyone
+    // forever. The pair is listed, counted, and structurally incapable of firing: a duty-separation
+    // control that reads as present and refuses nothing.
+    //
+    // WHY THE super_admin ARM BELOW DOES NOT COVER IT — and this is the whole reason this test
+    // exists as a separate one. "super_admin holds NO maker-checker ability in grantsMap()"
+    // flattens both sides of every pair and asserts super_admin holds none of them. A FICTIONAL
+    // NAME SATISFIES THAT FOR FREE: nobody holds a permission that does not exist, so the more
+    // broken the pair, the more comfortably that arm passes. It is a true assertion about a set
+    // whose membership it cannot vouch for.
+    //
+    // Non-empty first, for the same reason the isolation-crossing arm asserts it: an empty pair set
+    // makes every assertion over it vacuous, and a convention-derived set CAN go empty (rename the
+    // segments and pairs() silently returns []).
+    expect(DutySeparation::pairs())->not->toBeEmpty();
+
+    $declared = PermissionEnum::values();
+    $fictional = [];
+
+    foreach (DutySeparation::pairs() as $pair) {
+        foreach (['checker', 'maker'] as $side) {
+            if (! in_array($pair[$side], $declared, true)) {
+                $fictional[] = "{$side} [{$pair[$side]}] of pair [{$pair['checker']}]";
+            }
+        }
+    }
+
+    // Named IN THE FAILURE, not merely collected. A bare toBe([]) prints "two arrays are identical"
+    // and leaves the reader to diff them; a gate that fails without saying WHICH entry is wrong is
+    // one people learn to regenerate past.
+    //
+    // And a fictional side is a finding — an inert control — never a number to baseline: baselining
+    // it would freeze the inertness and leave the duty-separation report claiming a pair it can
+    // never evaluate.
+    expect($fictional)->toBe([], 'ApprovalAbility derives a maker-checker pair naming a permission that does not exist, '
+        ."so DutySeparation can never evaluate it:\n  - ".implode("\n  - ", $fictional));
+});
+
+it('any maker-override map on ApprovalAbility names only real permissions on BOTH sides', function () {
+    // WRITTEN BEFORE THE MAP EXISTS, DELIBERATELY. There is no override map on ApprovalAbility
+    // today — CHECKER_SEGMENTS is the only constant, and it holds SEGMENTS (`approve`, `reject`),
+    // not permission names, so it is excluded here with that reason rather than skipped silently.
+    //
+    // An override map is the obvious way to make a checker's real maker something other than
+    // `<prefix>.submit` (finance.invoice.approve -> finance.invoice.generate). It is also an
+    // ENUMERATED LIST, which is exactly what DutySeparation's docblock says the convention avoids
+    // so that "a future instance (refunds) joins with no edit". An enumerated list goes stale in
+    // one direction the derivation cannot: a permission is renamed or removed and the map keeps
+    // pointing at the old name, restoring the very defect the test above catches. So the assertion
+    // is written now, by name, and covers the map from the commit that introduces it.
+    //
+    // UNRECOGNISED CONSTANTS RED. Asserting only a name we chose in advance would miss a map that
+    // arrives under a different one, which is the failure this whole test is about — a check
+    // looking at the wrong thing. So every constant on the class must be either classified below
+    // or a permission map that passes; a new one fails until somebody says which it is.
+    $reflection = new ReflectionClass(ApprovalAbility::class);
+
+    $segmentConstants = ['CHECKER_SEGMENTS'];   // segments, not permission names — excluded, with the reason
+    $permissionMaps = ['MAKER_OVERRIDES'];      // checker => maker, both sides asserted below
+
+    $declared = PermissionEnum::values();
+    $problems = [];
+
+    foreach ($reflection->getConstants() as $name => $value) {
+        if (in_array($name, $segmentConstants, true)) {
+            continue;
+        }
+
+        if (! in_array($name, $permissionMaps, true)) {
+            $problems[] = "UNRECOGNISED constant [{$name}] on ApprovalAbility — classify it as a "
+                .'segment list or a permission map in this test';
+
+            continue;
+        }
+
+        foreach ((array) $value as $checker => $maker) {
+            if (! in_array((string) $checker, $declared, true)) {
+                $problems[] = "{$name} key [{$checker}] is not a declared permission";
+            }
+
+            if (! in_array((string) $maker, $declared, true)) {
+                $problems[] = "{$name}[{$checker}] maps to [{$maker}], which is not a declared permission";
+            }
+        }
+    }
+
+    expect($problems)->toBe([], "ApprovalAbility's constants do not all name real permissions:\n  - "
+        .implode("\n  - ", $problems));
 });
 
 // ── The isolation boundary: no BUSINESS role may cross school_id ────────────

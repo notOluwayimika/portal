@@ -30,6 +30,52 @@ Every one-way step keeps a STOP-for-review before it. Nothing below is a big-ban
 
 Embedded in `phase1-deploy.md`; listed here so the inventory is complete.
 
+### THE DEPLOY HAS A DATE: **5 SEPTEMBER 2026**
+
+**Decided by Segun.** This is the "date of its own" Directive 1 of
+[`launch-split-decision-31-august.md`](launch-split-decision-31-august.md) said the deploy needed,
+and the dated act that closes [`open-findings.md`](open-findings.md) Finding 0 **for the read half**
+— not for the pay half, whose migrations are on their own schedule.
+
+**What it is for.** `2026_08_31_100000_finance_invoices_internal_audit_review.php` — the
+`reviewed_at` / `reviewed_by_user_id` columns, the index, and the backfill. Without that migration
+**on production**, the parent portal cannot withhold unreviewed bills. That is Directive 1 of the
+launch split and Brookstone's ruling of 31 August (`brookstone-answers-31-august.md` §2, §6), and
+Directive 1 already states the reason the merge is not the protection: *"Merging it does not protect
+anyone. The migration running ON PRODUCTION does."*
+
+**Why the date, and what it costs.** The read half opens **6 September**. That is **one day of
+margin.** So:
+
+- **Everything in the IA review slice must be MERGED by end of 4 September.**
+- **The 5th is a deploy day, not a build day.** A branch that lands on the 5th has not been through
+  the release gate on the tree that ships, and there is no second day to find out.
+
+---
+
+#### ⚠️ BACKFILL ORDERING — a trap, not a sequencing preference
+
+**The resumption bulk invoicing run happens AFTER this migration, never before.**
+
+The migration's backfill stamps `reviewed_at = created_at` on **every invoice that exists when it
+runs**, with `reviewed_by_user_id` left **NULL**. Its own docblock defines that combination as
+*"grandfathered: released because it predates the control"*, and says why the user is NULL: *"Nobody
+reviewed them, and naming a user who did not would be a fabricated audit record — the one thing an
+audit column must never contain."*
+
+That reasoning is sound **for the book that predates the control**. Run the bulk invoicing first and
+it silently extends to the new book: **every freshly-raised bill is stamped released, by nobody, and
+goes straight to parents unreviewed.**
+
+**This is the stopgap in disguise.** It does not look like skipping Internal Audit — it looks like
+an ordering detail — and the result is indistinguishable from the state Brookstone ruled out on
+31 August, except that the audit trail positively asserts the bills were releasable. Nothing in the
+migration can catch it: from inside the backfill, a bill raised ten minutes ago and a bill raised in
+July are the same row.
+
+Order: **migration, then bulk run.** Bills raised after the migration carry `reviewed_at IS NULL`
+and wait for a reviewer, which is the whole point of the control.
+
 - [ ] **PRE-DEPLOY — EVERY SCHOOL MUST HAVE AT LEAST ONE ACTIVE BANK ACCOUNT, or its bursar
       cannot record a payment at all.** `2026_08_10_120000_finance_bank_account_foreign_keys`
       makes `finance_payments.bank_account_id` required for portal-issued payments

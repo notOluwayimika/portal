@@ -66,6 +66,33 @@ or shown the wrong one of their own children — bad, and not a data breach.
 
 Severity therefore stays **fix**, and the reason is measured rather than assumed.
 
+## BUT THE DATE MOVES: before the PAY SCREEN ships, not merely before go-live
+
+"Shown the wrong one of their own children" is a different fact on a payment surface than on a read
+surface, and the read-side framing above under-describes it.
+
+A parent who switches to school B is shown their child at school A and pays against **invoice A**.
+Every guard passes and each is doing its job: `mayPay()` is
+`isWardOf($user, $invoice->student_id)` and both children are their wards, so it is true; the invoice
+belongs to the active school, so `SchoolScope` is satisfied. The payment completes, lands on the
+wrong child's account, and `finance_payments` is append-only — the correction is a void production
+cannot perform.
+
+Nothing catches it server-side, because nothing is wrong server-side. The screen is internally
+consistent: it displays child A and charges for child A. The parent would likely notice the name —
+and **"would likely notice" is not a control**, which is the same objection this project applies to
+every unenforced rule.
+
+**A two-school family at resumption is precisely the population and precisely the week.**
+
+So the deadline is **before the pay screen ships**, and the browser drive is the item that gates it:
+it decides whether the defect is reachable in a real request at all, and that answer is needed before
+any component is built on this endpoint. Ahead of the linear-history toggle in priority.
+
+**One mitigation lands with the screen regardless of the ruling:** the confirmation names the
+student, not only the invoice number (step-5 spec §4). It does not make the mistake impossible — it
+makes it legible, which is all a confirmation can do.
+
 ## What it would take to answer it
 
 1. **Measure the production path.** Drive the parent portal in a browser with a two-school guardian,

@@ -149,6 +149,8 @@ labelled as such, because a control that lives only in the client is theatre.
 Under parent-bears the parent pays **more than they typed**, and an unexplained card statement is a
 chargeback. So nothing is initiated until this has been shown and acknowledged:
 
+> **Paying for Ada Obi**
+>
 > You'll be charged **₦101,600**. This settles **₦100,000** on invoice BSS-000214. The difference is
 > the payment processing charge — if it comes to less than we've estimated, the remainder is credited
 > to your account.
@@ -158,8 +160,28 @@ exact because we send it; the settled amount is a floor because our estimate rou
 favour. No figure here can be contradicted by what the provider actually charges — which is the test
 this wording had to pass and the reason it does not name a fee at all (§1.3).
 
-The invoice is named, not just the amount: a parent paying the newest bill because the oldest is
-disputed must be able to see which one this is.
+### The STUDENT'S NAME is on it, and that line is a control rather than a courtesy
+
+The approved wording names the invoice and not the child. On a single-school family that is a
+nicety — a parent paying the newest bill because the oldest is disputed needs to see which document
+this is, and the number says it.
+
+**On a two-school family it is the only thing standing between them and an irreversible mistake.**
+Under the school-context defect
+(`docs/handoff/tickets/the-parent-finance-read-resolves-school-from-users-school-id.md`) a parent who
+switches to school B is shown their child at school A. `mayPay()` is
+`isWardOf($user, $invoice->student_id)` and both children ARE their wards, so it returns true; the
+invoice is in the active school, so `SchoolScope` is satisfied; the payment completes against the
+wrong child's account, on an append-only ledger, needing a void production cannot perform.
+
+Every server-side guard is doing exactly its job. The screen is internally consistent — it shows
+child A and charges for child A. **The only place the mistake is visible is the name**, and it is
+visible only if the name is there.
+
+That does not make the name a control in the strong sense — "the parent will probably notice" is not
+enforcement, and this section is not an argument for shipping the endpoint defect. It is an argument
+that the confirmation costs one line to make the mistake *legible*, and that a confirmation naming a
+document number alone leaves a two-school parent nothing to check against their intention.
 
 ## 5 · Failure copy
 

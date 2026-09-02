@@ -24,6 +24,7 @@ use App\Exceptions\BusinessRuleException;
 use App\Finance\Actions\ApproveCreditNote;
 use App\Finance\Actions\ApproveDiscountPolicyChange;
 use App\Finance\Actions\ApproveFeeScheduleChange;
+use App\Finance\Actions\ApproveInvoice;
 use App\Finance\Actions\ApproveOpeningBalanceBatch;
 use App\Finance\Actions\ApproveVoidRequest;
 use App\Finance\Actions\CreateFeeSchedule;
@@ -211,6 +212,11 @@ function scgActions(): array
             ->handle($f['policyChange'], 'no', $f['checker']), 'discount-policy change'],
         'ApproveOpeningBalanceBatch' => [fn (array $f) => app(ApproveOpeningBalanceBatch::class)
             ->handle($f['batch'], $f['checker']), 'opening-balance batch'],
+        // Internal Audit releasing a bill to its payer. The noun is `invoice` because that is what
+        // SchoolContext::assertOwns is given, and the message the two cases below assert is built
+        // from it.
+        'ApproveInvoice' => [fn (array $f) => app(ApproveInvoice::class)
+            ->handle($f['invoice'], $f['checker']), 'invoice'],
         'RejectOpeningBalanceBatch' => [fn (array $f) => app(RejectOpeningBalanceBatch::class)
             ->handle($f['batch'], 'no', $f['checker']), 'opening-balance batch'],
     ];
@@ -267,7 +273,7 @@ it('covers EVERY Submit/Approve/Reject action in app/Finance/Actions', function 
     $covered = collect(array_keys(scgActions()))->sort()->values()->all();
 
     expect($covered)->toBe($onDisk)
-        ->and(count($onDisk))->toBe(15);
+        ->and(count($onDisk))->toBe(16);
 });
 
 // ── The three pre-existing messages, byte for byte ───────────────────────────────────────────────

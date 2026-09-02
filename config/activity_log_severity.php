@@ -107,6 +107,38 @@ return [
         'finance.bank_account_updated',
         'finance.bank_account_deactivated',
         'finance.bank_account_reactivated',
+        // INTERNAL AUDIT RELEASING A BILL TO ITS PAYER — the attestation the whole IA control
+        // rests on (Brookstone 31 August §2/§6; App\Finance\Actions\ApproveInvoice).
+        //
+        // WARNING, and the test is NOT the bank-account family's. Theirs was "none of these four
+        // acts moves money by itself". This one does not move money either, but that is not why it
+        // is here: its value is EVIDENTIARY. It is the record that a named human attested to a
+        // charge before a parent could see it, and after the row is written that record is the
+        // only place the attestation exists as an ACT rather than as a pair of columns.
+        //
+        // NOT `critical`, and this is the part that was argued rather than defaulted. Every
+        // current member of that tier is RARE AND EXCEPTIONAL — a privilege escalation, an
+        // impersonation, a refund, a redirection of a school's entire gateway income. Two things
+        // follow. First, `finance.settlement_account_changed` is critical partly because it "has
+        // no approval step today, which makes the record of it the only control there is"; that is
+        // not true here — the permission gate, the maker-checker pair (finance.invoice.generate ↔
+        // finance.invoice.approve) and the conditional stamp are all controls, and this row is the
+        // evidence beside them rather than instead of them. Second, and more seriously, this event
+        // is the ROUTINE HAPPY PATH at the volume of every bill in every termly run. Putting
+        // thousands of routine attestations into `critical` would bury the handful of rare
+        // dangerous rows the tier exists to surface — the same "would bury the refusals it sits
+        // beside" reasoning the `info` note below gives for the guardian read, applied upward.
+        // Raising this tier would degrade the tier for its existing members.
+        //
+        // `warning` is the bank-account family's own sentence, restated for evidence: something a
+        // reconciliation — or an audit — will ask about, in reach of the severity filter, without
+        // claiming each row is an alarm.
+        //
+        // WHAT NO TIER CATCHES, stated because the classification would otherwise read as fuller
+        // cover than it is: severity classifies ACTS, and this control's real failure mode is an
+        // OMISSION — a bill nobody ever reviews, sitting unreleased forever. That produces no row
+        // at any tier. Finding it is a query over `reviewed_at IS NULL`, not a log filter.
+        'finance.invoice.approved',
     ],
 
     'notice' => [

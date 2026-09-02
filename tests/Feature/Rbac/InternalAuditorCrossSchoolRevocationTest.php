@@ -85,8 +85,19 @@ it('ARM A — revokes the grant from internal_auditor and touches nothing else',
     // set — and that is the same clause this file's own header names as what BOUNDED the
     // cross-school grant. Both halves of the pair are asserted so a resync that widened or narrowed
     // the seat reds here rather than only in the access map.
+    //
+    // It moved again on 2026-09-02: the seat gained `finance.invoice.approve`, the IA review
+    // slice's release ability (Brookstone 31 August §2/§6). That grant is NEW rather than
+    // pre-existing, so `rbac:sync` writes it and no convergence migration is owed — the literal
+    // below is the only place the seat's shape is pinned by name, which is why it is updated here
+    // in the same commit rather than left to be discovered by a resync.
     expect($iaAfter)->toBe(collect($iaBefore)->reject(fn ($p) => $p === IA_CROSS)->values()->all())
-        ->and($iaAfter)->toBe(['activity_log.export', 'activity_log.view', 'activity_log.view_all']);
+        ->and($iaAfter)->toBe([
+            'activity_log.export',
+            'activity_log.view',
+            'activity_log.view_all',
+            'finance.invoice.approve',
+        ]);
 
     // super_admin's sanctioned holding (ADR 0045 A3) is byte-identical.
     expect(iaGrants('super_admin'))->toBe($superAdminBefore)

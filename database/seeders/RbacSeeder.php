@@ -562,6 +562,15 @@ class RbacSeeder extends Seeder
                 // the entries the catalogue marks confidential.
                 // Converged by 2026_09_01_120000_grant_internal_auditor_activity_log_view_all.
                 PermissionEnum::ACTIVITY_LOG_VIEW_ALL->value,
+                // IA REVIEW (Brookstone 31 August §2/§6): releasing a raised bill to its payer.
+                // NEW permission, so `rbac:sync` grants it on the next run and no convergence
+                // migration is owed — grants-convergence-lint exemption 1.
+                //
+                // `admin` deliberately does NOT get this. admin holds finance.invoice.generate,
+                // which MAKER_OVERRIDES names as this checker's maker, so one role holding both is
+                // precisely what DutySeparation refuses — and `enforcedPairs()` covers it, since
+                // the checker starts with `finance.`.
+                PermissionEnum::FINANCE_INVOICE_APPROVE->value,
             ],
             // ADR 0045 (B2): the explicit set IS the platform-admin set — no
             // ambient domain grants. Self-healed every run (see const).

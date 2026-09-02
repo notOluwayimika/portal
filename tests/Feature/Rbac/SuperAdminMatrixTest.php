@@ -81,13 +81,40 @@ it('D2 — rejects a resulting set holding a checker with its matching maker', f
     expect(sam_rolePermissions('head_of_school'))->not->toContain('result.submit');
 });
 
-it('D2 — the convention derives the pair, not a name list', function () {
+it('D2 — the convention derives the pair, with a declared exception list', function () {
+    // RENAMED, not re-expected. This test used to be "the convention derives the pair, NOT a name
+    // list", and it pinned `finance.invoice.approve => finance.invoice.submit` as its example of
+    // the derivation. That expectation was true only while no checker's maker predated the
+    // convention. `finance.invoice.approve`'s maker is `finance.invoice.generate` — named before
+    // the `.submit` convention existed — so the derivation produced a permission nobody could hold,
+    // and the pair was listed by pairs(), counted by enforcedPairs(), and false for every user
+    // forever. The old title was defending something real and the new one keeps it: the pair set is
+    // still not an ad-hoc name list. What changed is that the list of EXCEPTIONS is now explicit,
+    // declared in one place, and asserted.
+
+    // THE PURE FUNCTION — the convention, unchanged, and still carrying every pair but one. These
+    // arms exercise `matchingMakerFor` as pure string surgery over the terminal segment: a checker
+    // segment maps to `<prefix>.submit`, a bare `approve` to a bare `submit`, and anything that is
+    // not a checker segment to null. No override participates in any of them.
     expect(ApprovalAbility::matchingMakerFor('result.approve'))->toBe('result.submit')
         ->and(ApprovalAbility::matchingMakerFor('result.reject'))->toBe('result.submit')
-        ->and(ApprovalAbility::matchingMakerFor('finance.invoice.approve'))->toBe('finance.invoice.submit')
         ->and(ApprovalAbility::matchingMakerFor('approve'))->toBe('submit')
         ->and(ApprovalAbility::matchingMakerFor('result.view_scores'))->toBeNull()
         ->and(ApprovalAbility::matchingMakerFor('result.submit'))->toBeNull();
+
+    // THE DECLARED EXCEPTION — consulted BEFORE the derivation, so this checker never reaches the
+    // string surgery above. The map is `ApprovalAbility::MAKER_OVERRIDES`; that it names only real
+    // permissions on both sides is asserted by GrantsMapSeparationTest's "any maker-override map on
+    // ApprovalAbility names only real permissions on BOTH sides", which shipped BEFORE the map and
+    // reds on an unrecognised constant so a second map cannot arrive unasserted. Without that arm
+    // this line would be the only thing standing between a renamed permission and an inert pair.
+    expect(ApprovalAbility::matchingMakerFor('finance.invoice.approve'))->toBe('finance.invoice.generate')
+        ->and(ApprovalAbility::MAKER_OVERRIDES)->toHaveKey('finance.invoice.approve');
+
+    // AND THE EXCEPTION LIST IS SHORT ON PURPOSE. Asserted so that a second override cannot be
+    // added without someone reading this test and the docblock on MAKER_OVERRIDES — the convention
+    // is meant to carry the pairs, and a growing list of exceptions is the convention failing.
+    expect(ApprovalAbility::MAKER_OVERRIDES)->toHaveCount(1);
 });
 
 it('D2 — a checker-free edit to the same role passes (the rule is the pair, not the role)', function () {

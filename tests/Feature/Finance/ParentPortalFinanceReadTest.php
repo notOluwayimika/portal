@@ -746,3 +746,141 @@ it('mayPay() is FALSE for a user with no guardian row in the active school', fun
         app(GuardianPaymentAuthorisation::class)->mayPay($stranger, $invoice)
     )->toBeFalse());
 });
+
+/*
+|--------------------------------------------------------------------------
+| 9 · Isolation, which is a DIFFERENT guarantee from the relationship
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * ONE user, a guardian row and a ward in TWO schools. Reading returns the active school's ward only.
+ *
+ * ── WHY THIS IS NOT COVERED ABOVE, THOUGH IT LOOKS LIKE IT IS ──
+ *
+ * Arm 1 ("no other parent child in the SAME SCHOOL") is the RELATIONSHIP guarantee: two children,
+ * one pivot row, and the pivot is the only difference between them. "A guardian-role user with no
+ * guardian row in this school" is a third case again — nothing to return at all. Neither is this
+ * one, where the caller is a legitimate guardian in BOTH schools and every mechanism has something
+ * it could return.
+ *
+ * KEPT AS ITS OWN ARM, NEVER FOLDED INTO ARM 1. Combined, a single arm passes when EITHER mechanism
+ * is removed — which is exactly how the ward arm on `feat/gateway-initiate` survived its own
+ * mutation: its fixture used a guardian from another school, so `SchoolScope` refused the lookup and
+ * the `mayPay` relationship check it was named for was never reached.
+ *
+ * ── WHAT THIS ARM DOES NOT PROVE, MEASURED RATHER THAN ASSUMED ──
+ *
+ * It fixes the caller's `users.school_id` to school A and reads school A. It therefore does NOT
+ * prove that a parent who SWITCHES to school B sees B's ward, because on this route the active
+ * school in the test harness resolves from `users.school_id` rather than from the session — measured
+ * 2026-09-02 by flipping `users.school_id` between the two schools and watching the response follow
+ * it while `withSession(['school_id' => …])` did not move it.
+ *
+ * That is a real gap and it is nobody's fault in this file: EVERY existing arm here sets
+ * `users.school_id` to the school it then reads, so the session path and the legacy fallback are
+ * indistinguishable in all 24 of them. Ticketed —
+ * `docs/handoff/tickets/the-parent-finance-read-resolves-school-from-users-school-id.md`. Do not
+ * "fix" this arm by adding a session assertion until that ticket is answered: it would assert a
+ * mechanism the request does not use and read as coverage.
+ */
+it('returns only the guardian\'s ward in the school being read, not their ward in another school', function () {
+    $schoolA = al_makeSchool();
+    $schoolB = al_makeSchool();
+
+    $wardA = ppf_student($schoolA, 'Ada');
+    $wardB = ppf_student($schoolB, 'Bim');
+
+    // Billed identically and identically released, so nothing but the school distinguishes them.
+    ppf_invoice($schoolA, $wardA, 300000);
+    ppf_invoice($schoolB, $wardB, 300000);
+
+    // ONE user, legitimately a guardian in both — built by hand, because ppf_guardian() mints a
+    // fresh user per call and two users would make this the relationship arm over again.
+    $user = al_makeUser($schoolA->id);
+    $user->schools()->syncWithoutDetaching([$schoolA->id, $schoolB->id]);
+
+    foreach ([[$schoolA, $wardA], [$schoolB, $wardB]] as [$school, $ward]) {
+        setPermissionsTeamId($school->id);
+        $user->unsetRelation('roles');
+        $user->assignRole('guardian');
+        setPermissionsTeamId(null);
+
+        $guardian = al_makeGuardian($school->id, $user->id);
+        $guardian->students()->attach($ward->id, [
+            'relationship' => 'mother', 'is_primary' => true, 'can_login' => true,
+        ]);
+    }
+
+    $ids = collect(ppf_hit($schoolA, $user)->assertOk()->json('data'))->pluck('student.id')->all();
+
+    // BOTH DIRECTIONS ON THE SAME RESPONSE: the ward that must be there IS, and the one that must
+    // not be there is NOT. An arm asserting only the absence passes on an empty response, which is
+    // the failure mode a guardian-resolution bug actually produces.
+    expect($ids)->toBe([$wardA->uuid])
+        ->and($ids)->not->toContain($wardB->uuid);
+});
+
+/**
+ * A CHARACTERISATION ARM: what a parent whose `users.school_id` names a DIFFERENT school actually
+ * gets. It pins today's behaviour, and today's behaviour is a defect — read the ticket before
+ * "fixing" this test.
+ *
+ * ── WHY IT IS HERE AT ALL ──
+ *
+ * `the-parent-finance-read-resolves-school-from-users-school-id.md` said only a browser drive could
+ * settle the consequence. **That was wrong, and cheaper instrument first was the right instinct:**
+ * the CONSEQUENCE is reproducible in a test, and only the CAUSE (does a real request carry a
+ * session?) still needs a browser.
+ *
+ * ── WHAT IT MEASURES ──
+ *
+ * One user whose `users.school_id` is school A, holding a guardian row and a ward ONLY in school B,
+ * asking for school B. `ActiveSchool::id()` falls back to A, `SetSchoolContext` sets the permission
+ * team to A, and the `guardian` role — assigned in team B — is not found there. The route's
+ * `parent_portal.access` check then refuses.
+ *
+ * ── AND THE DIRECTION IS THE GOOD ONE, WHICH CHANGES THE SEVERITY ──
+ *
+ * It is **403, not another family's data**. The fallback fails CLOSED. Combined with the sibling arm
+ * above — a guardian in BOTH schools sees their OWN other child, not a stranger's — neither shape is
+ * a cross-guardian leak. The ticket's "if it does not, this becomes a stop" branch is therefore
+ * narrower than it was written: the worst measured outcome is a parent locked out of the portal, or
+ * shown the wrong one of their own children.
+ *
+ * ── WHEN THE TICKET IS ANSWERED, THIS ARM CHANGES ──
+ *
+ * If the ruling is that the session must win, the expectation here becomes 200 with the ward. Do not
+ * delete the arm — flip it. It is the only place the two mechanisms are distinguishable, because
+ * every other arm in this file makes them agree.
+ */
+it('refuses a guardian whose users.school_id names a school other than the one their ward is in', function () {
+    $schoolA = al_makeSchool();
+    $schoolB = al_makeSchool();
+
+    $ward = ppf_student($schoolB, 'Bim');
+    ppf_invoice($schoolB, $ward, 300000);
+
+    // users.school_id = A. Guardian row, role and ward all in B — an ordinary shape for a parent
+    // whose user account was created at one school and whose child is at another.
+    $user = al_makeUser($schoolA->id);
+    $user->schools()->syncWithoutDetaching([$schoolA->id, $schoolB->id]);
+
+    setPermissionsTeamId($schoolB->id);
+    $user->unsetRelation('roles');
+    $user->assignRole('guardian');
+    setPermissionsTeamId(null);
+
+    $guardian = al_makeGuardian($schoolB->id, $user->id);
+    $guardian->students()->attach($ward->id, [
+        'relationship' => 'mother', 'is_primary' => true, 'can_login' => true,
+    ]);
+
+    // FAIL-CLOSED, and asserted by CODE rather than "not 200": a 401, a 404 or a 500 would all be
+    // "not 200" and would each mean something different about where this broke.
+    ppf_hit($schoolB, $user)->assertForbidden();
+
+    // AND NO DATA LEAKED WITH THE REFUSAL — the arm that makes this a severity statement rather than
+    // a status-code observation.
+    expect(DB::table('finance_invoices')->count())->toBe(1);
+});

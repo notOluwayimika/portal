@@ -122,14 +122,9 @@ state for that.
   the ticket is the evidence". Without it, a removed check must be recorded as `expected`, which
   asserts something false (that the denial is correct and will happen), or left `UNCLASSIFIED`, which
   holds the gate closed for a class nobody will ever hit.
-- **The gate does not enforce the vocabulary.** `--unclassified` filters on
-  `$r['classification'] === 'UNCLASSIFIED'` (`:118`), so **any** other string satisfies it — a typo,
-  a placeholder, or a state nobody agreed to. Adding `obsolete` therefore costs nothing mechanically
-  and buys nothing either, unless the allowed set is asserted somewhere. The vocabulary is documented
-  in a `_readme` and enforced nowhere: the same stated-and-ungated shape as
-  [`guardian-binding-applicability-is-ungated.md`](guardian-binding-applicability-is-ungated.md).
-  Whoever adds the third state should pin the set of three in the same change, or the artifact's
-  values are a convention and the gate only checks that *something* was written.
+- **The gate does not enforce the vocabulary either**, so adding `obsolete` alone would buy nothing.
+  That is a separate defect with a separate reader and it has its own ticket —
+  [`classification-gate-accepts-any-string-but-one.md`](classification-gate-accepts-any-string-but-one.md).
 
 **No entries were added by the change that raised this ticket.** Classification follows disposition:
 a class cannot be marked until its ticket says whether the check stays, changes, or goes.

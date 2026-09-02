@@ -382,6 +382,37 @@ one level up, to the premise rather than to the result.
   **necessary**, never that the key contains nothing else. Completeness is established
   by reading the predicate list, not by mutation — a seventh filter hiding in a query
   makes a derived set silently narrower while every existing arm stays green.
+- **IF THE FIXTURE SETS THE PROPERTY THE TEST ASSERTS, THE TEST MEASURES THE FIXTURE.**
+  **Detection: delete the production code that sets it. If nothing reds, every arm was reading its
+  own setup.**
+
+  That procedure is the whole entry. **Reading the tests cannot find this class** — a fixture
+  supplying the property under test looks exactly like a fixture establishing preconditions, and the
+  arms are correctly named, correctly structured and genuinely exercise the path. They just never
+  observe the thing they claim to.
+
+  Three instances, all measured, all in code that looked well covered:
+
+  | the property | who set it | what the deletion showed |
+  |---|---|---|
+  | which body settlement reads | every fixture built the webhook body and the verify response from the SAME literal | 20 webhook tests passed with the defect restored — both implementations satisfied every arm |
+  | which mechanism refused a ward | the fixture used a cross-school guardian, so `SchoolScope` refused before `mayPay` was reached | the arm survived its own mutation; its name stayed true throughout |
+  | the token's `school_id` | `FinanceApiAcceptanceTest` hand-stamps it — `forceFill(['school_id' => …])` | production stamping removed entirely: **58 green, 1 red**, and the 1 was the arm written that day |
+
+  The last row is the cleanest measurement of the gap between EXERCISING a path and MEASURING it. The
+  acceptance suite uses tokens carrying schools constantly; not one of its arms could see the
+  production code that puts them there.
+
+  **The fix is the same every time, and it is not a better assertion — it is a fixture that does not
+  supply the answer.** Make the two candidate sources DISAGREE (999,999 on the wire against 72,062
+  from the authority, so the amount names which was read); use a same-school guardian so the
+  relationship check is the only thing that can refuse; read the token back from the database rather
+  than stamping it in the arm. Then assert the VALUE, not its presence — a token stamped with the
+  WRONG school is the failure that matters and a null-check cannot see it.
+
+  Cousin of the entry immediately below, and distinct from it: there the fixture is too WEAK to
+  distinguish the rule under test; here it is too GENEROUS, and hands the test its answer.
+
 - **A test proves the property it NAMES only if the fixture makes that property the
   SOLE explanation for the pass.** The recurring failure is not a wrong assertion —
   it is a fixture whose degrees of freedom have collapsed until a wrong

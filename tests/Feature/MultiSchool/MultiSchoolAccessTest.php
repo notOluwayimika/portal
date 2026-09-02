@@ -4,6 +4,8 @@ use App\Models\Role;
 use App\Models\School;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
@@ -15,10 +17,10 @@ function ms_makeSuperAdmin(): User
     }
 
     $user = User::forceCreate([
-        'uuid' => (string) \Illuminate\Support\Str::uuid(),
+        'uuid' => (string) Str::uuid(),
         'first_name' => 'Super',
         'last_name' => 'Admin',
-        'email' => \Illuminate\Support\Str::uuid() . '@super.test',
+        'email' => Str::uuid().'@super.test',
         'password' => bcrypt('password'),
     ]);
 
@@ -246,6 +248,19 @@ it('requires school selection on api login when a user has multiple schools', fu
         ->assertStatus(409)
         ->assertJsonPath('requires_school_selection', true)
         ->assertJsonCount(2, 'schools');
+
+    // NO CREDENTIAL WAS MINTED, AND THAT IS THE INVARIANT — not the status code.
+    //
+    // `ActiveSchool::id()` resolves session → token `school_id` → the legacy `users.school_id`
+    // fallback (Constitution 13 / ADR 0042). The fallback is unreachable for API traffic ONLY
+    // because every token that exists names a school, and that is true only because this branch
+    // refuses to issue one at all rather than issuing an ambiguous one.
+    //
+    // The 409 was already asserted above and is NOT sufficient: a "simplification" that returned
+    // 409 *and also* created a token — or one that picked the first school and issued a stamped
+    // token with a 409 body — passes every assertion above this line. What such a change breaks is
+    // downstream and silent, so the assertion has to be here, where the decision is made.
+    expect(DB::table('personal_access_tokens')->count())->toBe(0);
 });
 
 it('rejects api login into an unauthorized school', function () {
@@ -270,4 +285,33 @@ it('logs a single-school user straight in via the api', function () {
     ])
         ->assertOk()
         ->assertJsonPath('school.uuid', $a->uuid);
+});
+
+it('stamps the issued token with the school, which is what keeps the users.school_id fallback dead', function () {
+    $a = al_makeSchool();
+    $user = al_makeUser($a->id);
+
+    $this->postJson('/api/login', [
+        'email' => $user->email,
+        'password' => 'password',
+    ])->assertOk();
+
+    // THE OTHER HALF OF THE SAME INVARIANT. The 409 arm proves an ambiguous credential is never
+    // minted; this proves the credential that IS minted names its school. Together they are what
+    // makes "a token always names a school" true, and that is what stops
+    // `ActiveSchool::id()` from ever reaching `users.school_id` on an API request.
+    //
+    // NOTHING ASSERTED THIS BEFORE, AND THE REASON IS WORTH READING. The three tokens in
+    // `FinanceApiAcceptanceTest` are hand-stamped by the fixture —
+    // `$token->accessToken->forceFill(['school_id' => …])->save()` — so every one of those arms
+    // passes with the production stamping removed. The fixture supplies the property under test,
+    // which is the same shape as the webhook suite passing while proving nothing about which body
+    // it read.
+    //
+    // ASSERTED AS THE SCHOOL'S ID, not merely "not null": a token stamped with the WRONG school is
+    // the failure that matters, and null-checking cannot see it.
+    $token = DB::table('personal_access_tokens')->orderByDesc('id')->first();
+
+    expect($token)->not->toBeNull()
+        ->and((int) $token->school_id)->toBe((int) $a->id);
 });

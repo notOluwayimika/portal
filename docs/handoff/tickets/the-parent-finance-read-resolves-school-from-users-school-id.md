@@ -1,9 +1,13 @@
 # The parent finance read resolves the school from `users.school_id`, not the session — and no test could tell
 
 **Status:** open. Found 2026-09-02 while writing the read-side isolation arm for step 5.
-**Severity:** **fix** — ship-blocking for the pay screen's multi-school case, and **not** demonstrated
-to be a production defect. Read "what is NOT established" before escalating.
-**Bites in:** a guardian with children at more than one school.
+**Severity:** **ticket** — DOWNGRADED 2026-09-02 from *fix*. The state this describes **cannot be
+reached through either real login path**; see "Unreachable in production" below. The deadline that
+was set (*before the pay screen ships*) is **RETRACTED** — it rested on a payment hazard that is now
+measured away.
+**What actually survives:** a parent who chose school A at login has no in-product way to switch —
+the parent portal renders no school switcher. A UX gap for two-campus families.
+**Bites in:** nothing measured. Read the whole ticket before acting on any earlier section.
 
 ## The measurement
 
@@ -46,7 +50,47 @@ CLAUDE.md is explicit that `users.school_id` must never be the source of context
 with the remaining fallbacks baselined under ADR 0042. This is one of them, and it is the one the
 parent-facing payment surface sits on.
 
-## MEASURED SINCE: the consequence needed no browser, and it fails CLOSED
+## UNREACHABLE IN PRODUCTION — measured, and the drive is spent
+
+**The fallback fires only when NEITHER a session NOR a token carries the school. Both are populated
+at issue time, so for parent-portal traffic that branch is dead.**
+
+`ActiveSchool::id()` reads, in order: session → `currentAccessToken()->school_id` → `users.school_id`.
+
+**Session-borne (the SPA).** `SchoolAwareLoginResponse` puts `school_id` in the session for a
+single-school user, and for a multi-school user CLEARS it and redirects to `school.select`. A session
+that disagrees with `users.school_id` is not a state login produces.
+
+**Token-borne (API clients).** `AuthenticationController` stamps the issued token:
+`$token->accessToken->forceFill(['school_id' => $school->id])`. On the multi-school branch it does
+something stronger — `Auth::logout()` and **409 with no token issued at all**, forcing the client to
+retry with `school_uuid`. **That refusal is the load-bearing guard here**: it is what makes *"a
+credential always names a school"* true, and it is doing more work than its comment claims.
+
+**The resolved stacks, read from `route:list -v` rather than the route files.** Seven parent-portal
+routes: three on `api` + `Authenticate:sanctum`, four on `web` + `Authenticate`. The `web` group
+contains `StartSession` and `HandleInertiaRequests`; the `api` group contains **neither** — it has
+`EnsureFrontendRequestsAreStateful`, which prepends session middleware only for origins matching
+`sanctum.stateful`. So an authenticated parent request **can** exist with no session (a Bearer token
+from a non-stateful origin, on any of the three `api/parent/*` routes) — and it still carries the
+school, on the token.
+
+**Residual, stated precisely:** the fallback is reachable only by a token minted outside
+`AuthenticationController`. Nothing in the codebase does that.
+
+**Why the tests said otherwise.** `actingAs()` skips authentication, so `withSession()` could
+assemble a session/`users.school_id` disagreement that no login produces. Recorded in CLAUDE.md as
+its own row, because the class is general: *a finding that only reproduces under `actingAs` is a
+hypothesis, not a measurement.* The mirror question — is the login invariant itself untested, since
+the harness bypasses it — was asked and answered: `tests/Feature/Auth/MultiSchoolLoginTest.php`
+covers both branches against `/login`.
+
+## SUPERSEDED — the reasoning below stands as a record, and its conclusions do not
+
+Everything from here down was written before the paragraphs above and treated the state as reachable.
+The measurements in it are accurate; the severity and the deadline it argues for are not.
+
+## MEASURED EARLIER: the consequence needed no browser, and it fails CLOSED
 
 The first version of this ticket said only a drive could settle it. **That was wrong, and it was
 wrong in the direction that costs most — it routed a cheap question to the expensive instrument.**

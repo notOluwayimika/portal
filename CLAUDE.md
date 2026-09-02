@@ -382,6 +382,45 @@ one level up, to the premise rather than to the result.
   **necessary**, never that the key contains nothing else. Completeness is established
   by reading the predicate list, not by mutation — a seventh filter hiding in a query
   makes a derived set silently narrower while every existing arm stays green.
+- **`actingAs()` SKIPS AUTHENTICATION, so every invariant established DURING login is absent from
+  the fixture — and a test can then construct a state production cannot reach.** The usual worry
+  about a fixture is that it is too weak to distinguish the rule under test. This is the opposite
+  failure and it reads as a finding rather than as a green: the fixture is too FREE, it assembles a
+  combination no real user can occupy, and the "defect" you then measure is real in the test and
+  unreachable in production.
+
+  Bit on 2026-09-02, and it cost most of an afternoon. A parent-portal arm was built with
+  `actingAs($user)->withSession(['school_id' => $B])` where `users.school_id` was A — and the endpoint
+  answered for A. That looked like the legacy `users.school_id` fallback firing on the payer surface
+  (Constitution 13 / ADR 0042), which would have been serious: a two-school parent shown the wrong
+  child on a payment screen, `mayPay` passing because both children are theirs, money landing on the
+  wrong account in an append-only ledger.
+
+  **It cannot happen.** `SchoolAwareLoginResponse` writes `school_id` into the session for a
+  single-school user and, for a multi-school user, CLEARS it and redirects to the chooser — so a
+  session that disagrees with `users.school_id` is not a state login produces. The API path is
+  stricter still: `AuthenticationController` stamps the issued token with `school_id`, and on the
+  multi-school branch it `Auth::logout()`s and returns **409 with no token at all** rather than
+  minting an ambiguous credential. `ActiveSchool::id()` reads session → token → `users.school_id`, so
+  with both carriers populated at issue time the fallback is dead for that traffic.
+
+  **The check is one question, asked BEFORE the finding is written up: which code path establishes
+  this invariant, and does my fixture go through it?** `actingAs` goes through none of them. Name the
+  establishing path — a login response, a factory `booted()` hook, a controller that seeds a session —
+  and either drive the fixture through it or state in the arm that it does not.
+
+  **AND ASK THE MIRROR, because it is the expensive direction.** If an invariant lives only in a path
+  the harness bypasses, deleting that logic breaks production and NOTHING GOES RED. Checked here and
+  the hole does not exist — `tests/Feature/Auth/MultiSchoolLoginTest.php` covers both branches by
+  posting to `/login` and asserting the session, so the response is guarded. But the question has to
+  be asked every time, because a guard that only a skipped path contains is an unguarded guard, and
+  that is a real hole rather than a false positive.
+
+  Same family as the degenerate fixture below — the fixture decides what the test can see — but the
+  failure points the other way: not a wrong implementation passing, a correct implementation
+  reported as broken. **A finding that only reproduces under `actingAs` is a hypothesis, not a
+  measurement.**
+
 - **A test proves the property it NAMES only if the fixture makes that property the
   SOLE explanation for the pass.** The recurring failure is not a wrong assertion —
   it is a fixture whose degrees of freedom have collapsed until a wrong

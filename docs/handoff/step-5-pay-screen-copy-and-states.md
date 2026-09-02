@@ -249,10 +249,13 @@ name is a claim; only a planted regression is evidence) and the one arm that is 
 endpoint resolves the active school from `users.school_id`, not the session — measured by flipping
 that column between two schools and watching the response follow it while the requested school did
 nothing. No existing arm can see this, because all 24 set `users.school_id` to the school they then
-read, so the session path and the legacy fallback always agree. Whether a real browser request
-behaves the same way is **not** established and needs a drive.
-`docs/handoff/tickets/the-parent-finance-read-resolves-school-from-users-school-id.md`. **This is
-the pay screen's multi-school case**, so it is a step-5 dependency and not background.
+read, so the session path and the legacy fallback always agree. **RESOLVED 2026-09-02 and it is NOT a step-5 dependency:**
+the state is unreachable through either real login path — the session carrier is written by
+`SchoolAwareLoginResponse` and the token carrier is stamped by `AuthenticationController`, which
+refuses to mint a credential at all on the multi-school branch. The tests could construct the
+disagreement only because `actingAs()` skips authentication.
+`docs/handoff/tickets/the-parent-finance-read-resolves-school-from-users-school-id.md`, downgraded
+to a UX gap: the parent portal renders no school switcher.
 
 **The one real gap: read-side isolation.** `ParentPortalFinanceReadTest` covers *"a guardian-role
 user with no guardian row in this school"* → empty list. That is a different case from **a guardian

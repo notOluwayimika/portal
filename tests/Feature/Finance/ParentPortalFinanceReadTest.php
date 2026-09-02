@@ -746,3 +746,77 @@ it('mayPay() is FALSE for a user with no guardian row in the active school', fun
         app(GuardianPaymentAuthorisation::class)->mayPay($stranger, $invoice)
     )->toBeFalse());
 });
+
+/*
+|--------------------------------------------------------------------------
+| 9 · Isolation, which is a DIFFERENT guarantee from the relationship
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * ONE user, a guardian row and a ward in TWO schools. Reading returns the active school's ward only.
+ *
+ * ── WHY THIS IS NOT COVERED ABOVE, THOUGH IT LOOKS LIKE IT IS ──
+ *
+ * Arm 1 ("no other parent child in the SAME SCHOOL") is the RELATIONSHIP guarantee: two children,
+ * one pivot row, and the pivot is the only difference between them. "A guardian-role user with no
+ * guardian row in this school" is a third case again — nothing to return at all. Neither is this
+ * one, where the caller is a legitimate guardian in BOTH schools and every mechanism has something
+ * it could return.
+ *
+ * KEPT AS ITS OWN ARM, NEVER FOLDED INTO ARM 1. Combined, a single arm passes when EITHER mechanism
+ * is removed — which is exactly how the ward arm on `feat/gateway-initiate` survived its own
+ * mutation: its fixture used a guardian from another school, so `SchoolScope` refused the lookup and
+ * the `mayPay` relationship check it was named for was never reached.
+ *
+ * ── WHAT THIS ARM DOES NOT PROVE, MEASURED RATHER THAN ASSUMED ──
+ *
+ * It fixes the caller's `users.school_id` to school A and reads school A. It therefore does NOT
+ * prove that a parent who SWITCHES to school B sees B's ward, because on this route the active
+ * school in the test harness resolves from `users.school_id` rather than from the session — measured
+ * 2026-09-02 by flipping `users.school_id` between the two schools and watching the response follow
+ * it while `withSession(['school_id' => …])` did not move it.
+ *
+ * That is a real gap and it is nobody's fault in this file: EVERY existing arm here sets
+ * `users.school_id` to the school it then reads, so the session path and the legacy fallback are
+ * indistinguishable in all 24 of them. Ticketed —
+ * `docs/handoff/tickets/the-parent-finance-read-resolves-school-from-users-school-id.md`. Do not
+ * "fix" this arm by adding a session assertion until that ticket is answered: it would assert a
+ * mechanism the request does not use and read as coverage.
+ */
+it('returns only the guardian\'s ward in the school being read, not their ward in another school', function () {
+    $schoolA = al_makeSchool();
+    $schoolB = al_makeSchool();
+
+    $wardA = ppf_student($schoolA, 'Ada');
+    $wardB = ppf_student($schoolB, 'Bim');
+
+    // Billed identically and identically released, so nothing but the school distinguishes them.
+    ppf_invoice($schoolA, $wardA, 300000);
+    ppf_invoice($schoolB, $wardB, 300000);
+
+    // ONE user, legitimately a guardian in both — built by hand, because ppf_guardian() mints a
+    // fresh user per call and two users would make this the relationship arm over again.
+    $user = al_makeUser($schoolA->id);
+    $user->schools()->syncWithoutDetaching([$schoolA->id, $schoolB->id]);
+
+    foreach ([[$schoolA, $wardA], [$schoolB, $wardB]] as [$school, $ward]) {
+        setPermissionsTeamId($school->id);
+        $user->unsetRelation('roles');
+        $user->assignRole('guardian');
+        setPermissionsTeamId(null);
+
+        $guardian = al_makeGuardian($school->id, $user->id);
+        $guardian->students()->attach($ward->id, [
+            'relationship' => 'mother', 'is_primary' => true, 'can_login' => true,
+        ]);
+    }
+
+    $ids = collect(ppf_hit($schoolA, $user)->assertOk()->json('data'))->pluck('student.id')->all();
+
+    // BOTH DIRECTIONS ON THE SAME RESPONSE: the ward that must be there IS, and the one that must
+    // not be there is NOT. An arm asserting only the absence passes on an empty response, which is
+    // the failure mode a guardian-resolution bug actually produces.
+    expect($ids)->toBe([$wardA->uuid])
+        ->and($ids)->not->toContain($wardB->uuid);
+});

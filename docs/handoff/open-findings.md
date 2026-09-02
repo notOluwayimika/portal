@@ -65,6 +65,12 @@ twenty-four look deliberate.
 
 **Severity: time-critical, operational rather than a defect, and the gate on everything else.**
 
+**ANSWERED FOR THE READ HALF, 2 September 2026: the deploy has a date — 5 SEPTEMBER 2026**, decided
+by Segun. Recorded in [`post-deploy-tasks.md`](post-deploy-tasks.md) § Phase 0, which also carries
+the backfill-ordering trap that date creates. This closes the standing warning for the read half
+only; the pay-half migrations keep it open, and the counts below are a 30 August measurement that
+should be re-derived rather than carried.
+
 **Re-measured 30 August, and this entry has now been wrong three times — twice by me.** It said 44
 and six, then 20 and four, and both were produced by reading `git diff --name-only` as a list of
 ADDITIONS. It is not. It lists files that DIFFER, which includes files already on `main` whose

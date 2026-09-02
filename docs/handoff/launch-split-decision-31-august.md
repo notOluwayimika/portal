@@ -40,6 +40,11 @@ on 31 August (`brookstone-answers-31-august.md` §2). Landed the same day in `d4
 behind on migrations. The deploy needs a date of its own, before the portal is reachable, and
 `open-findings.md` Finding 0 is the standing warning about migrations landing in cutover week.
 
+**THE DATE IS NOW SET: 5 SEPTEMBER 2026**, decided by Segun on 2 September — one day before the read
+half opens. Recorded in [`post-deploy-tasks.md`](post-deploy-tasks.md) § Phase 0, with what it costs
+(the IA review slice must be MERGED by end of 4 September; the 5th is a deploy day, not a build day)
+and the backfill-ordering trap it creates.
+
 ## Directive 2 — the balance default
 
 If Brookstone have not answered the parent-balance question by Wednesday 3 September, proceed with

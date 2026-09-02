@@ -820,3 +820,67 @@ it('returns only the guardian\'s ward in the school being read, not their ward i
     expect($ids)->toBe([$wardA->uuid])
         ->and($ids)->not->toContain($wardB->uuid);
 });
+
+/**
+ * A CHARACTERISATION ARM: what a parent whose `users.school_id` names a DIFFERENT school actually
+ * gets. It pins today's behaviour, and today's behaviour is a defect — read the ticket before
+ * "fixing" this test.
+ *
+ * ── WHY IT IS HERE AT ALL ──
+ *
+ * `the-parent-finance-read-resolves-school-from-users-school-id.md` said only a browser drive could
+ * settle the consequence. **That was wrong, and cheaper instrument first was the right instinct:**
+ * the CONSEQUENCE is reproducible in a test, and only the CAUSE (does a real request carry a
+ * session?) still needs a browser.
+ *
+ * ── WHAT IT MEASURES ──
+ *
+ * One user whose `users.school_id` is school A, holding a guardian row and a ward ONLY in school B,
+ * asking for school B. `ActiveSchool::id()` falls back to A, `SetSchoolContext` sets the permission
+ * team to A, and the `guardian` role — assigned in team B — is not found there. The route's
+ * `parent_portal.access` check then refuses.
+ *
+ * ── AND THE DIRECTION IS THE GOOD ONE, WHICH CHANGES THE SEVERITY ──
+ *
+ * It is **403, not another family's data**. The fallback fails CLOSED. Combined with the sibling arm
+ * above — a guardian in BOTH schools sees their OWN other child, not a stranger's — neither shape is
+ * a cross-guardian leak. The ticket's "if it does not, this becomes a stop" branch is therefore
+ * narrower than it was written: the worst measured outcome is a parent locked out of the portal, or
+ * shown the wrong one of their own children.
+ *
+ * ── WHEN THE TICKET IS ANSWERED, THIS ARM CHANGES ──
+ *
+ * If the ruling is that the session must win, the expectation here becomes 200 with the ward. Do not
+ * delete the arm — flip it. It is the only place the two mechanisms are distinguishable, because
+ * every other arm in this file makes them agree.
+ */
+it('refuses a guardian whose users.school_id names a school other than the one their ward is in', function () {
+    $schoolA = al_makeSchool();
+    $schoolB = al_makeSchool();
+
+    $ward = ppf_student($schoolB, 'Bim');
+    ppf_invoice($schoolB, $ward, 300000);
+
+    // users.school_id = A. Guardian row, role and ward all in B — an ordinary shape for a parent
+    // whose user account was created at one school and whose child is at another.
+    $user = al_makeUser($schoolA->id);
+    $user->schools()->syncWithoutDetaching([$schoolA->id, $schoolB->id]);
+
+    setPermissionsTeamId($schoolB->id);
+    $user->unsetRelation('roles');
+    $user->assignRole('guardian');
+    setPermissionsTeamId(null);
+
+    $guardian = al_makeGuardian($schoolB->id, $user->id);
+    $guardian->students()->attach($ward->id, [
+        'relationship' => 'mother', 'is_primary' => true, 'can_login' => true,
+    ]);
+
+    // FAIL-CLOSED, and asserted by CODE rather than "not 200": a 401, a 404 or a 500 would all be
+    // "not 200" and would each mean something different about where this broke.
+    ppf_hit($schoolB, $user)->assertForbidden();
+
+    // AND NO DATA LEAKED WITH THE REFUSAL — the arm that makes this a severity statement rather than
+    // a status-code observation.
+    expect(DB::table('finance_invoices')->count())->toBe(1);
+});

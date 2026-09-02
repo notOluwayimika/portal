@@ -46,11 +46,32 @@ CLAUDE.md is explicit that `users.school_id` must never be the source of context
 with the remaining fallbacks baselined under ADR 0042. This is one of them, and it is the one the
 parent-facing payment surface sits on.
 
+## MEASURED SINCE: the consequence needed no browser, and it fails CLOSED
+
+The first version of this ticket said only a drive could settle it. **That was wrong, and it was
+wrong in the direction that costs most — it routed a cheap question to the expensive instrument.**
+The CONSEQUENCE is reproducible in a test; only the CAUSE still needs a browser.
+
+Two shapes, both now pinned by arms in `ParentPortalFinanceReadTest`:
+
+| fixture | result |
+|---|---|
+| guardian row in **both** schools, `users.school_id` = A, asking for B | **200**, returns the ward in **A** — their OWN other child |
+| guardian row **only in B**, `users.school_id` = A, asking for B | **403** — the permission team is set to A, where the `guardian` role was never assigned |
+
+**Neither is a cross-guardian leak.** The second fails closed; the first shows the parent the wrong
+one of their own children. So the original "if the session does not win, this becomes a **stop**"
+branch is **narrower than written**: the worst measured outcome is a parent locked out of the portal,
+or shown the wrong one of their own children — bad, and not a data breach.
+
+Severity therefore stays **fix**, and the reason is measured rather than assumed.
+
 ## What it would take to answer it
 
 1. **Measure the production path.** Drive the parent portal in a browser with a two-school guardian,
-   switch schools, and read the network response. That is the only instrument that settles it — a
-   test cannot, which is the whole point of the ticket.
+   switch schools, and read the network response. This is now the ONLY part that needs a browser —
+   whether a real request carries a session the middleware honours. The consequence of it not doing
+   so is measured above.
 2. **If the session path does win in the browser**, the gap is the harness: the arm needs a request
    the stateful middleware accepts, and every existing arm should stop setting `users.school_id` to
    the school it reads, so the fallback cannot cover for a broken session path.

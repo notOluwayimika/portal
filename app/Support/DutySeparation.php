@@ -34,9 +34,24 @@ use Illuminate\Support\Facades\DB;
  *
  * THE RULE (stated once, so the invariant test and the audit command agree): for every checker
  * ability C, with maker M = ApprovalAbility::matchingMakerFor(C), a user holding BOTH C and M
- * WITHIN THE SAME SCHOOL is a violation. Derived from the ApprovalAbility convention over the
- * Permission catalog — never an enumerated list — so a future instance (refunds) joins with no
- * edit, the same property the D1 route gate has.
+ * WITHIN THE SAME SCHOOL is a violation.
+ *
+ * DERIVED BY CONVENTION OVER THE Permission CATALOG, WITH A DECLARED EXCEPTION LIST. This sentence
+ * used to read "never an enumerated list", and that stopped being true when
+ * `ApprovalAbility::MAKER_OVERRIDES` landed for `finance.invoice.approve`, whose maker is
+ * `finance.invoice.generate` rather than a `.submit` the convention could derive. The convention
+ * still carries every other pair, and a future instance whose maker IS named for it (refunds,
+ * `finance.refund.submit`) still joins with no edit — the property the D1 route gate has. What
+ * changed is that an instance whose maker was named BEFORE the convention now joins by one line in
+ * that list instead of not joining at all.
+ *
+ * THE LIST IS THE PART THAT CAN ROT, and what stops it is not this paragraph. Rename a permission
+ * and the map keeps naming the old one, producing a pair whose maker nobody can hold — listed,
+ * counted by `enforcedPairs()`, and false for every user forever. `GrantsMapSeparationTest`'s
+ * "every maker and checker in DutySeparation::pairs() names a real, currently-declared permission"
+ * is what reds on that, and its sibling arm asserts the override map itself and reds on any
+ * unrecognised constant on `ApprovalAbility`. Both shipped BEFORE this map, deliberately, so the
+ * exception list has never existed unasserted.
  *
  * EVALUATED ON EFFECTIVE ABILITY (`$user->can()`), not raw grant. This is load-bearing for
  * super_admin: it is excluded from the Gate::before bypass on checker abilities (ADR 0040), so it

@@ -40,6 +40,28 @@ class ApprovalAbility
     public const CHECKER_SEGMENTS = ['approve', 'reject'];
 
     /**
+     * The DECLARED EXCEPTIONS to the `.submit` derivation: checker => its real maker.
+     *
+     * The derivation below replaces a checker's terminal segment with `submit`, which is right
+     * wherever the maker was named for the convention. It is wrong wherever the maker already had a
+     * name — `finance.invoice.approve`'s maker is `finance.invoice.generate`, and there is no
+     * `finance.invoice.submit` to derive.
+     *
+     * THE COST OF THIS MAP IS THAT IT IS A LIST, and a list goes stale in a direction the
+     * derivation cannot: rename a permission and the map keeps naming the old one, restoring
+     * exactly the inert pair it was added to prevent. That is why it is only payable alongside
+     * the assertion that already landed for it — `GrantsMapSeparationTest`'s "any maker-override
+     * map on ApprovalAbility names only real permissions on BOTH sides", which was written before
+     * this map existed, names it, and reds on an unrecognised constant so a second map cannot
+     * arrive unasserted.
+     *
+     * @var array<string, string>
+     */
+    public const MAKER_OVERRIDES = [
+        'finance.invoice.approve' => 'finance.invoice.generate',
+    ];
+
+    /**
      * Is this ability excluded from the super-admin bypass?
      */
     public static function isExcludedFromSuperAdminBypass(string $ability): bool
@@ -73,6 +95,13 @@ class ApprovalAbility
     {
         if (! self::isExcludedFromSuperAdminBypass($ability)) {
             return null;
+        }
+
+        // The declared exception wins over the derivation — consulted FIRST, so a checker whose
+        // maker already had a name never reaches the string surgery below and never yields a pair
+        // naming a permission nobody can hold.
+        if (array_key_exists($ability, self::MAKER_OVERRIDES)) {
+            return self::MAKER_OVERRIDES[$ability];
         }
 
         $position = strrpos($ability, '.');

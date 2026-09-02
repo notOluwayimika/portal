@@ -176,6 +176,21 @@ enum Permission: string
     // group's `finance.access` — the same permission that lets someone look at the finance page —
     // so anyone who could view finance could bill. This narrows generation to an explicit grant.
     case FINANCE_INVOICE_GENERATE = 'finance.invoice.generate';
+    // Internal Audit's release of a raised bill to its payer (IA review slice, Brookstone
+    // 31 August §2/§6). The bill already counts against the balance; this permission gates only
+    // its VISIBILITY, via finance_invoices.reviewed_at — see
+    // 2026_08_31_100000_finance_invoices_internal_audit_review.
+    //
+    // A CHECKER, so it is excluded from the super-admin Gate::before bypass (ADR 0040) by
+    // ApprovalAbility::CHECKER_SEGMENTS, and its maker is finance.invoice.generate above — NOT the
+    // `.submit` the naming convention would derive. That exception is declared in
+    // ApprovalAbility::MAKER_OVERRIDES and asserted by GrantsMapSeparationTest.
+    //
+    // `.reject` IS DELIBERATELY ABSENT. The return-to-Finance path ships on 13 September with the
+    // pay half. A permission declared ahead of the code that uses it is the `pending_emitters`
+    // mistake the activity catalogue already carries twice (finance.refund_issued,
+    // finance.fee_adjusted), and this slice does not repeat it.
+    case FINANCE_INVOICE_APPROVE = 'finance.invoice.approve';
     // Applying ANY reduction (waiver/discount) line on an invoice (S1 Part 0). Checked in the
     // controller, not the route, because it depends on the request body. Closes the audit hole: a
     // 100%-discount line raised by anyone with `finance.access`, naming no one. Not a maker-checker

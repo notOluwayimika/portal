@@ -48,7 +48,7 @@ use Spatie\Permission\PermissionRegistrar;
  *
  * `RbacSeeder::sync()` is non-destructive: for a role that ALREADY EXISTS it grants only permissions
  * CREATED IN THAT SAME RUN — the `$toGrant` branch inside
- * database/seeders/RbacSeeder.php:586 (syncLogged). `activity_log.view_all` is pre-existing — it
+ * database/seeders/RbacSeeder.php:654 (toGrant), in `syncLogged()`. `activity_log.view_all` is pre-existing — it
  * has been granted to `admin` since the activity-log module shipped — so adding the line to
  * that map lands on fresh installs and does NOTHING on the production copy. That is precisely the
  * defect `bin/ci-grants-convergence-lint.php` guards, and the `@converges` marker above is how this

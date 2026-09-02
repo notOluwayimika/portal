@@ -22,13 +22,13 @@ uses()->group('arch');
 /**
  * Write $body to a temp PHP file under app/Finance/, run the real lint, delete the file, and return
  * [exitCode, stderr+stdout, basename]. The finally is load-bearing: a leaked fixture would fail
- * bin/quality step 6 for everyone afterwards, and it would fail it for a reason that has nothing to
+ * bin/quality step 7 for everyone afterwards, and it would fail it for a reason that has nothing to
  * do with their change. `.gitignore` covers the residue the finally cannot — a SIGKILL or a crashed
  * host leaves an UNTRACKED file, which is the one outcome that outlives the run and is committable.
  *
  * ⚠️ THIS PLANTS INTO THE REAL TREE, SO IT IS SAFE ONLY WHILE PEST RUNS SEQUENTIALLY. Verified at
- * this commit: `bin/quality:280 (arch)` is `pest --group=arch` (step 15) and `:341` is plain
- * `pest` (step 17); `--parallel` appears only on Pint (`composer.json:67,70`). Both line numbers and both
+ * this commit: `bin/quality:357 (arch)` is `pest --group=arch` (step 16) and `bin/quality:418 (pest)`
+ * is plain `pest` (step 18); `--parallel` appears only on Pint (`composer.json:68 (pint)`, and `:71`). Both line numbers and both
  * step numbers move whenever a step is added — they are re-derived, not carried, and the citation
  * lint moved them last. If you are adding `--parallel` to either, THIS FILE
  * BREAKS FIRST — test 3 asserts the lint is GREEN over the tree while tests 1 and 2 have violations

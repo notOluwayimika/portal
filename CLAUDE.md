@@ -493,6 +493,52 @@ ADR 0053) → milestone merge to `main`. Never stack branches. Conventional
 Commits with scope. Rollout flags in `config/rbac.php` / `config/auth.php` ship
 dark.
 
+- **TWO BRANCHES CAN EACH BE GREEN AND THEIR MERGE RED — the gate belongs on the MERGE RESULT, and
+  a per-push gate structurally cannot be there.** `.githooks/pre-push` runs `bin/quality` against the
+  BRANCH's tree. If that branch does not contain `origin/staging`, the merge produces a tree **no
+  gate has ever seen**: each side was measured against a base lacking the other, and the combination
+  first exists at the moment nobody is looking. The classic shape is a rename — a caller updated on
+  one branch and introduced on the other — and when the rename ships with no alias, that is a
+  `BadMethodCallException` at RUNTIME rather than a wrong answer at rest, so the suite that would
+  have caught it is precisely the one that never ran.
+
+  With GitHub Actions permanently disabled (ADR 0053), **no other check will ever run there.** On a
+  repo with CI this is what a required status check on the merge commit closes; here there is no
+  second layer, which makes the residual load-bearing rather than theoretical.
+
+  **Measured on 2026-09-02, and the hazard had NOT bitten** — which is the more useful half. All five
+  recent merges (#374-#378) were checked with `git merge-base --is-ancestor <merge>^1 <merge>^2` and
+  every one came back TRUE: each branch already contained `staging`, so the merge result WAS the tree
+  its gate ran on. #374 even carries an explicit `Merge remote-tracking branch 'origin/staging' into
+  …` doing it by hand. **That is a PRACTICE, not a MECHANISM**, and the distinction is the whole
+  entry: nothing refuses a push from a branch behind `staging`, so the five clean merges are evidence
+  that whoever pushed them remembered. Adoption-gradient again — uptake looks like noise rather than
+  a rule, because omitting it produces no red until the day it produces a runtime crash.
+
+  **TWO MECHANISMS, GUARDING DIFFERENT WINDOWS. Neither is redundant with the other, and this
+  sentence exists so nobody removes one as duplication:**
+
+  1. **A pre-push containment check** — refuse the push unless the branch contains `origin/staging`.
+     It makes the gated tree and the merge result the same tree at PUSH time, and it fails early,
+     locally, with a message naming what to do.
+  2. **Linear history required on `staging`** (branch protection). The pre-push check alone is
+     **not sufficient**, and the hole is timing: `staging` can move between your push and your merge,
+     at which point the merge is no longer a fast-forward, git produces a real merge commit, and the
+     gap reopens exactly where it was. Requiring linear history means a branch that has fallen behind
+     physically CANNOT merge — it must rebase and re-gate first. That is the containment check
+     enforced at the only moment that cannot be outrun by timing, it costs nothing to run, and it
+     cannot be forgotten.
+
+  The first fails early and legibly; the second fails late and cryptically but is the one that cannot
+  be evaded. Ticket:
+  `docs/handoff/tickets/nothing-requires-a-branch-to-contain-staging-before-it-merges.md`.
+
+  **And a containment argument is a claim about WHAT WAS MEASURED, never proof the tree is green.**
+  Having established that every merge result had been gated, the tempting stop is right there — it is
+  sound, and it is the most defensible-looking wrong stopping point available. `bin/quality` was run
+  on `staging`'s own head anyway, because "the tree was measured" and "the tree passes" are two
+  claims and only one of them had evidence.
+
 **A merged pull request is not evidence that the branch merged.** After any merge, run
 `bin/landed <branch>` — target defaults to `staging`. It fetches origin (its only
 mutation) and answers, from refs alone, whether `origin/<target>` contains every

@@ -8,6 +8,7 @@ use App\Models\Teacher;
 use App\Models\Term;
 use App\Support\ActiveSchool;
 use App\Support\CurrentTerm;
+use App\Support\SessionEnrolledStudents;
 
 class SetupController extends Controller
 {
@@ -50,7 +51,14 @@ class SetupController extends Controller
             'subjects' => $school->subjects()->count(),
             'grade_boundaries' => $school->gradeBoundaries()->count(),
             'curricula' => $school->curricula()->count(),
-            'students' => $school->students()->count(),
+            // SESSION-SCOPED, not school-wide. `$school->students()->count()` answered "how many
+            // pupils has this school ever registered", which only ever grows and includes everyone
+            // who has graduated or left — not what an overview card labelled "Students" is for.
+            // Changed directly rather than added alongside, because nothing consumes this value as
+            // a threshold: it is rendered verbatim by the setup overview's StatCard and by nothing
+            // else. The dashboard's equivalent could NOT be changed this way — see
+            // SessionEnrolledStudents on the onboarding gate.
+            'students' => SessionEnrolledStudents::count((int) $school->id, $currentSession?->id),
             'teachers' => Teacher::count(), // tenant-scoped; includes school_user pivot teachers
             'guardians' => Guardian::count(), // tenant-scoped by SchoolScope
         ]);

@@ -15,6 +15,7 @@ import { dashboard } from '@/routes';
 import type {
     DashboardAnalysis,
     DailyCount,
+    EntityVolume,
     OnboardingState,
     SelectedWidget,
 } from '@/types/dashboard';
@@ -47,14 +48,29 @@ function timeAgoLabel(dateStr: string | null): string {
     return `${hrs} hour${hrs === 1 ? '' : 's'} ago`;
 }
 
+/**
+ * Which numeric field of an EntityVolume a KPI card shows. Only these three are numbers; the rest of
+ * EntityVolume is timestamps, so the union keeps the lookup below type-safe.
+ */
+type KpiValueKey = 'total' | 'active' | 'enrolled_current_session';
+
 const KPI_META: Record<
     string,
-    { label: string; entityKey: string; href: string }
+    {
+        label: string;
+        entityKey: string;
+        href: string;
+        valueKey?: KpiValueKey;
+    }
 > = {
     students_kpi: {
-        label: 'Total students',
+        // SESSION-SCOPED, and the label says so. `active` on the students entity means "not
+        // soft-deleted" and is read school-wide by three server-side onboarding gates, so this card
+        // reads a separate display-only field instead of the server changing what `active` means.
+        label: 'Students this session',
         entityKey: 'students',
         href: '/students',
+        valueKey: 'enrolled_current_session',
     },
     guardians_kpi: {
         label: 'Total guardians',
@@ -72,6 +88,18 @@ const KPI_META: Record<
         href: '/setup',
     },
 };
+
+/**
+ * ONE rule, because the KPI strip is rendered in TWO places (the onboarding preview and the full
+ * dashboard). Duplicating `entity?.active ?? 0` at both sites is how one of them keeps the old
+ * school-wide number after the other is corrected — the drift this repo has paid for elsewhere.
+ */
+function kpiValue(
+    entity: EntityVolume | null | undefined,
+    meta: { valueKey?: KpiValueKey } | undefined,
+): number {
+    return entity?.[meta?.valueKey ?? 'active'] ?? 0;
+}
 
 function getModuleDailyCounts(
     analysis: DashboardAnalysis,
@@ -177,7 +205,7 @@ export default function Dashboard({
                                         >
                                             <KpiCard
                                                 label={meta?.label ?? w.id}
-                                                value={entity?.active ?? 0}
+                                                value={kpiValue(entity, meta)}
                                                 subText={
                                                     last30 > 0
                                                         ? `+${last30} in last 30 days`
@@ -227,7 +255,7 @@ export default function Dashboard({
                                     >
                                         <KpiCard
                                             label={meta?.label ?? w.id}
-                                            value={entity?.active ?? 0}
+                                            value={kpiValue(entity, meta)}
                                             subText={
                                                 last30 > 0
                                                     ? `+${last30} in last 30 days`

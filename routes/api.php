@@ -481,6 +481,18 @@ Route::middleware(['auth:sanctum', 'tenant', 'permission:parent_portal.access'])
     require __DIR__.'/endpoints/parent-finance.php';
 });
 
+/*
+ * INTERNAL AUDIT'S invoice review surface — the pending feed and the batch release.
+ *
+ * ITS OWN GROUP, gated on `finance.invoice.approve` and NOT on `finance.access`. Placed here beside
+ * the parent-finance declaration deliberately: both are finance surfaces reached by a seat that is
+ * not the bursar, and both exist so that seat never needs the ability that opens the whole finance
+ * area. The file itself carries the reasoning for the path and the gate.
+ */
+Route::middleware(['auth:sanctum', 'tenant', 'permission:finance.invoice.approve'])->group(function () {
+    require __DIR__.'/endpoints/internal-audit.php';
+});
+
 // Form teachers may record assessments when the school has no boarding
 // parents (enforced server-side in ResolvesAssessmentAccess).
 Route::middleware(['auth:sanctum', 'tenant', 'permission:assessment.record'])->group(function () {

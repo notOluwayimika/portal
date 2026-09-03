@@ -510,6 +510,12 @@
         "tenant",
         "permission:admin_area.access"
     ],
+    "GET /api/internal-audit/invoices/pending": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:finance.invoice.approve"
+    ],
     "GET /api/key-stage-coordinator/students": [
         "api",
         "auth:sanctum",
@@ -1539,6 +1545,12 @@
         "auth:sanctum",
         "tenant",
         "permission:admin_area.access"
+    ],
+    "POST /api/internal-audit/invoices/approve": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:finance.invoice.approve"
     ],
     "POST /api/login": [
         "api"

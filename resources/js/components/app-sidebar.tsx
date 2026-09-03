@@ -41,6 +41,7 @@ import {
     SidebarSeparator,
 } from '@/components/ui/sidebar';
 import { usePermissions } from '@/hooks/use-permissions';
+import { activityLogNavGroup } from '@/lib/activity-log-nav';
 import { internalAuditNavGroup } from '@/lib/internal-audit-nav';
 import { dashboard } from '@/routes';
 import type { NavGroup, NavItem, User } from '@/types';
@@ -191,7 +192,13 @@ const principalNavGroups: NavGroup[] = [
     },
 ];
 
-const adminNavGroups: NavGroup[] = [
+/**
+ * EXPORTED for `activity-log-nav.test.ts`, which asserts the Activity Log entry appears EXACTLY
+ * ONCE across the assembled sidebar. It was MOVED out of this array into `activityLogNavGroup`, and
+ * a re-add here would give an admin the item twice — a duplicate is the failure mode a move has and
+ * a copy does not, so it is worth a test rather than a memory.
+ */
+export const adminNavGroups: NavGroup[] = [
     {
         label: 'People',
         items: [
@@ -284,16 +291,6 @@ const adminNavGroups: NavGroup[] = [
                 title: 'Broadsheets',
                 href: '/reports/broadsheets',
                 icon: FileSpreadsheet,
-            },
-        ],
-    },
-    {
-        label: 'System',
-        items: [
-            {
-                title: 'Activity Log',
-                href: '/activity-logs',
-                icon: History,
             },
         ],
     },
@@ -587,6 +584,20 @@ export function AppSidebar() {
         // It is the same trap, one layer up, that put the ROUTE in its own top-level group rather
         // than inside the finance group in routes/api.php and routes/web.php: a narrow grant is
         // void the moment it sits under a wider gate the holder does not satisfy.
+        // THE AUDIT FEED — its own group, OUTSIDE `can('admin_area.access')` above, and gated on
+        // the same ability its route now carries.
+        //
+        // It used to be the sole item of `adminNavGroups`' System group, which is pushed behind
+        // admin_area.access — an ability `internal_auditor` does not hold. So the one seat that
+        // exists to read the audit log could not see the entry, while every admin could. Moved, not
+        // copied: the System group was pruned from that array entirely, because Activity Log was
+        // its only item and an empty group is a heading with nothing under it.
+        const auditLogGroup = activityLogNavGroup(can);
+
+        if (auditLogGroup !== null) {
+            groups.push(auditLogGroup);
+        }
+
         // The group itself is `internalAuditNavGroup` in @/lib/internal-audit-nav, extracted so the
         // gate can be asserted without a DOM — vitest runs in node, and the sidebar's assembly
         // reads Inertia page props. WHERE IT IS CALLED FROM is the part that cannot be extracted,

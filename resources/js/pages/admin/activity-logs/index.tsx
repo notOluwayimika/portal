@@ -21,13 +21,10 @@ import type {
     Pagination,
 } from '@/components/activity-logs/types';
 import { Button } from '@/components/ui/button';
-import {
-    Card,
-    CardContent,
-    CardHeader,
-    CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { usePermissions } from '@/hooks/use-permissions';
+import { activityLogCapabilities } from '@/lib/activity-log-capabilities';
 
 const PER_PAGE = 25;
 
@@ -36,14 +33,12 @@ export default function ActivityLogIndex() {
         auth: { roles?: string[] };
         initialActivityId?: string;
     }>();
-    const roles = page.props.auth?.roles ?? [];
-    const capabilities: ActivityCapabilities = {
-        canViewSystem: roles.includes('super_admin'),
-        canExport:
-            roles.includes('admin') ||
-            roles.includes('head_of_school') ||
-            roles.includes('super_admin'),
-    };
+    // DERIVED FROM PERMISSIONS, NEVER FROM ROLE NAMES — the rule is stated once, for the whole
+    // object, in `activityLogCapabilities`. `canExport` had already drifted: it listed three role
+    // names and omitted `internal_auditor`, which holds `activity_log.export`, so the seat that
+    // exists to export this log could not see the button.
+    const { can } = usePermissions();
+    const capabilities: ActivityCapabilities = activityLogCapabilities(can);
 
     const [items, setItems] = useState<ActivityItem[]>([]);
     const [pagination, setPagination] = useState<Pagination | null>(null);
@@ -71,20 +66,28 @@ export default function ActivityLogIndex() {
 
     const fetchPage = useCallback(
         async (pageNum: number, append: boolean) => {
-            append ? setLoadingMore(true) : setLoading(true);
+            // PRE-EXISTING lint error, fixed because this file is now a CHANGED file and
+            // bin/lint-changed.sh only inspects those — a ternary used as a statement
+            // (@typescript-eslint/no-unused-expressions). Same behaviour, as a statement.
+            if (append) {
+                setLoadingMore(true);
+            } else {
+                setLoading(true);
+            }
+
             try {
                 const res = await axios.get<{
                     data: ActivityItem[];
                     pagination: Pagination;
                 }>('/api/activity-logs', { params: buildParams(pageNum) });
                 setItems((prev) =>
-                    append
-                        ? [...prev, ...res.data.data]
-                        : res.data.data,
+                    append ? [...prev, ...res.data.data] : res.data.data,
                 );
                 setPagination(res.data.pagination);
             } catch {
-                if (!append) setItems([]);
+                if (!append) {
+                    setItems([]);
+                }
             } finally {
                 setLoading(false);
                 setLoadingMore(false);
@@ -95,10 +98,16 @@ export default function ActivityLogIndex() {
 
     // Debounced refetch whenever filters change.
     useEffect(() => {
-        if (debounced.current) clearTimeout(debounced.current);
+        if (debounced.current) {
+            clearTimeout(debounced.current);
+        }
+
         debounced.current = setTimeout(() => fetchPage(1, false), 300);
+
         return () => {
-            if (debounced.current) clearTimeout(debounced.current);
+            if (debounced.current) {
+                clearTimeout(debounced.current);
+            }
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [filters]);
@@ -127,6 +136,7 @@ export default function ActivityLogIndex() {
             }
         };
         window.addEventListener('keydown', onKey);
+
         return () => window.removeEventListener('keydown', onKey);
     }, []);
 
@@ -153,7 +163,11 @@ export default function ActivityLogIndex() {
 
     const savePreset = async () => {
         const name = window.prompt('Name this filter preset');
-        if (!name) return;
+
+        if (!name) {
+            return;
+        }
+
         await axios.post('/api/activity-logs/saved-filters', {
             name,
             filters,
@@ -165,7 +179,6 @@ export default function ActivityLogIndex() {
             <Head title="Activity Log" />
             <div className="min-h-screen bg-[#f5f7fb] px-4 py-5 sm:px-6 lg:px-8 dark:bg-background">
                 <div className="mx-auto max-w-7xl space-y-5">
-
                     {/* ── Hero header ─────────────────────────────────────────── */}
                     <div className="relative overflow-hidden rounded-2xl border border-white bg-white px-6 py-4 shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:border-white/5 dark:bg-card">
                         <div className="flex items-center justify-between gap-4">
@@ -186,7 +199,12 @@ export default function ActivityLogIndex() {
                                 </div>
                             </div>
                             {capabilities.canExport && (
-                                <Button asChild variant="outline" size="sm" className="shrink-0 rounded-lg border-slate-200 font-semibold">
+                                <Button
+                                    asChild
+                                    variant="outline"
+                                    size="sm"
+                                    className="shrink-0 rounded-lg border-slate-200 font-semibold"
+                                >
                                     <a href={exportUrl}>
                                         <Download className="mr-1.5 h-4 w-4" />
                                         Export
@@ -205,7 +223,9 @@ export default function ActivityLogIndex() {
                             onClick={() =>
                                 setFilters((f) => ({
                                     ...f,
-                                    date_from: new Date().toISOString().slice(0, 10),
+                                    date_from: new Date()
+                                        .toISOString()
+                                        .slice(0, 10),
                                 }))
                             }
                         />
@@ -221,7 +241,10 @@ export default function ActivityLogIndex() {
                             tone="danger"
                             badge={stats && stats.critical_7d > 0 ? '!' : null}
                             onClick={() =>
-                                setFilters((f) => ({ ...f, severity: ['critical'] }))
+                                setFilters((f) => ({
+                                    ...f,
+                                    severity: ['critical'],
+                                }))
                             }
                         />
                         <ActivityStatCard
@@ -255,16 +278,22 @@ export default function ActivityLogIndex() {
                                 </CardTitle>
                                 {pagination && (
                                     <span className="text-xs text-muted-foreground">
-                                        {pagination.total.toLocaleString()} event{pagination.total === 1 ? '' : 's'}
+                                        {pagination.total.toLocaleString()}{' '}
+                                        event{pagination.total === 1 ? '' : 's'}
                                     </span>
                                 )}
                             </CardHeader>
                             <CardContent className="p-4">
                                 {loading ? (
                                     <div className="space-y-3">
-                                        {Array.from({ length: 6 }).map((_, i) => (
-                                            <Skeleton key={i} className="h-16 w-full rounded-lg" />
-                                        ))}
+                                        {Array.from({ length: 6 }).map(
+                                            (_, i) => (
+                                                <Skeleton
+                                                    key={i}
+                                                    className="h-16 w-full rounded-lg"
+                                                />
+                                            ),
+                                        )}
                                     </div>
                                 ) : items.length === 0 ? (
                                     <div className="py-10 text-center">
@@ -273,7 +302,8 @@ export default function ActivityLogIndex() {
                                             No activity matches your filters.
                                         </p>
                                         <p className="mt-1 text-sm text-muted-foreground">
-                                            Try widening your date range or clearing some filters.
+                                            Try widening your date range or
+                                            clearing some filters.
                                         </p>
                                         <Button
                                             variant="outline"
@@ -286,18 +316,31 @@ export default function ActivityLogIndex() {
                                     </div>
                                 ) : (
                                     <>
-                                        <ActivityTimeline items={items} onOpen={setOpenId} />
-                                        {pagination && pagination.current_page < pagination.last_page && (
-                                            <div className="mt-5 text-center">
-                                                <Button
-                                                    variant="outline"
-                                                    disabled={loadingMore}
-                                                    onClick={() => fetchPage(pagination.current_page + 1, true)}
-                                                >
-                                                    {loadingMore ? 'Loading…' : 'Load more'}
-                                                </Button>
-                                            </div>
-                                        )}
+                                        <ActivityTimeline
+                                            items={items}
+                                            onOpen={setOpenId}
+                                        />
+                                        {pagination &&
+                                            pagination.current_page <
+                                                pagination.last_page && (
+                                                <div className="mt-5 text-center">
+                                                    <Button
+                                                        variant="outline"
+                                                        disabled={loadingMore}
+                                                        onClick={() =>
+                                                            fetchPage(
+                                                                pagination.current_page +
+                                                                    1,
+                                                                true,
+                                                            )
+                                                        }
+                                                    >
+                                                        {loadingMore
+                                                            ? 'Loading…'
+                                                            : 'Load more'}
+                                                    </Button>
+                                                </div>
+                                            )}
                                     </>
                                 )}
                             </CardContent>

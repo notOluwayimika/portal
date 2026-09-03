@@ -787,16 +787,6 @@ Route::middleware(['auth', 'tenant', 'permission:admin_area.access'])->group(fun
         return Inertia::render('admin/notices/index');
     })->name('notices.index');
 
-    // Activity log (read-only audit feed). Per-action access is gated by
-    // activity_log.* permissions in the API layer.
-    Route::get('activity-logs', function () {
-        return Inertia::render('admin/activity-logs/index');
-    })->name('activity-logs.index');
-
-    Route::get('activity-logs/{id}', function (string $id) {
-        return Inertia::render('admin/activity-logs/index', ['initialActivityId' => $id]);
-    })->whereNumber('id')->name('activity-logs.show');
-
     // Notification queue health. The page itself renders for anyone who can
     // reach this group; its DATA endpoint is gated on `activity_log.view_system`
     // (see NotificationQueueHealthController for why that permission is reused
@@ -1013,6 +1003,43 @@ Route::middleware(['auth', 'tenant', 'permission:dashboard.view'])->group(functi
  * The groups in this file are FLAT, so position carries no gate — this is deliberately its own
  * declaration, gated on exactly the ability the two API routes behind it require.
  */
+/*
+ * THE AUDIT FEED'S PAGE — moved out of the `admin_area.access` group and gated on the permission
+ * the feed itself keys on.
+ *
+ * WHY NOT `admin_area.access`, which it sat behind until now: that grants a whole AREA to solve one
+ * page, and everything later placed in that area inherits the grant silently, with no review event
+ * attached. `internal_auditor` — the one seat that exists to read this log — does not hold it, and
+ * granting it would widen an audit-only seat into the admin working area. The ruling and its
+ * reasoning are in docs/handoff/tickets/audit-seat-has-the-ability-and-no-way-to-reach-it.md.
+ *
+ * WHY `activity_log.view_all` AND NOT `activity_log.view`: `teacher` holds `view`, so that gate
+ * would put the school-wide audit feed in front of every teacher — the same unreviewed widening as
+ * admin_area.access, pointing the other way. `view_all` is the permission
+ * ActivityLogQueryService::baseQuery uses at :55 to choose between own-rows-only and all-rows, so
+ * the GATE AND THE QUERY NOW KEY ON THE SAME FACT: a viewer without it has nothing on this page but
+ * their own trail. That is the property admin_area.access never had.
+ *
+ * WHO THIS CHANGES, measured rather than assumed: admin keeps it, head_of_school and
+ * internal_auditor GAIN it, nobody loses it. head_of_school gaining it is decided and not
+ * incidental — it already holds view_all and can fetch the same rows from the API today, so this
+ * widens the AFFORDANCE, not the authority.
+ *
+ * The page's own data comes from /api/activity-logs/*, which is gated on `activity_log.view` in its
+ * own group — the one in routes/api.php that requires routes/endpoints/activity-log.php — so the
+ * feed populates for every seat this route now admits. Named by what the group REQUIRES rather than
+ * by a line number, because a line number here is one insertion away from pointing at a neighbour.
+ */
+Route::middleware(['auth', 'tenant', 'permission:activity_log.view_all'])->group(function () {
+    Route::get('activity-logs', function () {
+        return Inertia::render('admin/activity-logs/index');
+    })->name('activity-logs.index');
+
+    Route::get('activity-logs/{id}', function (string $id) {
+        return Inertia::render('admin/activity-logs/index', ['initialActivityId' => $id]);
+    })->whereNumber('id')->name('activity-logs.show');
+});
+
 Route::middleware(['auth', 'tenant', 'permission:finance.invoice.approve'])->group(function () {
     Route::get('internal-audit/review-queue', fn () => Inertia::render('admin/internal-audit/review-queue'))
         ->name('internal-audit.review-queue');

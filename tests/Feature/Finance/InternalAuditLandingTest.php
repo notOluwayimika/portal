@@ -82,6 +82,56 @@ it('e — the internal auditor reaches the page', function () {
         ->assertOk();
 });
 
+// ── THE AUDIT FEED'S PAGE — regated off admin_area.access ────────────────────
+
+it('the internal auditor reaches the activity log page', function () {
+    // THE DEFECT THIS CLOSES: the page sat behind admin_area.access, which this seat does not hold,
+    // so the one seat that exists to read the audit log could not open it — while the API that
+    // feeds the page admitted it the whole time.
+    $school = School::factory()->create();
+    $auditor = ial_seat($school, 'internal_auditor');
+
+    $this->actingAs($auditor)->withSession(['school_id' => $school->id])
+        ->get('/activity-logs')
+        ->assertOk();
+});
+
+it('a seat holding activity_log.view but NOT view_all is refused the activity log page', function () {
+    // `teacher` holds `activity_log.view` and `view_own`, not `view_all`. It is the discriminating
+    // seat: a refusal here cannot be "the user holds nothing", and gating on `view` instead would
+    // have put the school-wide feed in front of every teacher.
+    $school = School::factory()->create();
+    $teacher = ial_seat($school, 'teacher');
+
+    [$view, $viewAll] = ActiveSchool::runFor($school->id, fn () => [
+        $teacher->can('activity_log.view'),
+        $teacher->can('activity_log.view_all'),
+    ]);
+    expect($view)->toBeTrue()->and($viewAll)->toBeFalse();
+
+    $response = $this->actingAs($teacher)->withSession(['school_id' => $school->id])
+        ->getJson('/activity-logs')
+        ->assertForbidden();
+
+    // Non-empty: a bare abort reaches the client as {"message": ""}.
+    expect($response->json('message'))->not->toBeNull()->not->toBe('');
+});
+
+it('admin keeps the activity log page, and head_of_school gains it', function () {
+    // NOBODY LOSES IT — measured, not assumed. admin holds view_all as well as admin_area.access,
+    // so the regate takes nothing away; head_of_school gaining it is the decided case, and it is
+    // affordance rather than authority because that seat can already fetch the same rows.
+    $school = School::factory()->create();
+
+    foreach (['admin', 'head_of_school'] as $role) {
+        $user = ial_seat($school, $role);
+
+        $this->actingAs($user)->withSession(['school_id' => $school->id])
+            ->get('/activity-logs')
+            ->assertOk();
+    }
+});
+
 // ── (f) THE LOGIN LANDING ────────────────────────────────────────────────────
 
 it('f — a cold login sends internal_auditor to the review queue', function () {

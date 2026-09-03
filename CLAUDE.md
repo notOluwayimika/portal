@@ -382,6 +382,22 @@ one level up, to the premise rather than to the result.
   **necessary**, never that the key contains nothing else. Completeness is established
   by reading the predicate list, not by mutation — a seventh filter hiding in a query
   makes a derived set silently narrower while every existing arm stays green.
+- **AN ERROR IS A RED. Any summary that separates the two buckets undercounts unless it ADDS
+  them.** Pest reports `failures` and `errors` separately, and a guard that kills by THROWING —
+  which is how most guards kill — files as an error. So a summariser reading `failures` alone
+  disagrees with reality for exactly the controls most likely to be guards.
+
+  **Three instances, and the third was in a report about the first two.** A mutation-testing
+  summariser reported a silent-drop guard's mutant as SURVIVING while the guard was raising a
+  `RuntimeException`. Re-run mutations "killed as errors" and were invisible under the same reader.
+  Then a hand-written summary of a suite run said *"six red"* where the run was 2 failures + 7
+  errors = **nine** — and the split offered in the same sentence (five and two) reconciled to
+  nothing.
+
+  It is not a discipline problem, it is an arithmetic one: the tooling hands you two numbers and the
+  answer is their sum. Every summariser in this repo adds them; every count quoted in prose must
+  too. **Re-derive from the run, never from the previous sentence.**
+
 - **A test proves the property it NAMES only if the fixture makes that property the
   SOLE explanation for the pass.** The recurring failure is not a wrong assertion —
   it is a fixture whose degrees of freedom have collapsed until a wrong

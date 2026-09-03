@@ -1519,6 +1519,12 @@
             "super_admin"
         ]
     },
+    "GET /internal-audit/review-queue": {
+        "auth": true,
+        "roles": [
+            "internal_auditor"
+        ]
+    },
     "GET /key-stage-coordinator/comments": {
         "auth": true,
         "roles": [

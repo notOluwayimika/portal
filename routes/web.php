@@ -996,6 +996,28 @@ Route::middleware(['auth', 'tenant', 'permission:dashboard.view'])->group(functi
     Route::get('dashboard/onboarding', [DashboardController::class, 'onboardingState'])->name('dashboard.onboarding');
 });
 
+/*
+ * INTERNAL AUDIT'S REVIEW QUEUE — the page the audit seat lands on.
+ *
+ * ITS OWN TOP-LEVEL GROUP, gated on `finance.invoice.approve`, and outside BOTH of the groups it
+ * might plausibly have been put in:
+ *
+ *   NOT `permission:finance.access` (:159) — that opens the entire admin finance area, and
+ *   `internal_auditor` holds exactly one finance ability. Putting the page there would mean
+ *   granting the audit seat the whole bursar's desk to let it see one queue.
+ *
+ *   NOT `permission:admin_area.access` (:703) — the ruling in
+ *   docs/handoff/tickets/audit-seat-has-the-ability-and-no-way-to-reach-it.md: granting a whole
+ *   area to solve one page means everything later placed in that area inherits it silently.
+ *
+ * The groups in this file are FLAT, so position carries no gate — this is deliberately its own
+ * declaration, gated on exactly the ability the two API routes behind it require.
+ */
+Route::middleware(['auth', 'tenant', 'permission:finance.invoice.approve'])->group(function () {
+    Route::get('internal-audit/review-queue', fn () => Inertia::render('admin/internal-audit/review-queue'))
+        ->name('internal-audit.review-queue');
+});
+
 Route::middleware(['auth', 'tenant', 'permission:result_signature.manage'])->group(function () {
     Route::get('/result-signature', [ResultSignatureController::class, 'edit'])->name('result-signature.edit');
     Route::post('/result-signature', [ResultSignatureController::class, 'update'])->name('result-signature.update');

@@ -926,6 +926,12 @@
         "tenant",
         "permission:manage_head_of_school_comments"
     ],
+    "GET /internal-audit/review-queue": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:finance.invoice.approve"
+    ],
     "GET /key-stage-coordinator/comments": [
         "web",
         "auth",

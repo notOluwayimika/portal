@@ -810,6 +810,12 @@
             "super_admin"
         ]
     },
+    "GET /api/internal-audit/invoices/pending": {
+        "auth": true,
+        "roles": [
+            "internal_auditor"
+        ]
+    },
     "GET /api/key-stage-coordinator/students": {
         "auth": true,
         "roles": [
@@ -2645,6 +2651,12 @@
         "roles": [
             "admin",
             "super_admin"
+        ]
+    },
+    "POST /api/internal-audit/invoices/approve": {
+        "auth": true,
+        "roles": [
+            "internal_auditor"
         ]
     },
     "POST /api/login": {

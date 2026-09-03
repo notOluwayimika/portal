@@ -22,6 +22,7 @@ use App\Models\StudentCurriculum;
 use App\Models\StudentSubject;
 use App\Models\Subject;
 use App\Models\Term;
+use App\Services\Rollover\RolloverPlanner;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 
@@ -586,4 +587,387 @@ it('refuses a target session belonging to another school', function () {
 
     expect(StudentCurriculum::where('student_id', $student->id)->count())->toBe(1);
     expect($source->fresh()->status)->toBe('active');
+});
+
+// ---------------------------------------------------------------------------
+// SUBJECT INHERITANCE ACROSS THE YEAR BOUNDARY
+//
+// The destination is created bare by NextYearPlacementResolver, so before this fix every pupil
+// promoted into a freshly-rolled session landed subject-less. The seeding source is the SAME LEVEL
+// in the CLOSING session — 2025/26 Year 12 seeds 2026/27 Year 12 — which is why the lookup keys on
+// the DESTINATION's class_level_arm_id, not the source curriculum's.
+// ---------------------------------------------------------------------------
+
+/**
+ * Last year's instance of a Y12 arm: the row the destination must inherit from.
+ *
+ * Deliberately built with a MIXED compulsory/optional set. A set that is entirely compulsory cannot
+ * tell "the destination inherited the subject list" from "the pupil was attached everything", and a
+ * set of one cannot tell an inherited display_order from a default.
+ *
+ * @param  list<array{name: string, compulsory: bool, order: int}>  $subjects
+ */
+function mny_priorYear(array $w, string $armLabel, array $subjects, ?ExamType $examType = null, bool $isCcm = false): Curriculum
+{
+    $prior = Curriculum::create([
+        'school_id' => $w['school']->id,
+        // The CLOSING session's term — the same term the source curriculum sits in.
+        'term_id' => $w['sourceTerm']->id,
+        'class_level_arm_id' => $w['y12Arms'][$armLabel]->id,
+        'exam_type_id' => ($examType ?? $w['waec'])->id,
+        'status' => 'closed',
+        'is_ccm' => $isCcm,
+        'min_subjects' => 1,
+    ]);
+
+    foreach ($subjects as $spec) {
+        CurriculumSubject::create([
+            'curriculum_id' => $prior->id,
+            'subject_id' => Subject::create(['school_id' => $w['school']->id, 'name' => $spec['name']])->id,
+            'is_compulsory' => $spec['compulsory'],
+            'display_order' => $spec['order'],
+            'active' => $spec['active'] ?? true,
+        ]);
+    }
+
+    return $prior;
+}
+
+/** The subject NAMES on a curriculum, sorted — an identity, not a count. */
+function mny_subjectNames(Curriculum $curriculum): array
+{
+    return CurriculumSubject::where('curriculum_id', $curriculum->id)
+        ->with('subject')
+        ->get()
+        ->map(fn (CurriculumSubject $cs) => $cs->subject->name)
+        ->sort()
+        ->values()
+        ->all();
+}
+
+it('seeds the destination from the closing sessions curriculum for the SAME level', function () {
+    // THE REPRODUCTION, in its fixed direction. Before the fix the destination held zero
+    // curriculum_subjects and the pupil landed with zero student_subjects.
+    $w = mny_world();
+    $prior = mny_priorYear($w, 'B', [
+        ['name' => 'Physics', 'compulsory' => true, 'order' => 1],
+        ['name' => 'Chemistry', 'compulsory' => true, 'order' => 2],
+        ['name' => 'Further Maths', 'compulsory' => false, 'order' => 3],
+    ]);
+
+    $source = mny_source($w, 'B');
+    [$student] = mny_enroll($w, $source);
+
+    mny_run($w, $source);
+
+    $landed = mny_landed($w, $student);
+    $destination = $landed->curriculum;
+
+    // A DIFFERENT ROW from the prior year's — inherited, not reused.
+    expect($destination->id)->not->toBe($prior->id);
+    expect((int) $destination->term_id)->not->toBe((int) $prior->term_id);
+
+    // EQUALS the prior set, not merely "non-empty".
+    expect(mny_subjectNames($destination))->toBe(['Chemistry', 'Further Maths', 'Physics']);
+    expect(mny_subjectNames($destination))->toBe(mny_subjectNames($prior));
+
+    // The per-subject attributes carried, not just the subject ids.
+    $chemistry = CurriculumSubject::where('curriculum_id', $destination->id)
+        ->whereHas('subject', fn ($q) => $q->where('name', 'Chemistry'))->first();
+    expect($chemistry->is_compulsory)->toBeTrue();
+    expect($chemistry->display_order)->toBe(2);
+
+    $further = CurriculumSubject::where('curriculum_id', $destination->id)
+        ->whereHas('subject', fn ($q) => $q->where('name', 'Further Maths'))->first();
+    expect($further->is_compulsory)->toBeFalse();
+
+    // Each cloned subject gets its own draft result status, as the end-of-term clone does.
+    expect($chemistry->resultStatus)->not->toBeNull();
+    expect($chemistry->resultStatus->status)->toBe('draft');
+
+    // THE PUPIL: the COMPULSORY ones only. The optional subject in the fixture is what makes this an
+    // assertion about compulsory-attach rather than about attach-everything.
+    $attached = StudentSubject::where('student_curriculum_id', $landed->id)
+        ->get()->map(fn ($s) => $s->curriculumSubject->subject->name)->sort()->values()->all();
+    expect($attached)->toBe(['Chemistry', 'Physics']);
+
+    // And the schemes stayed RESOLVED from the target level — seeding carries subjects, never schemes.
+    expect($destination->grading_scheme_id)->toBe($w['y12']->grading_scheme_id);
+    expect($destination->marking_scheme_id)->toBe($prior->marking_scheme_id);
+});
+
+it('leaves the destination subject-less when the closing session has no curriculum for that level', function () {
+    // THE NEGATIVE, UNCHANGED. First year of operation, or a genuinely new level: today's behaviour
+    // must survive, and must not become an error.
+    $w = mny_world();
+    $source = mny_source($w, 'B');
+    [$student] = mny_enroll($w, $source);
+
+    mny_run($w, $source);
+
+    $landed = mny_landed($w, $student);
+    expect($landed)->not->toBeNull();
+    expect(CurriculumSubject::where('curriculum_id', $landed->curriculum_id)->count())->toBe(0);
+    expect(StudentSubject::where('student_curriculum_id', $landed->id)->count())->toBe(0);
+
+    // The pupil WAS placed — a subject-less landing is not an unresolved one, so the source closes.
+    expect($source->fresh()->status)->toBe('closed');
+
+    // And the pre-flight warning that flags exactly this still fires.
+    $plan = app(RolloverPlanner::class)
+        ->planEndOfYear($w['sourceSession'], $w['targetSession']);
+    expect($plan->placement->advancers->every(fn ($g) => $g->destinationIsUnconfigured()))->toBeTrue();
+});
+
+it('does not seed from a DIFFERENT level, exam type or is_ccm in the closing session', function () {
+    // THE LOOKUP KEY, pinned on every axis it claims to match. Each decoy below sits in the closing
+    // session and would be picked up by a lookup that dropped one key — so this fails in three
+    // distinguishable ways rather than passing because the one axis under test happened to hold.
+    $w = mny_world();
+
+    // Decoy 1: a DIFFERENT class level entirely (Y11 arm S), same session. Wrong class_level_arm_id.
+    // Not Y11 B: that is the source curriculum's own key, and colliding on it proves nothing.
+    Curriculum::create([
+        'school_id' => $w['school']->id, 'term_id' => $w['sourceTerm']->id,
+        'class_level_arm_id' => $w['y11Arms']['S']->id, 'exam_type_id' => $w['waec']->id,
+        'status' => 'closed', 'is_ccm' => false, 'min_subjects' => 1,
+    ])->curriculumSubjects()->create([
+        'subject_id' => Subject::create(['school_id' => $w['school']->id, 'name' => 'Y11 Only'])->id,
+        'is_compulsory' => true,
+    ]);
+
+    // Decoy 2: the right level and session, the WRONG exam type.
+    mny_priorYear($w, 'B', [['name' => 'BSS Only', 'compulsory' => true, 'order' => 1]], $w['bss']);
+
+    // Decoy 3: the right level and session, but CCM.
+    mny_priorYear($w, 'B', [['name' => 'CCM Only', 'compulsory' => true, 'order' => 1]], null, true);
+
+    $source = mny_source($w, 'B');
+    [$student] = mny_enroll($w, $source);
+
+    mny_run($w, $source);
+
+    $destination = mny_landed($w, $student)->curriculum;
+    // The destination is non-CCM WAEC Y12B; none of the three decoys matches all four keys.
+    expect(mny_subjectNames($destination))->toBe([]);
+});
+
+it('seeds from the LATEST term of the closing session, deterministically', function () {
+    // Subjects are consistent across a session's terms for a level, but the rule must still be a
+    // rule: two candidate terms, different sets, and the later one wins every run.
+    $w = mny_world();
+    $earlyTerm = mny_term($w['sourceSession'], 1, TermStatusEnum::COMPLETED->value);
+
+    Curriculum::create([
+        'school_id' => $w['school']->id, 'term_id' => $earlyTerm->id,
+        'class_level_arm_id' => $w['y12Arms']['B']->id, 'exam_type_id' => $w['waec']->id,
+        'status' => 'closed', 'is_ccm' => false, 'min_subjects' => 1,
+    ])->curriculumSubjects()->create([
+        'subject_id' => Subject::create(['school_id' => $w['school']->id, 'name' => 'Term One Subject'])->id,
+        'is_compulsory' => true,
+    ]);
+
+    // sourceTerm is order 3 — the LATEST term of the closing session.
+    mny_priorYear($w, 'B', [['name' => 'Term Three Subject', 'compulsory' => true, 'order' => 1]]);
+
+    $source = mny_source($w, 'B');
+    [$student] = mny_enroll($w, $source);
+
+    mny_run($w, $source);
+
+    expect(mny_subjectNames(mny_landed($w, $student)->curriculum))->toBe(['Term Three Subject']);
+});
+
+it('never clobbers a destination an operator has already configured', function () {
+    // REPAIR ONLY WHILE UNUSED, the same discipline as MoveFromTermJob::canAdoptSourceSchemes. A
+    // hand-edited destination is the state this fix must be safest around: the operator has already
+    // said what next year teaches.
+    $w = mny_world();
+    mny_priorYear($w, 'B', [
+        ['name' => 'Physics', 'compulsory' => true, 'order' => 1],
+        ['name' => 'Chemistry', 'compulsory' => true, 'order' => 2],
+    ]);
+
+    $source = mny_source($w, 'B');
+    [$student] = mny_enroll($w, $source);
+
+    // The operator built next year's Y12B by hand first, with a DIFFERENT set.
+    $targetTerm = Term::withoutGlobalScope(SchoolScope::class)
+        ->where('academic_session_id', $w['targetSession']->id)->where('order', 1)->first();
+    $destination = Curriculum::create([
+        'school_id' => $w['school']->id, 'term_id' => $targetTerm->id,
+        'class_level_arm_id' => $w['y12Arms']['B']->id, 'exam_type_id' => $w['waec']->id,
+        'status' => 'active', 'is_ccm' => false, 'min_subjects' => 1,
+    ]);
+    $destination->curriculumSubjects()->create([
+        'subject_id' => Subject::create(['school_id' => $w['school']->id, 'name' => 'Economics'])->id,
+        'is_compulsory' => true,
+        'display_order' => 1,
+    ]);
+
+    mny_run($w, $source);
+
+    // Untouched: the operator's single subject, and NOT the prior year's two.
+    expect(mny_landed($w, $student)->curriculum_id)->toBe($destination->id);
+    expect(mny_subjectNames($destination))->toBe(['Economics']);
+});
+
+it('is idempotent — a re-run seeds one set, not two', function () {
+    $w = mny_world(['y12Strategy' => 'explicit_only']);
+    mny_priorYear($w, 'P', [
+        ['name' => 'Physics', 'compulsory' => true, 'order' => 1],
+        ['name' => 'Chemistry', 'compulsory' => true, 'order' => 2],
+    ]);
+
+    ClassLevelArmProgression::forceCreate([
+        'school_id' => $w['school']->id,
+        'source_class_level_arm_id' => $w['y11Arms']['H']->id,
+        'target_class_level_arm_id' => $w['y12Arms']['P']->id,
+    ]);
+
+    $source = mny_source($w, 'H');
+    [$student] = mny_enroll($w, $source);
+
+    mny_run($w, $source);
+    $destination = mny_landed($w, $student)->curriculum;
+    expect(mny_subjectNames($destination))->toBe(['Chemistry', 'Physics']);
+
+    // Re-open by hand to model a partial run, so the re-run reaches the body rather than stopping at
+    // the guard — the same honest scaffolding the anchor test above uses, and says so.
+    $source->update(['status' => 'active']);
+    mny_run($w, $source);
+
+    // ONE set, not two. The count is the assertion here because duplication is what it is about.
+    expect(CurriculumSubject::where('curriculum_id', $destination->id)->count())->toBe(2);
+    expect(mny_subjectNames($destination))->toBe(['Chemistry', 'Physics']);
+});
+
+it('seeds one set when two source arms are distributed onto one destination arm', function () {
+    // THE CONCURRENCY SHAPE, run sequentially: distribution points several source curricula at one
+    // destination, so two jobs reach the same empty destination. firstOrCreate per subject is what
+    // makes that converge; a bulk insert would double the set.
+    $w = mny_world(['y12Strategy' => 'explicit_only']);
+    mny_priorYear($w, 'P', [
+        ['name' => 'Physics', 'compulsory' => true, 'order' => 1],
+        ['name' => 'Chemistry', 'compulsory' => true, 'order' => 2],
+    ]);
+
+    // Both 11H and 11I map onto 12P.
+    foreach (['H', 'I'] as $label) {
+        ClassLevelArmProgression::forceCreate([
+            'school_id' => $w['school']->id,
+            'source_class_level_arm_id' => $w['y11Arms'][$label]->id,
+            'target_class_level_arm_id' => $w['y12Arms']['P']->id,
+        ]);
+    }
+
+    $sourceH = mny_source($w, 'H');
+    [$pupilH] = mny_enroll($w, $sourceH);
+    $sourceI = mny_source($w, 'I');
+    [$pupilI] = mny_enroll($w, $sourceI);
+
+    mny_run($w, $sourceH);
+    mny_run($w, $sourceI);
+
+    $destination = mny_landed($w, $pupilH)->curriculum;
+    // Same destination for both — otherwise this test is not about what it says it is.
+    expect(mny_landed($w, $pupilI)->curriculum_id)->toBe($destination->id);
+
+    expect(CurriculumSubject::where('curriculum_id', $destination->id)->count())->toBe(2);
+    // Both pupils got the compulsory set, and each subject exactly once.
+    foreach ([$pupilH, $pupilI] as $pupil) {
+        $landed = mny_landed($w, $pupil);
+        expect(StudentSubject::where('student_curriculum_id', $landed->id)->count())->toBe(2);
+    }
+});
+
+it('the PREVIEW creates no curriculum_subjects — only the commit does', function () {
+    // PREVIEW/COMMIT PARITY, asserted as a row count on the table the fix writes to. The resolver is
+    // shared between planner and job, so a seeding call placed inside it would make a registrar
+    // opening the screen build next year's curricula.
+    $w = mny_world();
+    mny_priorYear($w, 'B', [
+        ['name' => 'Physics', 'compulsory' => true, 'order' => 1],
+        ['name' => 'Chemistry', 'compulsory' => true, 'order' => 2],
+    ]);
+
+    $source = mny_source($w, 'B');
+    mny_enroll($w, $source);
+
+    $subjectsBefore = CurriculumSubject::count();
+    $curriculaBefore = Curriculum::withoutGlobalScope(SchoolScope::class)->count();
+
+    app(RolloverPlanner::class)
+        ->planEndOfYear($w['sourceSession'], $w['targetSession']);
+
+    // UNCHANGED by the preview — both the destination row and its subjects.
+    expect(CurriculumSubject::count())->toBe($subjectsBefore);
+    expect(Curriculum::withoutGlobalScope(SchoolScope::class)->count())->toBe($curriculaBefore);
+
+    mny_run($w, $source);
+
+    // CHANGED by the commit — so the assertion above is measuring something that can move.
+    expect(CurriculumSubject::count())->toBe($subjectsBefore + 2);
+});
+
+it('clones marking components on the legacy path and NOT on the scheme-backed one', function () {
+    // THE SCHEME SPLIT, mirroring MoveFromTermJob::cloneCurriculumSubjects exactly. Both arms in one
+    // test because the split is the behaviour — either alone reads as "components are/aren't copied".
+
+    // ── LEGACY: no marking scheme anywhere, no grading scheme on Y12 -> components copy.
+    $legacy = mny_world();
+    $priorLegacy = mny_priorYear($legacy, 'B', [['name' => 'Physics', 'compulsory' => true, 'order' => 1]]);
+    $priorLegacy->curriculumSubjects()->first()->markingComponents()->create([
+        'name' => 'Exam', 'weight' => 0.700, 'school_id' => $legacy['school']->id, 'is_ccm' => false,
+    ]);
+
+    $legacySource = mny_source($legacy, 'B');
+    [$legacyPupil] = mny_enroll($legacy, $legacySource);
+    mny_run($legacy, $legacySource);
+
+    $legacyDestination = mny_landed($legacy, $legacyPupil)->curriculum;
+    expect($legacyDestination->marking_scheme_id)->toBeNull();
+    expect($legacyDestination->usesCategoricalGrading())->toBeFalse();
+    $legacySubject = CurriculumSubject::where('curriculum_id', $legacyDestination->id)->first();
+    expect($legacySubject->markingComponents()->count())->toBe(1);
+    expect($legacySubject->markingComponents()->first()->name)->toBe('Exam');
+
+    // ── SCHEME-BACKED: an active marking scheme exists, so the destination resolves one and the
+    //    components come THROUGH the scheme rather than being copied per subject.
+    $backed = mny_world();
+    MarkingScheme::create(['school_id' => $backed['school']->id, 'is_ccm' => false, 'version' => 1, 'status' => 'active']);
+
+    $priorBacked = mny_priorYear($backed, 'B', [['name' => 'Physics', 'compulsory' => true, 'order' => 1]]);
+    $priorBacked->curriculumSubjects()->first()->markingComponents()->create([
+        'name' => 'Exam', 'weight' => 0.700, 'school_id' => $backed['school']->id, 'is_ccm' => false,
+    ]);
+
+    $backedSource = mny_source($backed, 'B');
+    [$backedPupil] = mny_enroll($backed, $backedSource);
+    mny_run($backed, $backedSource);
+
+    $backedDestination = mny_landed($backed, $backedPupil)->curriculum;
+    expect($backedDestination->marking_scheme_id)->not->toBeNull();
+    $backedSubject = CurriculumSubject::where('curriculum_id', $backedDestination->id)->first();
+    // The subject ROW cloned; its components did NOT.
+    expect($backedSubject->subject->name)->toBe('Physics');
+    expect($backedSubject->markingComponents()->count())->toBe(0);
+});
+
+it('seeds a held repeaters destination from their own levels closing-session curriculum', function () {
+    // Repeaters reach the destination through the identical path, so they land subject-less in
+    // exactly the same way — the resolver's own docblock says so. The seeding must cover them.
+    $w = mny_world();
+
+    // The repeater is held in Y11 B, so the prior instance is the SOURCE curriculum itself.
+    $source = mny_source($w, 'B');
+    [$repeater] = mny_enroll($w, $source, StudentStatusEnum::REPEATED->value);
+
+    mny_run($w, $source);
+
+    $held = mny_landed($w, $repeater);
+    expect($held->curriculum->class_level_arm_id)->toBe($w['y11Arms']['B']->id);
+    // mny_source gives the source curriculum one compulsory subject; next year's Y11 B inherits it.
+    expect(mny_subjectNames($held->curriculum))->toBe(mny_subjectNames($source));
+    expect(StudentSubject::where('student_curriculum_id', $held->id)->count())->toBe(1);
 });

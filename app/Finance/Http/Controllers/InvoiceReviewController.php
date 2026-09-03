@@ -35,6 +35,14 @@ use Illuminate\Http\Request;
  * and a duplicate field carrying the same number is a second spelling that can drift from the
  * first. What this docblock adds is that here it is LOAD-BEARING.
  *
+ * THE DAY A FILTER IS ADDED TO THIS QUERY, `total` SILENTLY BECOMES THE FILTERED SUBSET AND THE
+ * OMISSION DETECTOR NARROWS. It will still be a true number and still be called `total`, and
+ * nothing will fail. So one of two things must hold in the change that adds the filter: either the
+ * filter does not affect this count, or the separate unfiltered count arrives IN THAT SAME CHANGE.
+ * A filter that ships without one of those has silently replaced "everything awaiting review" with
+ * "everything awaiting review that matches what I happened to type", which is the reassuring
+ * direction.
+ *
  * ─── A BATCH THAT HALF-SUCCEEDS MUST NOT ANSWER "done" ──────────────────────────────────────────
  *
  * `approve()` returns a PER-INVOICE outcome, never a blanket success. A batch that releases four of

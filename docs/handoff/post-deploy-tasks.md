@@ -30,7 +30,56 @@ Every one-way step keeps a STOP-for-review before it. Nothing below is a big-ban
 
 Embedded in `phase1-deploy.md`; listed here so the inventory is complete.
 
-### THE DEPLOY HAS A DATE: **5 SEPTEMBER 2026**
+### ⚠️ SUPERSEDED — THE DATE IS OFF, PENDING A BROOKSTONE DIRECTIVE
+
+**As of 2026-09-03, 5 September (deploy) and 6 September (the read-half launch) are SUPERSEDED.
+Decision: Segun.** Brookstone have not given the directive, and neither date stands until they do.
+
+**THE DATE IS SUPERSEDED, NOT DELETED, AND EVERYTHING BELOW IT SURVIVES.** The reasoning for the
+deploy, the backfill-ordering trap and the 23-step sequence are unchanged and none of them was
+wrong — they were never arguments about *when*. What follows is struck through only in its dates.
+
+- **The sequence stands as written.** When a date is set, it is run from **step 0.1**, not resumed
+  part-way. The pending-migration list is measured ON THE DAY: this document records what was
+  pending when it was written, and carrying that forward is precisely the mistake step 0.2 exists to
+  stop. Everything else in it is date-independent.
+- **The three `⚑ UNVERIFIED` hosting commands are still owed** — the backup, the restore, and the
+  previous-release redeploy. They are worth filling in NOW rather than on the night, and the loss of
+  a date is the argument for doing it while there is time, not against it.
+
+---
+
+#### THE CONSTRAINT THAT MEANS THE DATE COULD NOT SIMPLY HAVE BEEN KEPT
+
+**Nobody in production holds `internal_auditor`.**
+
+Run the bulk invoicing behind this migration and the term's bills are created with
+`reviewed_at IS NULL` — correct, and exactly what the control is for — with **no seat able to
+release any of them**. Parents would open the portal and see nothing. The withhold gate would be
+working perfectly and the outcome would be indistinguishable from the portal being broken.
+
+That is not an argument against the control or against the sequence. It is a **precondition nobody
+had written down**: the release path needs a holder before the bills exist, and assigning one is a
+Brookstone decision about who in their organisation performs Internal Audit.
+
+**WHO MAY HOLD IT TEMPORARILY, AND WHO MAY NOT.** `finance.invoice.approve` is the checker side of a
+maker-checker pair whose maker is `finance.invoice.generate`, declared in
+`ApprovalAbility::MAKER_OVERRIDES` and enforced at grant time by `DutySeparation` — the grant is
+refused wholesale, not warned about.
+
+| Seat | May hold it | Why |
+| --- | --- | --- |
+| `admin` | **NO** | holds `finance.invoice.generate` — both sides on one role |
+| `accounts_officer` | **NO** | holds `finance.invoice.generate` — both sides on one role |
+| `head_of_school` | yes | holds neither side today |
+| `executive_director` | yes | holds neither side today |
+
+Re-derive that table before acting on it — it is read from `RbacSeeder::grantsMap()` as at this
+commit, and a grant map edit moves it.
+
+---
+
+### THE DEPLOY DATE THAT WAS SET: ~~5 SEPTEMBER 2026~~ (superseded, above)
 
 **Decided by Segun.** This is the "date of its own" Directive 1 of
 [`launch-split-decision-31-august.md`](launch-split-decision-31-august.md) said the deploy needed,
@@ -311,9 +360,13 @@ to skip its own early steps.
 `finance.invoice.reject` is deliberately not even declared, because a permission declared ahead of
 its code is the `pending_emitters` mistake the activity catalogue already carries twice.
 
-It ships **13 September with the payments half**. Until then a wrong bill is simply **not signed
-off** — it stays in the queue, invisible to the parent — and Finance is told directly. Brookstone
-has this in writing.
+**⚠️ THIS DEFERRAL IS WITHDRAWN (2026-09-03).** Approve-only was a compromise bought against the
+6th; the return path is now built IN FULL rather than deferred, because the reason for deferring it
+was a date that no longer exists.
+
+**PENDING BROOKSTONE, DO NOT RE-SEND:** they have been told the return path arrives 13 September.
+That note is now also pending their directive and must not be repeated until a date exists — a
+second date asserted while the first is withdrawn is worse than saying nothing.
 
 - [ ] **PRE-DEPLOY — EVERY SCHOOL MUST HAVE AT LEAST ONE ACTIVE BANK ACCOUNT, or its bursar
       cannot record a payment at all.** `2026_08_10_120000_finance_bank_account_foreign_keys`

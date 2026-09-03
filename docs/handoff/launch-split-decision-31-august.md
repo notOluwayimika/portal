@@ -1,5 +1,25 @@
 # The launch splits in two: read-only on 6 September, payments on 13 September
 
+> ## ⚠️ SUPERSEDED — BOTH DATES ARE OFF, AS OF 2026-09-03
+>
+> **5 September (deploy), 6 September (read-only) and 13 September (payments) are all superseded,
+> pending a Brookstone directive. Decision: Segun.**
+>
+> **THE SPLIT ITSELF IS NOT WITHDRAWN** — the reasoning below for shipping the read half before the
+> pay half is unchanged, and none of it was an argument about a calendar. What is withdrawn is the
+> dates.
+>
+> **Current state, and the only place it is recorded:**
+> [`post-deploy-tasks.md`](post-deploy-tasks.md) § Phase 0 — which also carries the deploy sequence,
+> the backfill-ordering trap, and the constraint that forced this (nobody in production holds
+> `internal_auditor`, so the bulk run would create bills no seat could release).
+>
+> **The sequence is deliberately NOT repeated here.** Two documents asserting different dates is how
+> the next reader gets the wrong one, and two copies of a runbook is the same failure with more
+> steps. One copy, one place.
+>
+> Directive 3's Friday gateway cutoff below is a date too, and is superseded with the rest.
+
 **Status:** decided 31 August 2026. **Decision:** Segun, as project lead, on a recommendation he
 asked me to make and then approved as written. **Directives 1-3 are his.**
 

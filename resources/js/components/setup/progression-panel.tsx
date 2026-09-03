@@ -293,10 +293,25 @@ export function ProgressionPanel({
                                     key={option.value}
                                     className="flex items-start gap-2 text-xs"
                                 >
+                                    {/*
+                                        accent-primary-600 paints the checked state through the
+                                        NATIVE control. Verified 2026-09-03 that nothing in this
+                                        project strips radio appearance — app.css carries no radio
+                                        rule, Tailwind v4's preflight leaves radios alone, and
+                                        @tailwindcss/forms is not installed — so accent-color
+                                        applies here rather than being inert.
+
+                                        value= must reach the element. It was omitted, so both
+                                        radios carried the DOM value "on"; React's controlled
+                                        behaviour survived that only because option.value is closed
+                                        over in onChange — the intended value living solely in the
+                                        handler.
+                                    */}
                                     <input
                                         type="radio"
                                         name="arm_distribution_strategy"
-                                        className="mt-0.5"
+                                        className="accent-primary-600 mt-0.5"
+                                        value={option.value}
                                         checked={strategy === option.value}
                                         onChange={() =>
                                             setStrategy(option.value)

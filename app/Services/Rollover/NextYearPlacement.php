@@ -90,6 +90,7 @@ final class NextYearPlacement
         public readonly ?array $curriculumKeys = null,
         public readonly ?Curriculum $curriculum = null,
         public readonly bool $destinationHasCompulsorySubjects = false,
+        public readonly bool $destinationWillInheritSubjects = false,
         public readonly ?int $mappedClassLevelId = null,
         public readonly ?int $termOrder = null,
     ) {}
@@ -131,6 +132,30 @@ final class NextYearPlacement
     public function destinationIsUnconfigured(): bool
     {
         return $this->resolved() && ! $this->destinationHasCompulsorySubjects;
+    }
+
+    /**
+     * Unconfigured AND nothing is going to fix it — the destination genuinely lands with no
+     * compulsory subjects, and no caller attaches any afterwards.
+     *
+     * ── THIS IS THE ONE THE RED WARNING AND THE ACKNOWLEDGMENT SET KEY ON ───────────────────────
+     * `destinationIsUnconfigured()` above stopped being the whole story when end-of-year gained
+     * subject inheritance: a destination with no subjects now gets last year's list for its own
+     * level at commit, so warning that it "will land empty" is false, and telling the operator to
+     * build it by hand actively steers them into the duplicate/orphan hazard — a prepared curriculum
+     * on the wrong slot, exam type or arm is one the job does not find, so it creates a second and
+     * orphans the prepared one.
+     *
+     * ── AND IT IS A CONJUNCTION, NOT "A PRIOR EXISTS" ──────────────────────────────────────────
+     * `destinationWillInheritSubjects` is resolved through the SAME lookup the job seeds on, which
+     * refuses to seed a destination holding ANY subject row. So a destination carrying one
+     * non-compulsory subject is unconfigured (no COMPULSORY ones), is NOT seeded (it is not empty),
+     * and therefore still lands empty — it stays in this set. Reading inheritance as "last year's
+     * curriculum exists" would have quietly promised that case an inheritance it never receives.
+     */
+    public function destinationWillLandEmpty(): bool
+    {
+        return $this->destinationIsUnconfigured() && ! $this->destinationWillInheritSubjects;
     }
 
     /**

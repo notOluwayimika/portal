@@ -58,6 +58,13 @@ final class PlacementGroup
          * FormRequest, one scope down.
          */
         public readonly bool $destinationHasCompulsorySubjects = false,
+        /**
+         * Whether end-of-year will SEED this destination from the same level's prior-session
+         * curriculum at commit. Carried from {@see NextYearPlacement} for the same reason as the
+         * field above — it is resolved through the very lookup the job seeds on, and re-deriving it
+         * here would be the second implementation that makes the screen able to lie.
+         */
+        public readonly bool $destinationWillInheritSubjects = false,
     ) {}
 
     public function pupilCount(): int
@@ -76,5 +83,22 @@ final class PlacementGroup
     public function destinationIsUnconfigured(): bool
     {
         return ! $this->destinationHasCompulsorySubjects;
+    }
+
+    /**
+     * Unconfigured AND not going to be seeded — the destination genuinely lands empty. This is what
+     * the red warning, the confirm line and the acknowledgment set key on; see
+     * {@see NextYearPlacement::destinationWillLandEmpty()} for why it is a conjunction rather than
+     * the absence of a prior-session curriculum.
+     */
+    public function destinationWillLandEmpty(): bool
+    {
+        return $this->destinationIsUnconfigured() && ! $this->destinationWillInheritSubjects;
+    }
+
+    /** Unconfigured today, but the commit will populate it. Informational, not a hazard. */
+    public function destinationWillInherit(): bool
+    {
+        return $this->destinationIsUnconfigured() && $this->destinationWillInheritSubjects;
     }
 }

@@ -476,7 +476,12 @@ class RolloverController extends Controller
                 // left the confirm's headline sitting above a table that summed to less.
                 'graduating' => $plan->placement->graduating->values(),
                 'accounted_pupils' => $plan->placement->accountedPupils(),
+                // TRULY-EMPTY destinations only — the ones end-of-year's subject inheritance will
+                // NOT populate. This is what the red warning and the confirm line are attached to.
                 'unconfigured_count' => $plan->placement->unconfiguredCount(),
+                // Unconfigured today, populated at commit from the same level's prior session.
+                // Informational: it is a "no action needed" note, never a blocker.
+                'inheriting_count' => $plan->placement->inheritingCount(),
                 // ── THE ACKNOWLEDGMENT TOKEN, TO BE ECHOED BACK OPAQUELY ────────────────────────
                 // The client MUST send this array back verbatim on commit. It must never rebuild it
                 // from the rendered rows: the commit compares it against a freshly planned set built
@@ -554,7 +559,10 @@ class RolloverController extends Controller
             // destination has no subjects and the pupils placed there would land with none.
             'destination_curriculum_id' => $g->destinationCurriculumId,
             'destination_key' => $g->destinationKey,
-            'destination_is_unconfigured' => $g->destinationIsUnconfigured(),
+            // WILL LAND EMPTY, not merely "has no compulsory subjects today" — the badge has to
+            // agree with the warning above it, and inheritance now separates the two.
+            'destination_is_unconfigured' => $g->destinationWillLandEmpty(),
+            'destination_will_inherit' => $g->destinationWillInherit(),
             'pupil_count' => $g->pupilCount(),
             'pupils' => $g->pupils,
         ])->values()->all();

@@ -367,6 +367,7 @@ class RolloverPlanner
             // acknowledgment set all have to name the same destinations, and two computations of
             // "is this destination safe" would drift the way two key-arrays would.
             destinationHasCompulsorySubjects: $entry['placement']->destinationHasCompulsorySubjects,
+            destinationWillInheritSubjects: $entry['placement']->destinationWillInheritSubjects,
         ))->values();
     }
 

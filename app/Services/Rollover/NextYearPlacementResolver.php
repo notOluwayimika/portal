@@ -50,6 +50,16 @@ final class NextYearPlacementResolver
     /** @var array<int, bool> keyed by curriculum id */
     private array $subjectCache = [];
 
+    /**
+     * The CLOSING session — the one the source curriculum sits in, which is where a destination
+     * inherits its subjects from. Resolved lazily and once: it is a property of the source
+     * curriculum, constant for every pupil this resolver serves.
+     *
+     * `false` is the not-yet-computed marker rather than null, because NULL is a meaningful answer
+     * (a source term with no session) and `??=` would re-query for it on every pupil.
+     */
+    private int|false|null $closingSessionId = false;
+
     /** @var array<int, int|null> keyed by class level id */
     private array $examTypeCache = [];
 
@@ -325,6 +335,17 @@ final class NextYearPlacementResolver
             curriculumKeys: $keys,
             curriculum: $curriculum,
             destinationHasCompulsorySubjects: $this->hasCompulsorySubjects($curriculum),
+            // WOULD THE COMMIT POPULATE THIS? Asked through the SAME lookup MoveToNextYearJob seeds
+            // on, so the preview cannot promise an inheritance the job will not perform, nor warn
+            // about an emptiness it will fix. Read-only — see ClosingSessionSubjects.
+            destinationWillInheritSubjects: ClosingSessionSubjects::willSeed(
+                $this->schoolId,
+                (int) $arm->id,
+                $examTypeId,
+                (bool) $firstSlot->is_ccm,
+                $this->closingSessionId(),
+                $curriculum?->id === null ? null : (int) $curriculum->id,
+            ),
             termOrder: (int) $firstSlot->term_order,
         );
     }
@@ -355,6 +376,24 @@ final class NextYearPlacementResolver
             ->active()
             ->where('is_compulsory', true)
             ->exists();
+    }
+
+    /**
+     * The session the SOURCE curriculum sits in — the one that is closing, and therefore the one a
+     * destination inherits from. Mirrors MoveToNextYearJob::sourceSessionId(); both read the source
+     * term's `academic_session_id`, which is the only place the fact is written down.
+     */
+    private function closingSessionId(): ?int
+    {
+        if ($this->closingSessionId !== false) {
+            return $this->closingSessionId;
+        }
+
+        $sessionId = Term::withoutGlobalScope(SchoolScope::class)
+            ->whereKey($this->source->term_id)
+            ->value('academic_session_id');
+
+        return $this->closingSessionId = $sessionId === null ? null : (int) $sessionId;
     }
 
     /**

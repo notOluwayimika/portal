@@ -90,6 +90,62 @@ final class RolloverPlacement
     }
 
     /**
+     * The groups that will genuinely LAND EMPTY — unconfigured, and not seeded by end-of-year's
+     * subject inheritance.
+     *
+     * ── THIS NARROWED THE ACKNOWLEDGMENT SET, DELIBERATELY, AND IN THE SAFE DIRECTION ───────────
+     * `unconfiguredKeys()` reads this rather than `unconfiguredGroups()`. Before subject inheritance
+     * the two were the same set; now a destination with no subjects is populated at commit from the
+     * same level's prior session, so requiring an operator to acknowledge it as a hazard is asking
+     * them to accept something that will not happen — and the warning attached to that
+     * acknowledgment tells them to hand-build the curriculum, which is how a duplicate gets made on
+     * the wrong slot and the prepared one is orphaned.
+     *
+     * The commit's gate refuses unless the FRESHLY-PLANNED set is a SUBSET of what was acknowledged,
+     * so removing members can only make the gate accept more — which is why this has to be argued
+     * rather than assumed. It is safe because the removed members are exactly those the commit is
+     * about to populate, decided by the same lookup the job seeds on. And it stays self-correcting:
+     * if the prior-session curriculum is deleted between preview and commit, the destination becomes
+     * truly empty again, re-enters this set, is absent from the acknowledged list, and the commit is
+     * refused — which is the gate doing precisely its job.
+     *
+     * @return Collection<int, PlacementGroup>
+     */
+    public function emptyGroups(): Collection
+    {
+        return $this->advancers
+            ->concat($this->repeaters)
+            ->filter(fn (PlacementGroup $g) => $g->destinationWillLandEmpty())
+            ->values();
+    }
+
+    /**
+     * Unconfigured destinations the commit WILL populate. Informational only — never a blocker, and
+     * never part of the acknowledgment set.
+     *
+     * @return Collection<int, PlacementGroup>
+     */
+    public function inheritingGroups(): Collection
+    {
+        return $this->advancers
+            ->concat($this->repeaters)
+            ->filter(fn (PlacementGroup $g) => $g->destinationWillInherit())
+            ->values();
+    }
+
+    /**
+     * Distinct destinations that will be seeded from last year — counted by destination, not by
+     * group, for the same reason as {@see unconfiguredCount()}.
+     */
+    public function inheritingCount(): int
+    {
+        return $this->inheritingGroups()
+            ->map(fn (PlacementGroup $g) => $g->destinationKey)
+            ->unique()
+            ->count();
+    }
+
+    /**
      * THE ACKNOWLEDGMENT SET the commit checks — destination identities, not a count.
      *
      * A count masks a swap: configure one destination and delete another between preview and confirm
@@ -104,7 +160,9 @@ final class RolloverPlacement
      */
     public function unconfiguredKeys(): array
     {
-        return $this->unconfiguredGroups()
+        // emptyGroups(), not unconfiguredGroups() — see that method for why the set narrowed and why
+        // narrowing it is the safe direction for a gate that requires a subset.
+        return $this->emptyGroups()
             ->map(fn (PlacementGroup $g) => $g->destinationKey)
             ->unique()
             ->sort()
@@ -115,8 +173,13 @@ final class RolloverPlacement
     /**
      * How many DESTINATIONS are unconfigured — distinct destinations, not groups and not pupils.
      *
-     * The operator-facing sentence is "3 destinations have no curriculum set up", and two source
+     * The operator-facing sentence is "3 destinations will land with no subjects", and two source
      * classes feeding one empty destination is one thing to fix, not two.
+     *
+     * Counts what {@see unconfiguredKeys()} names — the destinations that will genuinely land empty,
+     * NOT every destination currently lacking compulsory subjects. The two diverged when end-of-year
+     * gained subject inheritance, and this is the number the red warning is attached to, so it has to
+     * be the honest one.
      */
     public function unconfiguredCount(): int
     {

@@ -8,6 +8,7 @@ use App\Models\AcademicSession;
 use App\Models\ClassLevel;
 use App\Models\ClassLevelArm;
 use App\Models\Curriculum;
+use App\Models\CurriculumSubject;
 use App\Models\Scopes\SchoolScope;
 use App\Models\StudentCurriculum;
 use App\Models\Term;
@@ -108,6 +109,19 @@ class MoveToNextYearJob implements ShouldQueue
      * handle(), where the job is already hydrated.
      */
     private ?NextYearPlacementResolver $placement = null;
+
+    /**
+     * Destination curriculum ids this run has already put through the seeding decision.
+     *
+     * A pure optimisation over the `exists()` guard, which is the real gate: the whole roster of one
+     * source curriculum lands in a handful of destinations, and without this every pupil pays a
+     * COUNT to be told what the first pupil already established. It is safe to memo because the
+     * decision is "was this destination empty when we first reached it", and a second job seeding the
+     * same destination converges through firstOrCreate rather than through this cache.
+     *
+     * @var array<int, true>
+     */
+    private array $seedingConsidered = [];
 
     public function __construct(
         public readonly Curriculum $curriculum,
@@ -388,14 +402,23 @@ class MoveToNextYearJob implements ShouldQueue
     }
 
     /**
-     * SUBJECTS ARE NOT CLONED ACROSS A LEVEL BOUNDARY — the target level defines its own, so the
-     * source's selections are meaningless there. Compulsory subjects are attached explicitly rather
-     * than left to StudentCurriculumObserver: the observer's compulsory auto-attach would in fact
-     * cover it, but relying on a "safety net only" hook for the primary path is how the optional
-     * carry-over silently no-opped in a queued job. Optional selections deliberately do not carry.
+     * THE SOURCE CURRICULUM'S SUBJECTS ARE STILL NOT CLONED ACROSS THE LEVEL BOUNDARY — a Year 11
+     * subject list is meaningless in Year 12, and the pupil's optional selections deliberately do not
+     * carry. That part of the original rule is unchanged.
+     *
+     * What changed is where the DESTINATION's own list comes from when it has none: see
+     * {@see seedSubjectsFromClosingSession}. The seeding runs BEFORE the auto-attach below, because
+     * the attach reads the destination's compulsory set and an empty destination attaches nothing —
+     * which is exactly how every pupil promoted into a freshly-rolled session landed subject-less.
+     *
+     * Compulsory subjects are attached explicitly rather than left to StudentCurriculumObserver: the
+     * observer's compulsory auto-attach would in fact cover it, but relying on a "safety net only"
+     * hook for the primary path is how the optional carry-over silently no-opped in a queued job.
      */
     private function createEpisode(int $studentId, Curriculum $target): StudentCurriculum
     {
+        $this->seedSubjectsFromClosingSession($target);
+
         $episode = StudentCurriculum::firstOrCreate(
             [
                 'student_id' => $studentId,
@@ -409,5 +432,167 @@ class MoveToNextYearJob implements ShouldQueue
         app(StudentSubjectService::class)->autoAttachCompulsorySubjects($episode);
 
         return $episode;
+    }
+
+    /**
+     * Give an EMPTY destination the subject list the SAME CLASS LEVEL taught in the CLOSING session.
+     *
+     * ── WHY THIS IS NOT A CONTRADICTION OF "THE TARGET LEVEL DEFINES ITS OWN" ─────────────────────
+     * It is that rule's missing half. The source curriculum's subjects must not cross a level
+     * boundary, and they still do not: nothing here reads `$this->curriculum`'s subject list. What is
+     * copied is last year's instance of the DESTINATION's own level — 2025/26 Year 12 seeds 2026/27
+     * Year 12 — which is the target level defining its own list, from the only place that list has
+     * ever been written down. `class_level_arm_id` is session-independent (only `term_id` carries the
+     * session), so "the same level a year earlier" is an exact key match rather than a name heuristic.
+     *
+     * ── IT LIVES IN THE JOB, NEVER IN THE RESOLVER ────────────────────────────────────────────────
+     * NextYearPlacementResolver is shared verbatim between this job and RolloverPlanner's preview,
+     * and that shared construction is what makes preview/commit parity a property of the code. This
+     * is a WRITE. Putting it there would have a registrar building next year's curricula by opening
+     * the screen — and worse, the very warning the screen exists to raise would read "configured"
+     * from the second look onward.
+     *
+     * ── ONLY WHEN EMPTY, WHICH IS THE WHOLE SAFETY ARGUMENT ───────────────────────────────────────
+     * A destination with ANY subject row has been configured by somebody — an operator, or an earlier
+     * run — and their answer wins. Same discipline as MoveFromTermJob::canAdoptSourceSchemes
+     * repairing only while a target is unused. The guard is on presence, not on `wasRecentlyCreated`:
+     * a destination created bare by a PREVIOUS release of this job is exactly the row that needs
+     * seeding, and it is not recently created.
+     *
+     * ── AND NO PRIOR CURRICULUM IS A LEGITIMATE ANSWER ────────────────────────────────────────────
+     * A school's first year of operation, or a genuinely new level, has nothing to inherit from. That
+     * falls back to the previous behaviour — a bare destination and the planner's existing
+     * "unconfigured destination" warning — and is emphatically not an error.
+     */
+    private function seedSubjectsFromClosingSession(Curriculum $destination): void
+    {
+        $destinationId = (int) $destination->id;
+
+        if (isset($this->seedingConsidered[$destinationId])) {
+            return;
+        }
+
+        $this->seedingConsidered[$destinationId] = true;
+
+        // THE GATE. CurriculumSubject carries no SchoolScope of its own; it is reached through the
+        // curriculum, which is already pinned to this school by the key below.
+        if (CurriculumSubject::where('curriculum_id', $destinationId)->exists()) {
+            return;
+        }
+
+        $prior = $this->closingSessionCurriculumFor($destination);
+
+        if ($prior === null) {
+            Log::info('MoveToNextYearJob: no closing-session curriculum for this level, leaving the destination subject-less', [
+                'curriculum_id' => $this->curriculum->id,
+                'destination_curriculum_id' => $destinationId,
+            ]);
+
+            return;
+        }
+
+        $this->cloneSubjects($prior, $destination);
+    }
+
+    /**
+     * Last year's instance of the DESTINATION's level: the same `class_level_arm_id`, `exam_type_id`
+     * and `is_ccm`, with its term inside the CLOSING session, and which actually has subjects.
+     *
+     * The keys are taken from the DESTINATION rather than from the source curriculum, and that is the
+     * point of the whole lookup — the source is a Year 11 row and would seed Year 12 with Year 11's
+     * subjects, which is the behaviour the "no cloning across a level boundary" rule correctly
+     * forbids. `is_ccm` is part of the key so a CCM destination seeds from the prior CCM curriculum
+     * and never from its non-CCM sibling, whose weights mean something different.
+     *
+     * `whereHas` rather than a plain match: a closing session can hold a bare row of its own (created
+     * by the year before's rollover and never configured), and inheriting emptiness from it would
+     * silently shadow a term that does have the list.
+     *
+     * DETERMINISTIC BY THE TERM'S ORDER, DESCENDING — the latest term of the closing session, since
+     * that is the most recently edited statement of what the level teaches. The id tie-break makes the
+     * answer total rather than merely usually-unique. The destination cannot select itself: it sits in
+     * the TARGET session, and passesGuards refuses a target session equal to the source's.
+     */
+    private function closingSessionCurriculumFor(Curriculum $destination): ?Curriculum
+    {
+        $closingSessionId = $this->sourceSessionId();
+
+        if ($closingSessionId === null) {
+            return null;
+        }
+
+        return Curriculum::withoutGlobalScope(SchoolScope::class)
+            ->select('curricula.*')
+            ->join('terms', 'terms.id', '=', 'curricula.term_id')
+            ->where('terms.academic_session_id', $closingSessionId)
+            ->where('curricula.school_id', $this->schoolId)
+            ->where('curricula.class_level_arm_id', $destination->class_level_arm_id)
+            ->where('curricula.exam_type_id', $destination->exam_type_id)
+            ->where('curricula.is_ccm', $destination->is_ccm)
+            ->whereHas('curriculumSubjects')
+            ->orderByDesc('terms.order')
+            ->orderByDesc('curricula.id')
+            ->first();
+    }
+
+    /**
+     * MIRRORS MoveFromTermJob::cloneCurriculumSubjects, and the mirroring is deliberate rather than
+     * incidental — the two are the same operation across two different boundaries, and a second,
+     * subtly-different clone is how the scheme split below drifts.
+     *
+     * firstOrCreate PER SUBJECT, never a bulk insert. Distribution can point several source arms at
+     * one destination arm, so two jobs can reach the same empty destination; per-row convergence is
+     * what makes that land one set instead of two.
+     *
+     * THE SCHEME SPLIT. Marking components are copied ONLY on the legacy path — a destination with no
+     * marking scheme and no categorical grading. A scheme-backed destination resolves its components
+     * THROUGH the scheme (CurriculumSubject::effectiveMarkingComponents), so copying subject-local
+     * ones there would create rows that are never read on a curriculum whose scheme was resolved from
+     * the target level.
+     *
+     * WHAT IS NOT COPIED: `grading_scheme_id` and `marking_scheme_id`. Those are resolved from the
+     * TARGET level by the resolver and must stay that way — carrying last year's would reintroduce
+     * exactly the copy-don't-resolve mistake the class docblock exists to prevent, one boundary up.
+     */
+    private function cloneSubjects(Curriculum $prior, Curriculum $destination): void
+    {
+        $copyComponents = ! $destination->marking_scheme_id && ! $destination->usesCategoricalGrading();
+
+        foreach ($prior->curriculumSubjects as $oldSubject) {
+            $newSubject = CurriculumSubject::firstOrCreate(
+                [
+                    'curriculum_id' => $destination->id,
+                    'subject_id' => $oldSubject->subject_id,
+                ],
+                [
+                    'is_compulsory' => $oldSubject->is_compulsory,
+                    'display_order' => $oldSubject->display_order,
+                    'active' => $oldSubject->active,
+                ]
+            );
+
+            if ($newSubject->wasRecentlyCreated && $copyComponents) {
+                foreach ($oldSubject->markingComponents as $component) {
+                    $newSubject->markingComponents()->create([
+                        'name' => $component->name,
+                        'weight' => $component->weight,
+                        'school_id' => $destination->school_id,
+                        'is_ccm' => $destination->is_ccm,
+                    ]);
+                }
+            }
+
+            $newSubject->resultStatus()->firstOrCreate([], [
+                'status' => 'draft',
+                'rejection_reason' => null,
+                'updated_by' => $this->causedByUserId,
+            ]);
+
+            foreach ($oldSubject->teacherAssignments as $assignment) {
+                $newSubject->teacherAssignments()->firstOrCreate([
+                    'teacher_id' => $assignment->teacher_id,
+                ]);
+            }
+        }
     }
 }

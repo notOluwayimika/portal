@@ -2,6 +2,13 @@ export interface EntityVolume {
     total: number;
     active: number;
     soft_deleted: number;
+    /**
+     * DISPLAY ONLY, and present on the `students` entity alone — distinct pupils with an ACTIVE
+     * enrollment in the school's current session. `active` is deliberately NOT this: three
+     * server-side onboarding gates read `active` as a school-wide volume, so the two must stay
+     * separate. Optional because every other entity omits it.
+     */
+    enrolled_current_session?: number;
     earliest_created_at: string | null;
     latest_created_at: string | null;
     created_last_7d: number;

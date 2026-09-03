@@ -3,6 +3,7 @@
 namespace App\Services\Dashboard;
 
 use App\Models\School;
+use App\Support\SessionEnrolledStudents;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -50,10 +51,15 @@ class DashboardAnalysisService
         $classifier = new ModuleClassificationService($schoolId);
         $gapService = new DataGapsService($schoolId);
 
+        // Resolved ONCE and passed down, rather than re-queried inside each collector: the two
+        // displayed surfaces below must describe the same session, and a second lookup is a second
+        // chance to disagree. Null is legitimate — a school with no current session.
+        $currentSessionId = $school->currentSession?->id === null ? null : (int) $school->currentSession->id;
+
         $modules = $classifier->classifyAll();
-        $entities = $this->collectEntityVolumes($schoolId);
+        $entities = $this->collectEntityVolumes($schoolId, $currentSessionId);
         $dataGaps = $gapService->detect();
-        $distributions = $this->collectDistributions($schoolId);
+        $distributions = $this->collectDistributions($schoolId, $currentSessionId);
         $recentActivities = $this->collectRecentActivities($schoolId);
 
         $activeModulesCount = collect($modules)
@@ -94,7 +100,7 @@ class DashboardAnalysisService
     /**
      * Collect entity volumes (counts + recency) for all major tables.
      */
-    private function collectEntityVolumes(int $schoolId): array
+    private function collectEntityVolumes(int $schoolId, ?int $currentSessionId = null): array
     {
         $entities = [];
 
@@ -121,6 +127,18 @@ class DashboardAnalysisService
                     'created_last_30d' => (clone $q)->where('created_at', '>=', now()->subDays(30))->count(),
                     'created_last_90d' => (clone $q)->where('created_at', '>=', now()->subDays(90))->count(),
                 ];
+
+                // ── A SEPARATE FIELD, AND `active` IS DELIBERATELY LEFT ALONE ────────────────────
+                // This is the DISPLAYED student figure and it is session-scoped. `total` and
+                // `active` stay school-wide because THREE call sites read `active` as the
+                // onboarding gate — DashboardController, Api\DashboardController, and $hasStudents
+                // in generate() a few lines above, which is the one an editor of this method is
+                // most likely to break. Session-scoping `active` would flip a school BETWEEN
+                // SESSIONS (rolled over, nobody enrolled yet) back to "incomplete" having done
+                // nothing wrong. Add a field for display; never repurpose the gate's number.
+                if ($key === 'students') {
+                    $entities[$key]['enrolled_current_session'] = SessionEnrolledStudents::count($schoolId, $currentSessionId);
+                }
             } catch (\Throwable $e) {
                 Log::channel('dashboard-analysis')->warning("Entity volume for '{$key}' failed: {$e->getMessage()}");
                 $entities[$key] = $this->emptyEntityVolume();
@@ -186,27 +204,35 @@ class DashboardAnalysisService
     /**
      * Collect distribution breakdowns (students by class level, score entry progress).
      */
-    private function collectDistributions(int $schoolId): array
+    private function collectDistributions(int $schoolId, ?int $currentSessionId = null): array
     {
         $distributions = [];
 
         try {
-            $byClassLevel = DB::table('students')
-                ->join('student_curricula', 'students.id', '=', 'student_curricula.student_id')
-                ->join('curricula', 'student_curricula.curriculum_id', '=', 'curricula.id')
-                ->join('class_level_arms', 'curricula.class_level_arm_id', '=', 'class_level_arms.id')
-                ->join('class_levels', 'class_level_arms.class_level_id', '=', 'class_levels.id')
-                ->where('students.school_id', $schoolId)
-                ->whereNull('students.deleted_at')
-                ->where('student_curricula.status', 'ACTIVE')
-                ->selectRaw('class_levels.name as label, COUNT(DISTINCT students.id) as count')
-                ->groupBy('class_levels.id', 'class_levels.name')
-                ->orderByDesc('count')
-                ->get();
+            // NO CURRENT SESSION -> NO BREAKDOWN, and no query. Nobody is enrolled "this session"
+            // when there is no such session, so an empty population overview is the honest render.
+            // Set rather than returned early: the score-entry distribution below is unrelated to
+            // sessions and must still be collected.
+            if ($currentSessionId === null) {
+                $distributions['students_by_class_level'] = [];
+            } else {
+                // The SAME join the displayed total uses — see SessionEnrolledStudents. Shared
+                // rather than repeated so this breakdown always sums to that total; two copies of
+                // the predicate would let the overview and the KPI disagree the day one of them
+                // gained a filter. Only the class-level joins, the projection and the grouping are
+                // added here.
+                $byClassLevel = SessionEnrolledStudents::query($schoolId, $currentSessionId)
+                    ->join('class_level_arms', 'curricula.class_level_arm_id', '=', 'class_level_arms.id')
+                    ->join('class_levels', 'class_level_arms.class_level_id', '=', 'class_levels.id')
+                    ->selectRaw('class_levels.name as label, COUNT(DISTINCT students.id) as count')
+                    ->groupBy('class_levels.id', 'class_levels.name')
+                    ->orderByDesc('count')
+                    ->get();
 
-            $distributions['students_by_class_level'] = $byClassLevel
-                ->map(fn ($r) => ['name' => $r->label, 'count' => (int) $r->count])
-                ->toArray();
+                $distributions['students_by_class_level'] = $byClassLevel
+                    ->map(fn ($r) => ['name' => $r->label, 'count' => (int) $r->count])
+                    ->toArray();
+            }
         } catch (\Throwable $e) {
             Log::channel('dashboard-analysis')->warning("Distribution 'students_by_class_level' failed: {$e->getMessage()}");
             $distributions['students_by_class_level'] = [];

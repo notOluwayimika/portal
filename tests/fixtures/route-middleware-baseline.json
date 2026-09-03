@@ -212,13 +212,13 @@
         "web",
         "auth",
         "tenant",
-        "permission:admin_area.access"
+        "permission:activity_log.view_all"
     ],
     "GET /activity-logs/{id}": [
         "web",
         "auth",
         "tenant",
-        "permission:admin_area.access"
+        "permission:activity_log.view_all"
     ],
     "GET /api/activity-logs": [
         "api",

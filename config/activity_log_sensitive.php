@@ -47,6 +47,13 @@ return [
         // `authentication`, not `auth`. The previous key 'auth.password_reset'
         // matched no row.
         'authentication.password_reset',
+        // DELIBERATELY ABSENT, AND FOR A SHARPER VERSION OF THE SAME REASON:
+        // `finance.invoice.approved`, Internal Audit's release of a bill to its payer
+        // (App\Finance\Actions\ApproveInvoice). `entries` means HIDDEN from anyone without
+        // `activity_log.view_sensitive`, and `internal_auditor` deliberately does not hold it — so
+        // listing this key would hide the auditor's OWN ATTESTATIONS from the auditor. The seat
+        // would sign a release and then be unable to find the record that it had. The rows carry an
+        // invoice uuid, a student id and a timestamp; no amount, no payer identity, no credential.
         // DELIBERATELY ABSENT: the five `finance.bank_account_*` /
         // `finance.settlement_account_changed` keys. They are the highest-tier finance events in
         // the catalogue — settlement is `critical` — and they are NOT listed here, which is not an

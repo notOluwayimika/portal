@@ -32,6 +32,21 @@
  * the DDL that CREATES it — a definition, not a second reader of the rule — and tests/ names it to
  * plant rows and to assert the rollback drops it, which is what a test is for. Widening this to
  * either would red on the two files that are allowed to know the physical name.
+ *
+ * ── AND resources/, WHICH THE THREE-WAY SPLIT ABOVE DID NOT ACCOUNT FOR ─────────────────────────
+ *
+ * The scope paragraph named app/, database/migrations/ and tests/ and was silent about the frontend,
+ * which is a fourth place the column name can be written and the one place NO mention is legitimate
+ * — it consumes an API shape, not a table. Measured 2026-09-02: zero occurrences under resources/,
+ * so the last arm in this file closes an EMPTY hole rather than an open one, which is the moment to
+ * close it.
+ *
+ * That arm counts rather than parses, and the difference is not inconsistency: **parse where
+ * legitimate and illegitimate uses coexist, count where they cannot.** The tokeniser earns its cost
+ * in app/ because four docblocks explain the collapse in prose and a grep cannot tell those from
+ * code. Under resources/ the allowed count is zero, so a substring match is sound — and a comment
+ * tripping it is the intent rather than collateral, because a comment naming the physical column is
+ * the first step toward someone deciding to filter on it.
  */
 
 use Illuminate\Support\Str;
@@ -274,4 +289,71 @@ it('routes a spelling it cannot classify into unrecognised rather than into sile
     expect($narrowed['code'])->toBe([])
         ->and($narrowed['unrecognised'])->toHaveCount(1)
         ->and($narrowed['unrecognised'][0]['kind'])->toBe('T_STRING');
+});
+
+/**
+ * Every regular file under resources/, WITH NO EXTENSION FILTER.
+ *
+ * A glob is a place for a new extension to hide. The measured tree today is 265 `.tsx`, 219 `.ts`,
+ * 4 `.blade.php` and 1 `.css` — and an arm written as `*.{ts,tsx}` would have reported clean over
+ * the Blade views, which are the layer most likely to interpolate a column name into markup. Rather
+ * than enumerate and be wrong later, this takes everything and lets the assertion be the judge.
+ *
+ * @return list<string>
+ */
+function releaseStampResourceFiles(): array
+{
+    $files = [];
+    $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator(dirname(__DIR__, 2).'/resources'));
+
+    foreach ($iterator as $entry) {
+        if ($entry->isFile()) {
+            $files[] = $entry->getPathname();
+        }
+    }
+
+    sort($files);
+
+    return $files;
+}
+
+it('never names the column anywhere under resources/, and says how many files it read', function () {
+    $files = releaseStampResourceFiles();
+
+    // THE DENOMINATOR IS ASSERTED BEFORE THE ZERO IS, AND THAT ORDER IS THE POINT. An arm that only
+    // checks "no occurrences" passes identically whether the directory is clean or the scan matched
+    // NOTHING — the empty set satisfies a zero-count assertion perfectly, which makes this the most
+    // vulnerable arm in the file to silently measuring nothing. The sibling app/ arm is protected by
+    // accident: it finds one legitimate reader, so a scan of no files fails it. This one has no such
+    // witness and needs the count said out loud.
+    //
+    // A LITERAL FLOOR, not a count derived from the scan. `count($files) > 0` would be satisfied by
+    // one stray file, and `toBe(count($files))` would assert that the scan equals itself.
+    expect(count($files))->toBeGreaterThan(100);
+
+    $named = [];
+
+    foreach ($files as $path) {
+        $contents = file_get_contents($path);
+
+        if ($contents !== false && str_contains($contents, 'reviewed_at')) {
+            $named[] = str_replace(dirname(__DIR__, 2).'/', '', $path);
+        }
+    }
+
+    // ── WHY A SUBSTRING SEARCH HERE AND A TOKENISER IN app/ ──
+    //
+    // The tokeniser upstairs exists because app/ has LEGITIMATE prose mentions — four docblocks
+    // explaining the collapse, including the `@property` line Larastan needs — and a grep cannot
+    // tell those from code. Under resources/ there is no legitimate mention AT ALL, so the allowed
+    // count is zero and a substring match is sound. Parse where legitimate and illegitimate uses
+    // coexist; count where they cannot.
+    //
+    // ── AND A COMMENT FAILING THIS IS A FEATURE, NOT COLLATERAL ──
+    //
+    // The frontend consumes an API SHAPE, not a table. A comment reading "the API withholds
+    // unreleased invoices" passes; one reading `reviewed_at` fails, and should — naming the physical
+    // column in this layer is the first step toward someone deciding to filter on it, and the step
+    // after that is a fifth spelling of the release rule living where no PHP arm can see it.
+    expect($named)->toBe([]);
 });

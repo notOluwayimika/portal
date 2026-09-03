@@ -97,6 +97,9 @@ it('ARM A — revokes the grant from internal_auditor and touches nothing else',
             'activity_log.view',
             'activity_log.view_all',
             'finance.invoice.approve',
+            // Phase A, 2026-09-04: the return-to-Finance half of the review decision. NEW, so
+            // rbac:sync grants it and no convergence migration is owed.
+            'finance.invoice.reject',
         ]);
 
     // super_admin's sanctioned holding (ADR 0045 A3) is byte-identical.

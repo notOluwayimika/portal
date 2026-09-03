@@ -191,6 +191,21 @@ enum Permission: string
     // mistake the activity catalogue already carries twice (finance.refund_issued,
     // finance.fee_adjusted), and this slice does not repeat it.
     case FINANCE_INVOICE_APPROVE = 'finance.invoice.approve';
+    // Internal Audit RETURNING a raised bill to Finance instead of releasing it (Phase A). The
+    // other half of the review decision: `approve` makes the bill visible to its payer, this one
+    // sends it back with a reason and leaves it invisible.
+    //
+    // NO LONGER DEFERRED. It was left undeclared when `approve` shipped, deliberately — a
+    // permission declared ahead of its code is the `pending_emitters` mistake — and the deferral
+    // was a compromise bought against the 6 September read-half launch. That date is withdrawn
+    // (docs/handoff/post-deploy-tasks.md § Phase 0), so the return path is built in full and the
+    // permission arrives WITH the code that uses it.
+    //
+    // A CHECKER, like its sibling: `reject` is in ApprovalAbility::CHECKER_SEGMENTS, so it is
+    // excluded from the Gate::before bypass (ADR 0040) and its maker is declared in
+    // MAKER_OVERRIDES as `finance.invoice.generate` — the SAME maker `approve` names, because
+    // approve and reject are the two checker sides of one act.
+    case FINANCE_INVOICE_REJECT = 'finance.invoice.reject';
     // Applying ANY reduction (waiver/discount) line on an invoice (S1 Part 0). Checked in the
     // controller, not the route, because it depends on the request body. Closes the audit hole: a
     // 100%-discount line raised by anyone with `finance.access`, naming no one. Not a maker-checker

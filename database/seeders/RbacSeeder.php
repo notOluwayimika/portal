@@ -571,6 +571,14 @@ class RbacSeeder extends Seeder
                 // precisely what DutySeparation refuses — and `enforcedPairs()` covers it, since
                 // the checker starts with `finance.`.
                 PermissionEnum::FINANCE_INVOICE_APPROVE->value,
+                // The return-to-Finance half of the same review decision (Phase A). Also NEW, so
+                // `rbac:sync` grants it and no convergence migration is owed.
+                //
+                // admin and accounts_officer deliberately do NOT get it, for the same reason they
+                // do not get `approve`: both hold `finance.invoice.generate`, which
+                // MAKER_OVERRIDES names as this checker's maker, so one role holding both sides is
+                // exactly what DutySeparation refuses at grant time.
+                PermissionEnum::FINANCE_INVOICE_REJECT->value,
             ],
             // ADR 0045 (B2): the explicit set IS the platform-admin set — no
             // ambient domain grants. Self-healed every run (see const).

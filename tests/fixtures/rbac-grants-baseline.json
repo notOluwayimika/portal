@@ -181,7 +181,8 @@
         "activity_log.export",
         "activity_log.view",
         "activity_log.view_all",
-        "finance.invoice.approve"
+        "finance.invoice.approve",
+        "finance.invoice.reject"
     ],
     "key_stage_coordinator": [
         "academic_data.view",

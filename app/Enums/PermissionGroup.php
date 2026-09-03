@@ -176,6 +176,7 @@ enum PermissionGroup: string
                 Permission::FINANCE_INVOICE_VOID_REQUEST_REJECT,
                 Permission::FINANCE_INVOICE_GENERATE,
                 Permission::FINANCE_INVOICE_APPROVE,
+                Permission::FINANCE_INVOICE_REJECT,
                 Permission::FINANCE_INVOICE_REDUCTION_APPLY,
                 Permission::FINANCE_FEE_SCHEDULE_MANAGE,
                 Permission::FINANCE_BANK_ACCOUNT_MANAGE,

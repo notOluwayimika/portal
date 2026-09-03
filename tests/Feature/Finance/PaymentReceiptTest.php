@@ -43,6 +43,7 @@ use App\Support\Money;
 use App\Support\SchoolDay;
 use Database\Seeders\RbacSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Spatie\Permission\PermissionRegistrar;
 
@@ -510,4 +511,72 @@ it('carries receiptable + the reason on PaymentResource, and does NOT carry orig
         'The feed did not carry exactly one receiptable and one non-receiptable payment.')
         ->and($portal['receipt_refusal_reason'])->toBeNull()
         ->and($migrated['receipt_refusal_reason'])->toBe(Payment::RECEIPT_REFUSAL_REASON);
+});
+
+/*
+|--------------------------------------------------------------------------
+| The refusal CODE — the operational twin of the refusal sentence
+|--------------------------------------------------------------------------
+|
+| `notification_deliveries.skip_reason` is `string(64)` and its vocabulary is
+| `hard_bounce` / `no_address` / `sms_invalid_number`. The ~250-character parent-facing sentence does
+| not fit and would be the wrong kind of value there if it did — so the refusal has two strings, one
+| per audience, and they must not be able to disagree.
+*/
+
+it('issues no refusal code for a receiptable payment, on both receiptable origins', function (string $origin) {
+    // BOTH, not just one. `isReceiptable()` is an allowlist of two, and an arm covering only
+    // `portal` would pass against a version that had quietly dropped `gateway` — which is every
+    // payment this workstream creates.
+    $payment = new Payment(['origin' => $origin]);
+
+    expect($payment->receiptRefusalCode())->toBeNull()
+        ->and($payment->receiptRefusalReason())->toBeNull();
+})->with([Payment::ORIGIN_PORTAL, Payment::ORIGIN_GATEWAY]);
+
+it('names WCBS in the code only for a migrated payment', function () {
+    $payment = new Payment(['origin' => Payment::ORIGIN_MIGRATED]);
+
+    expect($payment->receiptRefusalCode())->toBe(Payment::RECEIPT_REFUSAL_CODE_MIGRATED)
+        ->and($payment->receiptRefusalReason())->toBe(Payment::RECEIPT_REFUSAL_REASON);
+});
+
+it('refuses an origin in NEITHER list, and says it cannot confirm rather than blaming WCBS', function () {
+    // THE ONLY INPUT THAT SEPARATES AN ALLOWLIST FROM A DENYLIST. `gateway` and `migrated` are
+    // classified identically by both shapes; a denylist on `migrated` would let this through as
+    // receiptable, and `isReceiptable()` is an allowlist precisely so it does not.
+    //
+    // IN MEMORY, NOT PERSISTED, AND THAT IS NOT A SHORTCUT. The
+    // `finance_payments_origin_pairing_bi` trigger admits exactly portal/migrated/gateway, so this
+    // row CANNOT be written — the branch is unreachable in production today and exists to catch the
+    // day a fourth origin is added. Do not "fix" this into a database fixture; the trigger will
+    // refuse it, correctly.
+    $payment = new Payment(['origin' => 'nonsense']);
+
+    // TWO AXES ON ONE INPUT, catching two different defects.
+    //
+    //   REFUSED AT ALL          — separates allowlist from denylist.
+    //   REFUSED WITH WHICH ONE  — separates the corrected mapping from the defect
+    //                             `receiptRefusalReason()`'s docblock records: an allowlist
+    //                             predicate with a denylist explanation, which refused correctly and
+    //                             then told a bursar the money came from WCBS. Both versions refuse;
+    //                             only one tells the truth. An arm asserting `not null` passes the
+    //                             version that reaches a parent with a false claim about their money.
+    expect($payment->receiptRefusalCode())->toBe(Payment::RECEIPT_REFUSAL_CODE_UNKNOWN_ORIGIN)
+        ->and($payment->receiptRefusalReason())->toBe(Payment::RECEIPT_REFUSAL_REASON_UNKNOWN_ORIGIN);
+});
+
+it('keeps every refusal code inside the column that will store it', function () {
+    // 64 IS THE SCHEMA'S NUMBER, asserted here rather than trusted: a code added later that does not
+    // fit is truncated or refused at write time, in a job, in production — the worst place to find
+    // out. Read from information_schema rather than restated, so this cannot drift from the column.
+    $length = (int) DB::selectOne(
+        "SELECT CHARACTER_MAXIMUM_LENGTH AS n FROM information_schema.COLUMNS
+          WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'notification_deliveries'
+            AND COLUMN_NAME = 'skip_reason'"
+    )->n;
+
+    expect($length)->toBeGreaterThan(0)
+        ->and(strlen(Payment::RECEIPT_REFUSAL_CODE_MIGRATED))->toBeLessThanOrEqual($length)
+        ->and(strlen(Payment::RECEIPT_REFUSAL_CODE_UNKNOWN_ORIGIN))->toBeLessThanOrEqual($length);
 });

@@ -271,4 +271,51 @@ class Payment extends Model
             default => self::RECEIPT_REFUSAL_REASON_UNKNOWN_ORIGIN,
         };
     }
+
+    /** The operational code for a refused receipt — `notification_deliveries.skip_reason`'s vocabulary. */
+    public const RECEIPT_REFUSAL_CODE_MIGRATED = 'receipt_refused_migrated';
+
+    public const RECEIPT_REFUSAL_CODE_UNKNOWN_ORIGIN = 'receipt_refused_unknown_origin';
+
+    /**
+     * The same refusal, as a CODE rather than a sentence — or null when a receipt may be issued.
+     *
+     * ── WHY A SECOND VALUE AT ALL ──
+     *
+     * {@see RECEIPT_REFUSAL_REASON} is ~250 characters of parent-facing prose.
+     * `notification_deliveries.skip_reason` is `string(64)`, and its existing vocabulary is
+     * `hard_bounce`, `no_address`, `unsubscribe`, `sms_invalid_number` — machine codes a bursar
+     * greps when a parent rings. The sentence does not fit and would be the wrong kind of value
+     * there even if it did. Two audiences, two strings.
+     *
+     * ── AND WHY IT BRANCHES ON THE REASON, NEVER ON `origin` AGAIN ──
+     *
+     * A single code would reproduce, one column over, the exact defect {@see receiptRefusalReason}'s
+     * docblock exists to record: an unknown-origin payment filed under `receipt_refused_migrated`
+     * would tell a bursar the money came from WCBS when the system's own position is that it cannot
+     * confirm where it came from. The sentence would be right and the code wrong — and the code is
+     * the one that gets searched.
+     *
+     * So the map is driven off the RETURNED CONSTANT. Re-inspecting `$this->origin` here would be a
+     * THIRD read of one decision, and the one most likely to fall out of step when a fourth origin
+     * appears, because it would sit furthest from the arms that own the rule. One decision, one
+     * branch point, and this method cannot disagree with its twin because it asks its twin.
+     *
+     * ── ITS DESTINATION IS NOT YET WIRED, AND THAT IS DELIBERATE ──
+     *
+     * Nothing consumes this today. `NotificationType::PAYMENT_RECEIVED`'s dispatch site has an
+     * unresolved design question — a subject-level refusal is not one of the three delivery-scoped
+     * conditions `FanOutNotificationJob` expresses, and where it belongs instead is open. **Do not
+     * read this method's existence as evidence that a wiring exists.** The value and its
+     * non-drift property are correct regardless of where they are eventually consumed, which is why
+     * it lands separately from the consumer.
+     */
+    public function receiptRefusalCode(): ?string
+    {
+        return match ($this->receiptRefusalReason()) {
+            null => null,
+            self::RECEIPT_REFUSAL_REASON => self::RECEIPT_REFUSAL_CODE_MIGRATED,
+            default => self::RECEIPT_REFUSAL_CODE_UNKNOWN_ORIGIN,
+        };
+    }
 }

@@ -41,6 +41,7 @@ import {
     SidebarSeparator,
 } from '@/components/ui/sidebar';
 import { usePermissions } from '@/hooks/use-permissions';
+import { internalAuditNavGroup } from '@/lib/internal-audit-nav';
 import { dashboard } from '@/routes';
 import type { NavGroup, NavItem, User } from '@/types';
 import type { Teacher } from '@/types/models';
@@ -573,6 +574,27 @@ export function AppSidebar() {
             }
 
             groups.push({ label: 'Finance', items: financeItems });
+        }
+
+        // INTERNAL AUDIT — its own group, and DELIBERATELY OUTSIDE the `can('finance.access')`
+        // block above.
+        //
+        // `internal_auditor` holds `finance.invoice.approve` and NO `finance.access`. An item
+        // pushed inside that block would therefore render for everyone who can view finance — who
+        // cannot reach this page — and stay invisible to the one seat that exists to use it. THE
+        // ENCLOSING GATE WINS over the item's own condition, which is the whole trap.
+        //
+        // It is the same trap, one layer up, that put the ROUTE in its own top-level group rather
+        // than inside the finance group in routes/api.php and routes/web.php: a narrow grant is
+        // void the moment it sits under a wider gate the holder does not satisfy.
+        // The group itself is `internalAuditNavGroup` in @/lib/internal-audit-nav, extracted so the
+        // gate can be asserted without a DOM — vitest runs in node, and the sidebar's assembly
+        // reads Inertia page props. WHERE IT IS CALLED FROM is the part that cannot be extracted,
+        // and it is the part that matters: HERE, at the top level.
+        const auditGroup = internalAuditNavGroup(can);
+
+        if (auditGroup !== null) {
+            groups.push(auditGroup);
         }
 
         if (roles.includes('guardian')) {

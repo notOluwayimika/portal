@@ -76,6 +76,245 @@ July are the same row.
 Order: **migration, then bulk run.** Bills raised after the migration carry `reviewed_at IS NULL`
 and wait for a reviewer, which is the whole point of the control.
 
+---
+
+### THE SEQUENCE — tick it, do not read it
+
+Every step has a verification beside it, because prose that cannot be ticked is not a runbook. The
+numbers are the order; a step with no tick beside it was not done, whatever anybody remembers.
+
+**THE COMMANDS BELOW ARE UNVERIFIED.** They are written for the shape this repository has, not run
+against production — nobody has executed them, and the hosting-specific ones (§1.1, §5) are marked
+where they need Segun's actual commands before the day. A prescribed command in this repository is
+either one that has been run or one marked UNVERIFIED; there is no third state.
+
+#### 0 · BEFORE ANYTHING — MEASURE, DO NOT ASSUME
+
+- [ ] **0.1 List every PENDING migration on production.**
+
+      ```bash
+      php artisan migrate:status | grep -i pending
+      ```
+
+- [ ] **0.2 Compare that list against what you expect. If it contains ANYTHING beyond the 31 August
+      withhold migration, STOP and read each one before continuing.**
+
+      **Deploying `staging` runs all of them, not one.** This is the step the whole document exists
+      for: the deploy is scheduled for one migration, and the deploy mechanism does not know that.
+      `open-findings.md` Finding 0 is the standing warning, and its own counts are a 30 August
+      measurement that must be re-derived rather than carried.
+
+      ```bash
+      # What this branch adds over what production last ran, as FILES — the thing a fresh
+      # `migrate` would replay. Never `SHOW COLUMNS`: a dev schema carries columns from every
+      # branch ever migrated on that machine and answers about the machine, not the branch.
+      git diff --name-only <last-deployed-tag>...HEAD -- database/migrations
+      ```
+
+- [ ] **0.3 Record the 0.1 list in this document, with the date, as run.**
+
+      Not in a terminal buffer. The next person to read this needs to know what actually ran, and a
+      list that lives only in scrollback is a list nobody can check afterwards.
+
+      > **Pending migrations at deploy, recorded on ______:**
+      > _(paste the 0.1 output here before proceeding)_
+
+#### 1 · BACKUP — AND PROVE IT RESTORES
+
+- [ ] **1.1 Full production database backup, written OFF the production host.**
+
+      `⚑ UNVERIFIED — needs Segun's hosting command.` A backup on the same host is not a backup
+      against the failure modes that take a host.
+
+- [ ] **1.2 Restore it somewhere and COUNT ROWS.**
+
+      ```sql
+      SELECT COUNT(*) AS invoices FROM finance_invoices;
+      SELECT COUNT(*) AS activity  FROM activity_log;
+      ```
+
+      **A backup nobody has restored is a belief.** On 2 September the production COPY was destroyed
+      by a test run and no backup of it existed — the search for one returned a single empty table.
+      That was a copy. This is production.
+
+- [ ] **1.3 Do not proceed until 1.2 passes.** Not "looks fine" — the counts are non-zero and
+      plausible against production.
+
+#### 2 · DEPLOY
+
+- [ ] **2.1 Low-traffic window. Maintenance mode on.**
+
+      ```bash
+      php artisan down --render="errors::503"
+      ```
+
+- [ ] **2.2 Deploy the code.**
+
+- [ ] **2.3 Run the migrations.**
+
+      ```bash
+      php artisan migrate --force
+      ```
+
+- [ ] **2.4 CLEAR THE COMPILED CACHES — by deleting the files, not with `artisan config:clear`.**
+
+      ```bash
+      rm -f bootstrap/cache/config.php bootstrap/cache/routes-v7.php \
+            bootstrap/cache/routes.php bootstrap/cache/events.php
+      ```
+
+      **A stale compiled config in production is the same class of fault that cost the copy on
+      2 September**: a cached config never calls `env()`, so every environment override is inert and
+      the application reads values frozen at cache time. `bin/quality` now deletes exactly these four
+      before it runs, and by direct `rm` rather than `artisan config:clear` — artisan boots THROUGH
+      the cache, so clearing it with the thing it corrupts is the wrong order.
+
+      Re-cache afterwards only if this deploy normally does; if it does, the re-cache must come
+      AFTER the migrations, or it freezes a schema-dependent config from before them.
+
+#### 3 · VERIFY THE MIGRATION DID WHAT IT CLAIMS
+
+- [ ] **3.1 The columns exist.**
+
+      ```sql
+      SHOW COLUMNS FROM finance_invoices LIKE 'reviewed%';
+      ```
+
+      Two rows: `reviewed_at`, `reviewed_by_user_id`.
+
+- [ ] **3.2 Count the GRANDFATHERED book, and record the number.**
+
+      ```sql
+      SELECT COUNT(*) AS grandfathered FROM finance_invoices
+      WHERE reviewed_at IS NOT NULL AND reviewed_by_user_id IS NULL;
+      ```
+
+      This is the backfill's work: every invoice that existed when the migration ran, stamped at its
+      own `created_at` with no reviewer — which the migration's docblock defines as *"grandfathered:
+      released because it predates the control"*. **It should equal the invoice count from 1.2.**
+
+      > **Grandfathered count: ______** _(record it — 6.2 is read against it)_
+
+- [ ] **3.3 Count the UNREVIEWED book. Before the bulk run this must be ZERO.**
+
+      ```sql
+      SELECT COUNT(*) AS unreviewed FROM finance_invoices WHERE reviewed_at IS NULL;
+      ```
+
+      **If it is not zero, STOP.** Something created invoices after the backfill and nobody has
+      reviewed them — which means either the bulk run has already been started, or an invoice was
+      raised during the deploy window. Both need reading before anything else happens.
+
+#### 4 · VERIFY THE SEAT — the step that has never been tested in production
+
+**If any of 4.1–4.4 fails, the deploy is TECHNICALLY FINE AND THE FEATURE IS UNUSABLE. Treat it as a
+stop.** Every failure this slice has fixed was of exactly this shape: a page correct and unreachable,
+an ability granted and invisible, a control present and inert. None of them broke anything; each of
+them meant the thing did not work for the person it was for.
+
+- [ ] **4.1 The internal auditor signs in COLD — from the login page, NOT from a link.**
+
+      They land on the review queue. Cold matters: `redirect()->intended()` wins over the landing
+      branch, so following a link would exercise a different path and prove nothing about the one
+      that was broken.
+
+- [ ] **4.2 The count renders, and reads `Awaiting sign-off: 0`.**
+
+      Zero is correct here — 3.3 just asserted it. What is being verified is that the number renders
+      at all, and that the screen shows the reassuring empty state rather than the red "could not
+      load the queue" alarm. Those two look different on purpose.
+
+- [ ] **4.3 Both sidebar entries are present: `Internal audit → Review queue`, and
+      `System → Activity Log`.**
+
+      Each was invisible to this seat until this release, for the same reason: an enclosing
+      `can(...)` gate the seat does not satisfy.
+
+- [ ] **4.4 They open the activity log and IT POPULATES.**
+
+      Not just loads — shows rows. An empty feed here means `activity_log.view_all` did not land, and
+      the seat is reading only its own acts.
+
+#### 5 · EXIT
+
+- [ ] **5.1 Maintenance mode off.**
+
+      ```bash
+      php artisan up
+      ```
+
+- [ ] **5.2 A parent signs in. They see their existing bills. NOTHING HAS CHANGED FOR THEM.**
+
+      The grandfathered book is released by construction, so the parent portal must look exactly as
+      it did before the deploy. A parent seeing FEWER bills than yesterday means the backfill did not
+      cover the whole book, and that is a stop.
+
+#### 6 · THEN, AND ONLY THEN — THE BULK RUN
+
+- [ ] **6.1 Run the resumption bulk invoicing. AFTER the migration, never before.**
+
+      The trap is written out above; the one-line version is that before the migration, the backfill
+      stamps the new book as reviewed by nobody, and from inside it a bill raised ten minutes ago and
+      one raised in July are the same row.
+
+- [ ] **6.2 Count the unreviewed book. It should now equal the number of invoices the run created.**
+
+      ```sql
+      SELECT COUNT(*) AS unreviewed FROM finance_invoices WHERE reviewed_at IS NULL;
+      ```
+
+      > **Unreviewed after the run: ______**  ·  **invoices the run reported creating: ______**
+
+      They must match. If unreviewed is HIGHER, something else raised bills. If LOWER, something
+      released bills nobody signed off.
+
+- [ ] **6.3 A parent signs in. They must NOT see the new bills.**
+
+      This is the compliance gate itself, checked from the payer's side rather than from the
+      database. It is the one assertion in this document that a query cannot make.
+
+- [ ] **6.4 The auditor's queue count equals 6.2.**
+
+      The screen and the database agree. If the screen shows fewer, the feed is filtered somewhere it
+      must not be — the endpoint's docblock carries that warning about `pagination.total`.
+
+#### ROLLBACK TRIGGERS — decided now, not at 2am
+
+| Trigger | |
+| --- | --- |
+| **0.2** finds pending migrations nobody has read | do not deploy; read them first |
+| **1.2** fails to restore | do not deploy; there is no way back |
+| **3.2 / 3.3** returns a number that does not match | roll back |
+| **4.1–4.4** any failure | roll back |
+| **6.3** a parent can see an unreviewed bill | roll back |
+
+**The action for every trigger below the first two:**
+
+```bash
+php artisan down --render="errors::503"
+# restore the 1.1 backup                     ⚑ UNVERIFIED — Segun's hosting command
+# redeploy the previous release              ⚑ UNVERIFIED — Segun's hosting command
+php artisan up
+```
+
+Then reschedule. **A trigger with no action beside it is a note, not a plan** — which is why the two
+hosting-specific lines are marked rather than guessed at: a wrong restore command at 2am is worse
+than a blank one, because it will be run.
+
+Note the asymmetry: the first two triggers are **do not deploy**, not roll back. Nothing has changed
+yet at that point, and rolling back from a state you never entered is how a checklist teaches people
+to skip its own early steps.
+
+#### WHAT IS NOT IN THIS DEPLOY, stated so nobody looks for it
+
+**The return-to-Finance path.** There is no way for an auditor to send a bill back with a reason;
+`finance.invoice.reject` is deliberately not even declared, because a permission declared ahead of
+its code is the `pending_emitters` mistake the activity catalogue already carries twice.
+
+It ships **13 September with the payments half**. Until then a wrong bill is simply **not signed
+off** — it stays in the queue, invisible to the parent — and Finance is told directly. Brookstone
+has this in writing.
+
 - [ ] **PRE-DEPLOY — EVERY SCHOOL MUST HAVE AT LEAST ONE ACTIVE BANK ACCOUNT, or its bursar
       cannot record a payment at all.** `2026_08_10_120000_finance_bank_account_foreign_keys`
       makes `finance_payments.bank_account_id` required for portal-issued payments

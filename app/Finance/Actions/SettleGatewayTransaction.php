@@ -14,6 +14,8 @@ use App\Finance\Models\Payment;
 use App\Finance\Services\GatewayEventRedactor;
 use App\Finance\Services\PaystackClient;
 use App\Finance\Services\SettlementBankAccount;
+use App\Notifications\Contracts\Notifier;
+use App\Notifications\Types\PaymentReceived;
 use App\Support\Money;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -86,6 +88,7 @@ final class SettleGatewayTransaction
 
     public function __construct(
         private readonly PaystackClient $paystack,
+        private readonly Notifier $notifier,
         private readonly RecordPayment $payments,
         private readonly SettlementBankAccount $settlementAccount,
         private readonly GatewayEventRedactor $redactor,
@@ -352,8 +355,83 @@ final class SettleGatewayTransaction
                 );
             }
 
+            // THE NOTIFICATION FIRES HERE AND NOWHERE ELSE: on the WINNING claim.
+            //
+            // Paystack redelivers, and since #370 every redelivery re-verifies — so a dispatch keyed
+            // to a DELIVERY would reach a parent once per retry. The compare-and-swap above is the
+            // one place that knows a claim was won, and it is the same act that writes the money.
+            //
+            // INSIDE THE TRANSACTION, because the DECISION belongs to the boundary that decides the
+            // claim: a loser throws and this line is rolled back with the payment it announced. The
+            // notification connection's `after_commit` is FALSE (config/queue.php), which is a
+            // deliberate setting on the isolated notification queue and not this change's to alter —
+            // so the fan-out job may observe an uncommitted payment. That is recorded in the
+            // escalation list rather than worked around here, because a per-event override would
+            // reverse a global decision locally.
+            $this->announce($payment, (int) $transaction->school_id);
+
             return GatewaySettlementOutcome::Settled;
         });
+    }
+
+    /**
+     * Tell the student's guardians their payment was recorded — unless this is money this system
+     * never collected.
+     *
+     * ── THE MIGRATED REFUSAL, WHICH IS A DEBT THIS COMMIT INHERITS ──
+     *
+     * `NotificationType::PAYMENT_RECEIVED` was declared with a condition attached: *whoever wires it
+     * owes the migrated-payment refusal*, because a payment with `origin = 'migrated'` was collected
+     * by WCBS before the cutover and nobody at Brookstone handed that parent this system's receipt.
+     * `opening-balance-import-spec.md` §4 names the emailed confirmation as one of four surfaces the
+     * obligation lands on; U11 discharged the printable page, and this discharges the email. PDF and
+     * export/archival still owe it.
+     *
+     * ── IT REFUSES BY NOT DISPATCHING, AND THE REASON IS STRUCTURAL ──
+     *
+     * The tidier shape would be to dispatch and resolve to zero delivered channels, so the refusal
+     * lands on `notification_deliveries.skip_reason` where every other refusal in this system lives.
+     * **That is not available**: `TypeDefinition` carries `defaultChannels` per TYPE and the
+     * `Notification` contract has no channels hook, so no instance can resolve to zero channels
+     * carrying a reason. And expressing a payment-provenance rule inside `FanOutNotificationJob`'s
+     * match — whose three conditions are all delivery-scoped (wants it, have an address, address is
+     * suppressed) — would hand every future type a condition that means nothing to it.
+     *
+     * So the guard is here, and the refusal is recorded on the activity log, which is where this
+     * module already records acts on money.
+     *
+     * ── ONE READ OF THE DECISION ──
+     *
+     * `receiptRefusalCode()` is called ONCE and branched on null. Asking `isReceiptable()` as well
+     * would be two reads of one decision at a call site, reintroducing the drift the method exists
+     * to prevent — and the code it returns distinguishes `migrated` from an unrecognised origin, so
+     * a bursar grepping the log is not told the money came from WCBS when the system's own position
+     * is that it cannot confirm where it came from.
+     */
+    private function announce(Payment $payment, int $schoolId): void
+    {
+        $refusal = $payment->receiptRefusalCode();
+
+        if ($refusal !== null) {
+            activity('finance')
+                ->performedOn($payment)
+                ->event('payment_receipt_refused')
+                ->withProperties(['reason_code' => $refusal])
+                ->log('A payment confirmation was refused for a payment this system did not collect.');
+
+            return;
+        }
+
+        // PRIMITIVES ACROSS THE BOUNDARY, not the model. `App\Notifications` may not use
+        // `App\Finance` (NotificationsArchTest), so the type receives ids and a shared-kernel
+        // `Money` rather than a Payment it could interrogate.
+        $this->notifier->send(new PaymentReceived(
+            subject: $payment,
+            schoolId: $schoolId,
+            studentId: (int) $payment->student_id,
+            paymentId: (int) $payment->getKey(),
+            amount: $payment->amount,
+        ));
     }
 
     /**

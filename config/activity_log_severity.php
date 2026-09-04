@@ -139,6 +139,27 @@ return [
         // OMISSION — a bill nobody ever reviews, sitting unreleased forever. That produces no row
         // at any tier. Finding it is a query over `reviewed_at IS NULL`, not a log filter.
         'finance.invoice.approved',
+        // INTERNAL AUDIT RETURNING A BILL TO FINANCE — the other half of the same decision
+        // (App\Finance\Actions\ReturnInvoice; the axis is 2026_09_04_100000).
+        //
+        // NOT `critical`, argued from this tier's own members rather than by pointing at the line
+        // above. Every member of that tier MOVES money or power: a privilege escalation, an
+        // impersonation, a refund, the redirection of a school's gateway income. A return moves
+        // nothing — it WITHHOLDS, and it withholds a bill no payer has seen. And the rarity that
+        // might argue for critical cuts the other way: the `approved` note above records that
+        // raising a member degrades the tier for the members already in it, and that holds however
+        // rare the new member is.
+        //
+        // NOT `info`. It is evidentiary in exactly the sense `approved` is — the record that a
+        // named human REFUSED to release a charge, and said why. Sharper here than there: a bill
+        // can be returned again after Finance resubmits it (Phase B), which overwrites all three
+        // columns, so after the second return this row is the only place the first one exists.
+        //
+        // AND THE ARGUMENT THAT ACTUALLY DECIDES IT: approve and return are the two halves of ONE
+        // review decision. Splitting them across tiers means a severity filter shows an auditor
+        // half their own decisions and hides the other half, with nothing on screen to say a half
+        // is missing. Whatever tier `approved` holds, this holds.
+        'finance.invoice.returned',
     ],
 
     'notice' => [

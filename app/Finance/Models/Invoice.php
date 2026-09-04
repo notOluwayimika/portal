@@ -56,6 +56,9 @@ use Illuminate\Support\Carbon;
  * @property string|null $cancel_reason
  * @property Carbon|null $reviewed_at when Internal Audit released this bill to parents; NULL = not yet visible to the payer
  * @property int|null $reviewed_by_user_id LOOKUP, not an FK. NULL on a grandfathered row (see 2026_08_31_100000)
+ * @property Carbon|null $returned_at when Internal Audit sent this bill back to Finance; NULL = never returned
+ * @property int|null $returned_by_user_id LOOKUP, not an FK. Paired with returned_at by a trigger (see 2026_09_04_100000)
+ * @property string|null $return_reason what Finance is being asked to correct; the entire content of a return
  * @property Carbon $created_at
  */
 class Invoice extends Model
@@ -72,6 +75,12 @@ class Invoice extends Model
         'total' => MoneyCast::class.':total_minor,total_currency',
         'cancelled_at' => 'datetime',
         self::RELEASE_STAMP_COLUMN => 'datetime',
+        // NO RETURN_STAMP_COLUMN CONSTANT, and that was decided rather than skipped.
+        // RELEASE_STAMP_COLUMN exists because `reviewed_at` had THREE spellings across app/ and
+        // ReleasedToPayersHasOneDefinitionTest now pins it to one. `returned_at` has ONE writer
+        // (App\Finance\Actions\ReturnInvoice) and no reader yet; a constant plus its arch test,
+        // invented ahead of the second call site, asserts a discipline nothing is violating.
+        'returned_at' => 'datetime',
     ];
 
     protected static function booted(): void

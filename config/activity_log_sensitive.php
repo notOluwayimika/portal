@@ -54,6 +54,21 @@ return [
         // listing this key would hide the auditor's OWN ATTESTATIONS from the auditor. The seat
         // would sign a release and then be unable to find the record that it had. The rows carry an
         // invoice uuid, a student id and a timestamp; no amount, no payer identity, no credential.
+        //
+        // DELIBERATELY ABSENT FOR THE SAME REASON, PLUS A RESIDUAL THAT NOTE DOES NOT CARRY:
+        // `finance.invoice.returned` (App\Finance\Actions\ReturnInvoice). Same argument —
+        // `internal_auditor` does not hold `activity_log.view_sensitive`, so listing it would hide
+        // the auditor's OWN returns from the auditor, and returning is half of the same decision
+        // approving is the other half of.
+        //
+        // THE RESIDUAL, STATED RATHER THAN GLOSSED: unlike `approved`, this row carries FREE TEXT
+        // an auditor typed. If an auditor writes a payer's name, a phone number or a medical
+        // remark into a return reason, that text sits in the log at `activity_log.view`. NO CONFIG
+        // SETTING CAN CLOSE THAT — it is a content risk, not a classification one, and listing the
+        // key here would trade it for the worse problem above. The mitigation is helper text on the
+        // return form telling auditors to describe the FEE and not the family, and it is OWED BY
+        // THE COMMIT THAT BUILDS THAT FORM. Recorded here so that commit inherits a written
+        // obligation rather than somebody's memory of one.
         // DELIBERATELY ABSENT: the five `finance.bank_account_*` /
         // `finance.settlement_account_changed` keys. They are the highest-tier finance events in
         // the catalogue — settlement is `critical` — and they are NOT listed here, which is not an

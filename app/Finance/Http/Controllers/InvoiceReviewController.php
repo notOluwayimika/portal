@@ -4,6 +4,8 @@ namespace App\Finance\Http\Controllers;
 
 use App\Exceptions\BusinessRuleException;
 use App\Finance\Actions\ApproveInvoice;
+use App\Finance\Actions\ReturnInvoice;
+use App\Finance\Http\Requests\ReturnInvoiceRequest;
 use App\Finance\Models\Invoice;
 use App\Http\Controllers\Controller;
 use App\Support\ActiveSchool;
@@ -94,6 +96,24 @@ use Illuminate\Http\Request;
  * wrapped in one: a single refusal — a void bill, one already released by a colleague — must not
  * roll back attestations that were validly made moments earlier. Per-invoice is the complete axis;
  * the batch is convenience over it.
+ *
+ * ─── AND THERE IS NO BATCH RETURN, WHICH IS NOT AN OMISSION ─────────────────────────────────────
+ *
+ * `approve()` takes many uuids; `return()` takes ONE, in the path. The asymmetry follows from what
+ * the two acts carry. A release carries no payload beyond the attestation itself, so "these
+ * twenty-five" is a complete instruction. A RETURN CARRIES A REASON, and one reason applied to a
+ * hundred bills is a LABEL rather than a reason: Finance would be told something is wrong with a
+ * batch without being told what is wrong with any bill in it, and the field that exists to say what
+ * to fix would be the one field that says nothing.
+ *
+ * ─── A RETURN IS WHERE THIS SLICE'S TWO HALVES MEET ────────────────────────────────────────────
+ *
+ * One successful return moves a bill from `counts.awaiting_review` to `counts.returned_to_finance`
+ * and leaves `counts.unreleased_total` UNCHANGED. That last part is the whole argument for the
+ * third count existing: the omission detector must not narrow when a bill is returned, or returning
+ * bills would quietly shrink the number that exists to reveal bills nobody has dealt with. It is
+ * asserted end-to-end rather than reasoned about — see the integration arm in
+ * `tests/Feature/Finance/InvoiceReviewEndpointsTest.php`.
  */
 class InvoiceReviewController extends Controller
 {
@@ -246,5 +266,47 @@ class InvoiceReviewController extends Controller
             'refused' => $refused,
             'results' => $results,
         ], $refused === 0 ? 200 : 207);
+    }
+
+    /**
+     * POST /api/internal-audit/invoices/{uuid}/return
+     *
+     * `return` IS A LEGAL PHP METHOD NAME — reserved words are permitted as method names since PHP
+     * 7.0, and it compiles, resolves through the route action string and passes phpstan. Named for
+     * the verb the domain uses rather than renamed to dodge a keyword that is not in the way.
+     */
+    public function return(ReturnInvoiceRequest $request, string $uuid, ReturnInvoice $action): JsonResponse
+    {
+        // RESOLVED MANUALLY INSIDE THE TENANT, not by route model binding — the same shape and the
+        // same reason as `approve()` above. Binding resolves globally and then refuses late, which
+        // both leaks the existence of another school's row and answers with the wrong word.
+        // UNKNOWN, NOT FORBIDDEN, is the house convention for a record in another School.
+        $invoice = Invoice::query()
+            ->where('school_id', ActiveSchool::getOrFail()->id)
+            ->where('uuid', $uuid)
+            ->first();
+
+        if ($invoice === null) {
+            return response()->json(['message' => 'No such invoice in this School.'], 404);
+        }
+
+        try {
+            $returned = $action->handle($invoice, $request->user(), (string) $request->validated('reason'));
+        } catch (BusinessRuleException $e) {
+            // The action's sentence, VERBATIM — the house shape (CreditNoteController:54-55 and
+            // three siblings). It already names the first returner, or the void-and-credit-note
+            // remedy, or the measured length; a second rendering here would be a poorer spelling of
+            // the same refusal.
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return response()->json([
+            'uuid' => $returned->uuid,
+            'number' => $returned->number,
+            'student_id' => $returned->student_id,
+            'returned_at' => $returned->returned_at?->toIso8601String(),
+            'returned_by_user_id' => $returned->returned_by_user_id,
+            'return_reason' => $returned->return_reason,
+        ]);
     }
 }

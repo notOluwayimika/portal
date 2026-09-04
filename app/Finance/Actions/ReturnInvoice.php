@@ -112,8 +112,17 @@ use Illuminate\Support\Facades\DB;
  */
 final class ReturnInvoice
 {
-    /** The width of `finance_invoices.return_reason`, in CHARACTERS (VARCHAR(255), utf8mb4). */
-    private const REASON_MAX = 255;
+    /**
+     * The width of `finance_invoices.return_reason`, in CHARACTERS (VARCHAR(255), utf8mb4).
+     *
+     * PUBLIC, AND THE PROMOTION IS THE POINT. It was private while this action was the only reader.
+     * `ReturnInvoiceRequest` now cites it rather than hardcoding a second 255, because two
+     * independent copies can diverge and the failure when they do is not a crash: the operator gets
+     * THIS class's sentence instead of a field-level error on `reason`, which is worse and reads as
+     * a bug. The `Reject*Request` siblings hardcode only because their domain layer has no constant
+     * to cite.
+     */
+    public const REASON_MAX = 255;
 
     /**
      * Return $invoice to Finance with $reason, attributed to $actor.

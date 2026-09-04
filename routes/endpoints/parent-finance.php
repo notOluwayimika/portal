@@ -68,3 +68,19 @@ Route::get('/parent/finance/wards', [GuardianFinanceController::class, 'wards'])
 Route::post('/parent/invoices/{invoice}/payment', [GatewayPaymentController::class, 'store'])
     ->middleware('throttle:12,1')
     ->name('parent.finance.payment.store');
+
+/*
+ * THE FEE PREVIEW — what the parent will be charged, before they agree to anything.
+ *
+ * READ-SHAPED DESPITE BEING A POST. It writes nothing and calls no provider; the method is POST
+ * because the amount is a body parameter and a naira figure has no business in a URL a parent can
+ * share or a proxy can log. Throttled a little looser than `store` for the same reason: it creates
+ * nothing, and a parent adjusting the amount in the field will legitimately call it several times.
+ *
+ * Same gate, same group, same ability. Its FormRequest extends `store`'s, so the uuid-within-scope
+ * resolution and `mayPay()` are inherited rather than restated — a preview that resolved the id
+ * itself would answer a number for any uuid handed to it.
+ */
+Route::post('/parent/invoices/{invoice}/payment/preview', [GatewayPaymentController::class, 'preview'])
+    ->middleware('throttle:30,1')
+    ->name('parent.finance.payment.preview');

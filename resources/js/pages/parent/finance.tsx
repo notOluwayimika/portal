@@ -1,6 +1,8 @@
+import { usePage } from '@inertiajs/react';
 import axios from 'axios';
 import { AlertTriangle, CheckCircle2, FileText, Wallet } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { PayInvoice } from '@/components/parent/pay-invoice';
 import { formatNaira } from '@/lib/format';
 import {
     hasAvailableCredit,
@@ -43,44 +45,73 @@ type LoadState =
     | { status: 'error'; message: string }
     | { status: 'ready'; wards: FinanceWard[] };
 
-function InvoiceRow({ invoice }: { invoice: FinanceWardInvoice }) {
+function InvoiceRow({
+    invoice,
+    studentName,
+    schoolName,
+}: {
+    invoice: FinanceWardInvoice;
+    studentName: string;
+    schoolName: string;
+}) {
     return (
-        <li className="flex flex-col gap-1 border-b border-gray-100 py-3 last:border-b-0 sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-w-0">
-                <p className="truncate font-medium text-gray-900">
-                    {invoice.display_number}
-                </p>
-                <p className="truncate text-sm text-gray-500">
-                    {invoice.academic_context}
-                    {/* `kind` distinguishes the term bill from a one-off; an episode can carry both
+        <li className="border-b border-gray-100 py-3 last:border-b-0">
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                    <p className="truncate font-medium text-gray-900">
+                        {invoice.display_number}
+                    </p>
+                    <p className="truncate text-sm text-gray-500">
+                        {invoice.academic_context}
+                        {/* `kind` distinguishes the term bill from a one-off; an episode can carry both
                         at once, so the number alone no longer says which document this is. */}
-                    {invoice.kind === 'supplementary' && (
-                        <span className="ml-2 rounded bg-amber-50 px-1.5 py-0.5 text-xs font-medium text-amber-700">
-                            Supplementary
-                        </span>
-                    )}
-                </p>
+                        {invoice.kind === 'supplementary' && (
+                            <span className="ml-2 rounded bg-amber-50 px-1.5 py-0.5 text-xs font-medium text-amber-700">
+                                Supplementary
+                            </span>
+                        )}
+                    </p>
+                </div>
+
+                <div className="flex shrink-0 items-baseline gap-4 sm:justify-end">
+                    <div className="text-right">
+                        <p className="text-xs text-gray-500">Billed</p>
+                        <p className="text-sm text-gray-700">
+                            {formatNaira(invoice.total)}
+                        </p>
+                    </div>
+                    <div className="text-right">
+                        <p className="text-xs text-gray-500">Outstanding</p>
+                        <p className="font-semibold text-gray-900">
+                            {formatNaira(invoice.outstanding)}
+                        </p>
+                    </div>
+                </div>
             </div>
 
-            <div className="flex shrink-0 items-baseline gap-4 sm:justify-end">
-                <div className="text-right">
-                    <p className="text-xs text-gray-500">Billed</p>
-                    <p className="text-sm text-gray-700">
-                        {formatNaira(invoice.total)}
-                    </p>
-                </div>
-                <div className="text-right">
-                    <p className="text-xs text-gray-500">Outstanding</p>
-                    <p className="font-semibold text-gray-900">
-                        {formatNaira(invoice.outstanding)}
-                    </p>
-                </div>
-            </div>
+            {/*
+                THE PAY AFFORDANCE, AND ITS CONDITION IS "THIS BILL IS IN THE LIST".
+                `GuardianFinanceController::wards` withholds unreleased bills on both keys, so every
+                invoice reaching here is already released. A second, client-side release check would
+                be a duplicate of a server-side control that could drift into offering a button the
+                server refuses.
+            */}
+            <PayInvoice
+                invoice={invoice}
+                studentName={studentName}
+                schoolName={schoolName}
+            />
         </li>
     );
 }
 
-function WardCard({ ward }: { ward: FinanceWard }) {
+function WardCard({
+    ward,
+    schoolName,
+}: {
+    ward: FinanceWard;
+    schoolName: string;
+}) {
     const { student, invoices, account } = ward;
     const inCredit = isInCredit(account.balance);
 
@@ -117,10 +148,18 @@ function WardCard({ ward }: { ward: FinanceWard }) {
             {hasAvailableCredit(account.available_credit) && (
                 <p className="mb-4 flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
                     <Wallet className="h-4 w-4 shrink-0" aria-hidden="true" />
+                    {/*
+                        DEV 1'S APPROVED WORDING, and this REPLACES a sentence that described a
+                        state. "Already paid and not yet applied to a bill" tells a parent what the
+                        number is and nothing about what happens to it — which is the shape that
+                        makes a parent conclude the system is broken and telephone the school. This
+                        says what will happen and who to ask.
+                    */}
                     <span>
-                        {formatNaira(account.available_credit)} available on
-                        this account, already paid and not yet applied to a
-                        bill.
+                        {formatNaira(account.available_credit)} credit on this
+                        student's account. This will be applied automatically to
+                        the next invoice issued. To apply it to an outstanding
+                        invoice, contact the bursar.
                     </span>
                 </p>
             )}
@@ -142,7 +181,12 @@ function WardCard({ ward }: { ward: FinanceWard }) {
             ) : (
                 <ul className="divide-y divide-gray-100">
                     {invoices.map((invoice) => (
-                        <InvoiceRow key={invoice.id} invoice={invoice} />
+                        <InvoiceRow
+                            key={invoice.id}
+                            invoice={invoice}
+                            studentName={student.name}
+                            schoolName={schoolName}
+                        />
                     ))}
                 </ul>
             )}
@@ -152,6 +196,15 @@ function WardCard({ ward }: { ward: FinanceWard }) {
 
 export default function ParentFinance() {
     const [state, setState] = useState<LoadState>({ status: 'loading' });
+
+    /*
+        THE ACTIVE SCHOOL'S NAME, from the shared props HandleInertiaRequests already provides on
+        every page. It is on the confirmation because the SCHOOL is the field that distinguishes
+        "the wrong child" from "the wrong portal" for a two-campus family — and it costs no change
+        to the wards endpoint.
+    */
+    const { auth } = usePage().props;
+    const schoolName = auth.school?.name ?? '';
 
     useEffect(() => {
         let cancelled = false;
@@ -234,7 +287,11 @@ export default function ParentFinance() {
                 wardsView(state.wards).kind === 'wards' && (
                     <div className="space-y-4">
                         {state.wards.map((ward) => (
-                            <WardCard key={ward.student.id} ward={ward} />
+                            <WardCard
+                                key={ward.student.id}
+                                ward={ward}
+                                schoolName={schoolName}
+                            />
                         ))}
                     </div>
                 )}

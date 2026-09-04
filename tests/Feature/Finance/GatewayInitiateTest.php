@@ -11,10 +11,12 @@ use App\Models\StudentCurriculum;
 use App\Models\User;
 use App\Support\ActiveSchool;
 use App\Support\Money;
+use App\Support\SchoolDay;
 use Database\Seeders\RbacSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 
 /**
@@ -259,4 +261,131 @@ it('refuses a cancelled bill', function () {
 
     gitPost($invoice, $guardian, 10_000_000)->assertStatus(422);
     expect(DB::table('finance_gateway_transactions')->count())->toBe(0);
+});
+
+/*
+|--------------------------------------------------------------------------
+| THE FEE PREVIEW — what the parent is told before they agree
+|--------------------------------------------------------------------------
+|
+| A FEE PREVIEW, NOT A QUOTE. "Quote" is the spec's word for the parked Paystack-first design; this
+| is local `GatewayFeeCalculator` arithmetic with no provider call.
+*/
+
+/** A portal payment for this invoice's student, big enough to allocate against. Returns its id. */
+function gitAllocatablePayment(Invoice $invoice): int
+{
+    return (int) DB::table('finance_payments')->insertGetId([
+        'uuid' => (string) Str::uuid(),
+        'school_id' => $invoice->school_id,
+        'student_id' => $invoice->student_id,
+        'reference' => (int) DB::table('finance_payments')->where('school_id', $invoice->school_id)->max('reference') + 1,
+        'amount_minor' => 6_000_000,
+        'amount_currency' => 'NGN',
+        'payer_name' => 'Ada Obi',
+        'method' => 'cash',
+        'origin' => 'portal',
+        'bank_account_id' => testBankAccountId((int) $invoice->school_id),
+        'received_at' => SchoolDay::today(),
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+}
+
+function gitPreview(Invoice $invoice, User $user, int $amountMinor): TestResponse
+{
+    return test()->actingAs($user)->postJson("/api/parent/invoices/{$invoice->uuid}/payment/preview", [
+        'amount_minor' => $amountMinor,
+    ]);
+}
+
+it('previews the gross the initiate path would charge — the SAME number, across every fee regime', function (int $bill, string $regime) {
+    [$invoice, $guardian] = gitFixture();
+
+    $previewed = (int) gitPreview($invoice, $guardian, $bill)->assertOk()->json('gross.amount_minor');
+
+    // THE ARM THAT MATTERS, AND IT IS NOT A TAUTOLOGY TODAY BECAUSE IT IS A TRIPWIRE FOR TOMORROW.
+    // Both paths call `payableGross()`, so this passes by construction — which is exactly why it
+    // exists: it fires the day someone gives the preview its own copy of the guards or its own
+    // call to `grossFor()`. Without it, a divergence tells a parent one figure on the confirmation
+    // and charges them another at Paystack, and nothing reds.
+    //
+    // ALL THREE REGIMES, because the fee is piecewise and a single amount cannot see the seams:
+    // below the ₦2,500 waiver the flat is dropped, just above it the ratio is at its worst, and at
+    // the cap the percentage stops growing. A parity arm at one amount proves parity at one amount.
+    $charged = (int) gitPost($invoice, $guardian, $bill)->assertCreated()->json('amount.amount_minor');
+
+    expect($previewed)->toBe($charged, "preview and initiate disagree on the gross for {$regime}");
+})->with([
+    'below the flat-fee waiver' => [200_000, 'a ₦2,000 bill, flat waived'],
+    'just above the waiver, where the ratio is worst' => [260_000, 'a ₦2,600 bill, flat applies'],
+    'at the fee cap' => [50_000_000, 'a ₦500,000 bill, fee capped'],
+]);
+
+it('splits an overpayment into what settles the bill and what becomes credit', function () {
+    [$invoice, $guardian] = gitFixture();
+
+    // PART-PAID, NOT FRESH, AND THAT IS THE WHOLE FIXTURE. `InvoiceSettlement::for()` reads the
+    // settlement aggregates off the model and treats an ABSENT one as zero — so an invoice that did
+    // not come through the read model reports its FULL TOTAL outstanding. On a fresh invoice the
+    // hydrated and un-hydrated readings are IDENTICAL, so a fresh fixture cannot see the difference
+    // in principle. Only a part-paid invoice can.
+    ActiveSchool::runFor((int) $invoice->school_id, fn () => DB::table('finance_payment_allocations')->insert([
+        'uuid' => (string) Str::uuid(),
+        'school_id' => $invoice->school_id,
+        'invoice_id' => $invoice->id,
+        'payment_id' => gitAllocatablePayment($invoice),
+        'amount_minor' => 6_000_000,
+        'amount_currency' => 'NGN',
+        'allocation_rule' => 'payment_against_named_invoice',
+        'allocation_overridden' => 0,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]));
+
+    // Bill 10,000,000; 6,000,000 already allocated; outstanding 4,000,000. Paying 5,000,000 settles
+    // the outstanding and leaves 1,000,000 as credit.
+    $body = gitPreview($invoice, $guardian, 5_000_000)->assertOk()->json();
+
+    // THE EXACT SPLIT, NEVER "excess > 0". A wrong arithmetic still produces a non-zero excess, so
+    // the loose assertion passes over a figure that would be shown to a parent as fact.
+    expect((int) $body['applied']['amount_minor'])->toBe(4_000_000)
+        ->and((int) $body['excess']['amount_minor'])->toBe(1_000_000)
+        ->and((int) $body['gross']['amount_minor'])->toBeGreaterThan(5_000_000);
+});
+
+it('writes nothing — no transaction exists after a preview', function () {
+    [$invoice, $guardian] = gitFixture();
+
+    gitPreview($invoice, $guardian, 5_000_000)->assertOk();
+
+    // THE ENTIRE JUSTIFICATION FOR THE ENDPOINT. Initiate-first would leave a `pending` row for
+    // every parent who sees the fee and reconsiders — D4's population in the discrepancy report,
+    // manufactured by the pay screen. If this arm ever reds, the preview has become the thing it
+    // was built instead of.
+    expect(DB::table('finance_gateway_transactions')->count())->toBe(0);
+});
+
+it('refuses to preview a bill belonging to another guardian in the same school', function () {
+    [$invoice] = gitFixture();
+    [, $stranger] = gitFixture();
+
+    // THE SCOPING IS INHERITED, NOT RESTATED — PreviewGatewayFeeRequest extends the initiate
+    // request. This arm is what proves the inheritance is wired rather than assumed: a preview that
+    // resolved the uuid itself would answer a figure for any invoice handed to it.
+    gitPreview($invoice, $stranger, 5_000_000)->assertForbidden();
+});
+
+it('refuses to preview an amount below the configured minimum, server-side', function () {
+    [$invoice, $guardian] = gitFixture();
+
+    // THE SAME REFUSAL THE INITIATE PATH MAKES, because it is the same guard. The client check is a
+    // convenience so a parent is not sent to Paystack to be refused; this is the control.
+    gitPreview($invoice, $guardian, 50_000)->assertStatus(422);
+});
+
+it('refuses to preview an unreleased bill', function () {
+    [$invoice, $guardian] = gitFixture(reviewed: false);
+
+    gitPreview($invoice, $guardian, 5_000_000)->assertStatus(422);
 });

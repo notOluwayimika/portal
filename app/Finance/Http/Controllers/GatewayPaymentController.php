@@ -4,9 +4,11 @@ namespace App\Finance\Http\Controllers;
 
 use App\Exceptions\BusinessRuleException;
 use App\Finance\Actions\InitiateGatewayPayment;
+use App\Finance\Actions\PreviewGatewayFee;
 use App\Finance\DTOs\PaystackCheckout;
 use App\Finance\Exceptions\PaystackUnavailable;
 use App\Finance\Http\Requests\InitiateGatewayPaymentRequest;
+use App\Finance\Http\Requests\PreviewGatewayFeeRequest;
 use App\Http\Controllers\Controller;
 use App\Support\Money;
 use Illuminate\Http\JsonResponse;
@@ -67,5 +69,36 @@ final class GatewayPaymentController extends Controller
             'fee' => $transaction->amount->minus($transaction->bill),
             'amount' => $transaction->amount,
         ], 201);
+    }
+
+    /**
+     * The fee preview — three figures, no row, no provider call.
+     *
+     * 200 rather than 201: nothing was created, and that is the point of the endpoint.
+     */
+    public function preview(PreviewGatewayFeeRequest $request, PreviewGatewayFee $preview): JsonResponse
+    {
+        $invoice = $request->resolveInvoice();
+
+        try {
+            $figures = $preview->handle(
+                $invoice,
+                Money::fromKobo((int) $request->integer('amount_minor'), $invoice->total->currency),
+            );
+        } catch (BusinessRuleException $e) {
+            // Same refusals as `store`, in the same order, because they are literally the same
+            // guards. A parent who cannot pay must not be quoted a figure for doing so.
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return response()->json([
+            // WHAT THE CARD IS CHARGED — exact, because it is the number sent to the provider.
+            'gross' => $figures['gross'],
+            // WHAT SETTLES THE BILL, and what is left over. Computed server-side: the split is
+            // arithmetic on money, and `outstanding` on the client may predate another guardian's
+            // payment.
+            'applied' => $figures['applied'],
+            'excess' => $figures['excess'],
+        ], 200);
     }
 }

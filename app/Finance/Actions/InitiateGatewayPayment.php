@@ -67,6 +67,55 @@ final class InitiateGatewayPayment
      */
     public function handle(Invoice $invoice, Money $bill, User $payer, ?string $callbackUrl = null): GatewayTransaction
     {
+        // EVERY REFUSAL, IN ONE PLACE, SHARED WITH THE FEE PREVIEW. See {@see assertPayable}.
+        // THROUGH payableGross(), not assertPayable() + grossFor(). Calling the two separately here
+        // would leave initiate free to solve the gross differently from the preview while both
+        // "shared the guards" — the parity arm would stay green and the parent would still be quoted
+        // one number and charged another. One method answers both halves.
+        $gross = $this->payableGross($invoice, $bill);
+
+        $schoolId = (int) $invoice->school_id;
+
+        // The row is written BEFORE the provider is called, and committed, so a checkout that the
+        // payer completes always has a transaction for the webhook to find. The opposite order —
+        // initialise, then record — loses the row if the write fails, and the payer is charged
+        // against a reference this system has never heard of.
+        $transaction = DB::transaction(fn () => GatewayTransaction::create([
+            'school_id' => $schoolId,
+            'invoice_id' => $invoice->getKey(),
+            'provider' => 'paystack',
+            // The database enforces this format since 2026_09_01_100000; minting is not optional.
+            'reference' => GatewayReference::mint($schoolId),
+            'amount' => $gross,
+            'bill' => $bill,
+            'status' => 'pending',
+            'initiated_by_user_id' => $payer->id,
+        ]));
+
+        $checkout = $this->paystack->initialize($gross, $transaction->reference, $payer->email, $callbackUrl);
+
+        $transaction->setAttribute('checkout', $checkout);
+
+        return $transaction;
+    }
+
+    /**
+     * EVERY REASON A BILL MAY NOT BE PAID, ASKED ONCE AND SHARED WITH THE PREVIEW.
+     *
+     * The fee preview ({@see PreviewGatewayFee}) must refuse exactly what this
+     * action refuses, or the confirmation screen quotes a parent a figure for a payment the server
+     * will then decline — the same shape as a correct decision with a false statement attached, and
+     * here the statement is about money they are about to be charged.
+     *
+     * SHARED RATHER THAN RESTATED, and that is the whole point. Two copies agree on the day they are
+     * written; the parity test between preview and initiate would then be measuring a coincidence
+     * rather than a property. Called from one method, they cannot disagree by construction, and the
+     * parity arm becomes a tripwire on somebody splitting them later.
+     *
+     * @throws BusinessRuleException
+     */
+    public function assertPayable(Invoice $invoice, Money $bill): void
+    {
         if ($bill->isZero() || $bill->isNegative()) {
             throw new BusinessRuleException('A payment amount must be positive.');
         }
@@ -106,30 +155,17 @@ final class InitiateGatewayPayment
         // THE GROSS IS SOLVED FOR THE CHOSEN AMOUNT, not for the outstanding. The three regimes were
         // derived against bills, and the bill here is whatever the payer typed — a part-payment, the
         // whole outstanding, or more than it.
-        $gross = $this->fees->grossFor($bill);
+    }
 
-        $schoolId = (int) $invoice->school_id;
+    /**
+     * The gross for a payable bill — the preview and the initiate path compute it the same way.
+     *
+     * @throws BusinessRuleException
+     */
+    public function payableGross(Invoice $invoice, Money $bill): Money
+    {
+        $this->assertPayable($invoice, $bill);
 
-        // The row is written BEFORE the provider is called, and committed, so a checkout that the
-        // payer completes always has a transaction for the webhook to find. The opposite order —
-        // initialise, then record — loses the row if the write fails, and the payer is charged
-        // against a reference this system has never heard of.
-        $transaction = DB::transaction(fn () => GatewayTransaction::create([
-            'school_id' => $schoolId,
-            'invoice_id' => $invoice->getKey(),
-            'provider' => 'paystack',
-            // The database enforces this format since 2026_09_01_100000; minting is not optional.
-            'reference' => GatewayReference::mint($schoolId),
-            'amount' => $gross,
-            'bill' => $bill,
-            'status' => 'pending',
-            'initiated_by_user_id' => $payer->id,
-        ]));
-
-        $checkout = $this->paystack->initialize($gross, $transaction->reference, $payer->email, $callbackUrl);
-
-        $transaction->setAttribute('checkout', $checkout);
-
-        return $transaction;
+        return $this->fees->grossFor($bill);
     }
 }

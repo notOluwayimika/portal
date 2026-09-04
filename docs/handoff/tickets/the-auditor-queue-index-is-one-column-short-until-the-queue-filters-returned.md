@@ -1,7 +1,19 @@
 # The auditor-queue index is one column short — until the queue filters `returned`
 
-**Status:** open · **Opened:** 2026-09-04 · **Owed by:** the commit that adds
-`whereNull('returned_at')` to `InvoiceReviewController::pending()`
+**Status:** CLOSED 2026-09-04 · **Opened:** 2026-09-04 · **Closed by:** the single commit on
+`feat/finance-auditor-queue-excludes-returned`, which added `whereNull('returned_at')` to
+`InvoiceReviewController::pending()` and shipped
+`database/migrations/2026_09_04_110000_finance_invoices_auditor_queue_index.php`.
+
+**Named by BRANCH and migration rather than by SHA, and that is not laziness.** A commit cannot
+contain its own hash: writing one in required a second pass, and the amend that folded it in changed
+the very SHA it had just recorded — measured here, the ticket briefly named `39b7f26e` while the
+commit was `99883e77`. A ticket pointing at a commit that does not exist is worse than one pointing
+at a branch that does. `git log --oneline staging | grep auditor-queue` finds the merge.
+
+**Kept rather than deleted, on purpose: a ticket deleted on closure takes its reasoning with it.**
+The measurements below are why the fourth column exists, and the note at the bottom is the condition
+under which it stops being justified.
 
 `2026_09_04_100000` shipped `finance_invoices_school_reviewed_returned_index` on
 `(school_id, reviewed_at, returned_at)`. The measurement below says a **fourth** column,
@@ -46,19 +58,62 @@ every secondary index, so the physical order is
 Recorded because a four-column index serving a two-term sort otherwise reads as a sloppy
 measurement.
 
-## What the queue commit owes
+## What the queue commit owed — all four discharged
 
-- [ ] Add `whereNull('returned_at')` to `InvoiceReviewController::pending()`.
-- [ ] A migration dropping `finance_invoices_school_reviewed_returned_index` and adding
-      `finance_invoices_school_reviewed_returned_created_index`. **Measure the name against MySQL's
-      64-character identifier cap before using it** — do not assume it fits.
-- [ ] EXPLAIN **before and after**, against the **new** query. The 4-col row above was measured
-      against the future query; re-derive it rather than carrying this table forward.
-- [ ] **The trap the controller already names.** Its class docblock says that the day a filter is
-      added to this query, `pagination.total` silently becomes the filtered subset and the omission
-      detector narrows — and it requires either that the filter not affect the count, or that a
-      separate unfiltered count arrive **in the same change**. `whereNull(returned_at)` **does**
-      affect it: a returned bill is still an unreleased bill. One of the two is owed there.
+- [x] `whereNull('returned_at')` added to `InvoiceReviewController::pending()`.
+- [x] The migration ships as `2026_09_04_110000_finance_invoices_auditor_queue_index.php`. The name
+      `finance_invoices_school_reviewed_returned_created_index` **measures 55 characters** against
+      MySQL's 64-character cap — measured with `strlen`, not assumed. Its `down()` **restores the
+      three-column index** rather than merely dropping the four-column one: a rollback that left the
+      table with neither would drop the queue back onto `(school_id, student_id, reviewed_at)`,
+      which is the scan this ticket exists about.
+- [x] EXPLAIN re-derived against the **new** query on a fresh throwaway, not carried forward — and
+      the three new COUNT reads measured too, because three counts added to a page load that each
+      scanned the book would have made this commit a net loss:
+
+      | | type | key | rows | Extra |
+      | --- | --- | --- | --- | --- |
+      | auditor, new query, **3-col** (the before) | `ref` | `…_returned_index` | 2,700 | filesort |
+      | auditor, new query, **4-col** | `ref` | `…_returned_created_index` | 2,700 | **none** |
+      | Finance predicate, 4-col | `range` | `…_returned_created_index` | 300 | filesort |
+      | `counts.awaiting_review` | `ref` | `…_returned_created_index` | 2,700 | none |
+      | `counts.returned_to_finance` | `range` | `…_returned_created_index` | 300 | none |
+      | `counts.unreleased_total` | `ref` | `…_returned_created_index` | 3,000 | none |
+
+      The filesort is gone from the auditor arm, the Finance arm is unchanged as predicted, and
+      **every count is served by the same index at matched-set size** — none touches the book.
+
+- [x] **The `total` trap: the SECOND branch was taken — the separate unfiltered count arrives in the
+      same change**, as `counts.unreleased_total`. The first branch was not available: `paginate()`
+      derives `last_page` from the very count it reports, so a `total` describing a different set
+      than the rows would make the PAGER lie, which is a worse defect than the one being avoided.
+      The controller's docblock section was rewritten from a warning into that answer rather than
+      left standing beside the thing it predicted.
+
+## Two things this commit added that the ticket did not ask for, and why
+
+**`counts.returned_to_finance` is load-bearing, not informational.** There is no Finance queue yet —
+Phase B builds it. Until then this number is the only place in the system a returned bill is visible
+at all: filtered out of the auditor's queue, invisible to the payer because it is still unreleased,
+and with nowhere for Finance to find it. Without the count, returning a bill would make it vanish
+from every screen.
+
+**The invariant `unreleased_total == awaiting_review + returned_to_finance`** is asserted over a
+fixture holding all four review states plus a void bill, and a mutation dropping `excludingVoid()`
+from one count reds it (4 against 3). A break means a fourth unreleased state has appeared and
+nobody updated the counts.
+
+## A correction to this ticket's own numbers
+
+The table above and the original text say **"27,384 in the book"** for school 2. That figure was the
+OPTIMISER'S ROW ESTIMATE from an `EXPLAIN`, not a count. Re-measured on an identically-planted
+throwaway, school 2 holds **15,000** invoices; 27,384 was InnoDB's estimate for a `ref` on
+`(school_id, …)` and estimates on a secondary index are approximate by design.
+
+**Nothing about the conclusion changes** — the before-row still examined the whole school rather
+than the 2,700 it wanted, and that ratio is what the index fixed. But an estimate quoted as a count
+is exactly the kind of number that gets re-quoted, so it is corrected here rather than left to be
+inherited.
 
 ## And it stops being justified if the sort changes
 

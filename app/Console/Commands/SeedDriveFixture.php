@@ -180,6 +180,20 @@ class SeedDriveFixture extends Command
         });
         ActiveSchool::runFor($cast->schoolBId, fn () => $states->plainInvoice($e['bola'], 250000));
 
+        /*
+         * ONE BILL OUT WITH FINANCE — the review queue's second stat card, which is the ONLY surface
+         * a returned bill has anywhere in the system until Phase B builds Finance's own queue.
+         *
+         * Without it that card renders a bare `0` on a fresh fixture, and a `0` is exactly what a
+         * card wired to the wrong number looks like — the drive would prove nothing about it. Every
+         * other invoice this fixture stages is unreleased and NOT returned, so the awaiting column
+         * is populated either way; this is the only state that separates the two cards.
+         *
+         * AS THE AUDITOR, because ReturnInvoice asserts `finance.invoice.reject` against the actor
+         * in the active school and `internal_auditor` is the only role holding it.
+         */
+        ActiveSchool::runFor($cast->schoolAId, fn () => $states->returnedToFinance($cast->auditor));
+
         $this->report($cast, $states);
 
         return self::SUCCESS;
@@ -258,6 +272,24 @@ class SeedDriveFixture extends Command
         // notes and no decided voids renders a full-looking table in which one of the two types is
         // absent entirely — the type badge would be the only witness, which is precisely the reading
         // a single combined column would hide.
+        // THE REVIEW-QUEUE PAIR, added for the Internal Audit drive, and counted through
+        // DriveFinanceStates for the boundary-lint reason above.
+        //
+        // NEITHER IS DERIVABLE FROM `Open invoices`. That column asks whether money is still owed;
+        // these ask whether a HUMAN has signed the bill off, and the two are independent — a
+        // fully-paid bill can sit unreleased and a released one can be wide open. A fixture healthy
+        // on `Open invoices` can open the review queue onto nothing at all.
+        //
+        // SPLIT, NOT SUMMED, for the reason the decided-documents pair gives one comment up: the
+        // screen renders them as two stat cards whose SUM is the omission detector, and a fixture
+        // with a queue and zero returns renders the second card as a bare `0` — which is exactly
+        // what a card reading the wrong number looks like. Until Phase B builds Finance's own queue
+        // that card is the ONLY surface a returned bill has anywhere, so a zero in the second
+        // column means the drive cannot see the thing the card exists for.
+        $awaitingReview = fn (int $schoolId): int => ActiveSchool::runFor($schoolId, fn () => $states->awaitingReviewCount($schoolId));
+
+        $returnedToFinance = fn (int $schoolId): int => ActiveSchool::runFor($schoolId, fn () => $states->returnedToFinanceCount($schoolId));
+
         $decidedNotes = fn (int $schoolId): int => ActiveSchool::runFor($schoolId, fn () => $states->decidedCreditNoteCount($schoolId));
 
         $decidedVoids = fn (int $schoolId): int => ActiveSchool::runFor($schoolId, fn () => $states->decidedVoidRequestCount($schoolId));
@@ -381,10 +413,10 @@ class SeedDriveFixture extends Command
 
         $this->info('Authoring slot per school — the fee-schedules screen selects a term, a class level and an account; the discount-policies screen amends and retires a policy; the receipt screen (U11) renders ONE payment and refuses for a migrated one; the bulk-run screen (U6) prices a COHORT from an ACTIVE schedule and reports the unplaceable; the decisions surface (U13/U14) reads back what a checker has already settled:');
         $this->table(
-            ['School', 'Academic sessions', 'Terms', 'Class levels', 'Bank accounts', 'Discount policies', 'Payments (portal)', 'Payments (migrated)', 'Payments w/ remainder', 'Open invoices', 'Active schedules', 'Cohort at slot', 'Awarded in cohort', 'Sponsored in cohort', 'Unplaceable', 'Decided credit notes', 'Decided voids'],
+            ['School', 'Academic sessions', 'Terms', 'Class levels', 'Bank accounts', 'Discount policies', 'Payments (portal)', 'Payments (migrated)', 'Payments w/ remainder', 'Open invoices', 'Active schedules', 'Cohort at slot', 'Awarded in cohort', 'Sponsored in cohort', 'Unplaceable', 'Decided credit notes', 'Decided voids', 'Awaiting review', 'Returned to Finance'],
             [
-                ['A (school#'.$cast->schoolAId.')', $count('academic_sessions', $cast->schoolAId), $count('terms', $cast->schoolAId), $count('class_levels', $cast->schoolAId), $accounts($cast->schoolAId), $policies($cast->schoolAId), $payments($cast->schoolAId, 'portal'), $payments($cast->schoolAId, 'migrated'), $remainders($cast->schoolAId), $openInvoices($cast->schoolAId), $schedules($cast->schoolAId), $cohort($cast->schoolAId), $awardedInCohort($cast->schoolAId), $sponsoredInCohort($cast->schoolAId), $unplaceable($cast->schoolAId), $decidedNotes($cast->schoolAId), $decidedVoids($cast->schoolAId)],
-                ['B (school#'.$cast->schoolBId.')', $count('academic_sessions', $cast->schoolBId), $count('terms', $cast->schoolBId), $count('class_levels', $cast->schoolBId), $accounts($cast->schoolBId), $policies($cast->schoolBId), $payments($cast->schoolBId, 'portal'), $payments($cast->schoolBId, 'migrated'), $remainders($cast->schoolBId), $openInvoices($cast->schoolBId), $schedules($cast->schoolBId), $cohort($cast->schoolBId), $awardedInCohort($cast->schoolBId), $sponsoredInCohort($cast->schoolBId), $unplaceable($cast->schoolBId), $decidedNotes($cast->schoolBId), $decidedVoids($cast->schoolBId)],
+                ['A (school#'.$cast->schoolAId.')', $count('academic_sessions', $cast->schoolAId), $count('terms', $cast->schoolAId), $count('class_levels', $cast->schoolAId), $accounts($cast->schoolAId), $policies($cast->schoolAId), $payments($cast->schoolAId, 'portal'), $payments($cast->schoolAId, 'migrated'), $remainders($cast->schoolAId), $openInvoices($cast->schoolAId), $schedules($cast->schoolAId), $cohort($cast->schoolAId), $awardedInCohort($cast->schoolAId), $sponsoredInCohort($cast->schoolAId), $unplaceable($cast->schoolAId), $decidedNotes($cast->schoolAId), $decidedVoids($cast->schoolAId), $awaitingReview($cast->schoolAId), $returnedToFinance($cast->schoolAId)],
+                ['B (school#'.$cast->schoolBId.')', $count('academic_sessions', $cast->schoolBId), $count('terms', $cast->schoolBId), $count('class_levels', $cast->schoolBId), $accounts($cast->schoolBId), $policies($cast->schoolBId), $payments($cast->schoolBId, 'portal'), $payments($cast->schoolBId, 'migrated'), $remainders($cast->schoolBId), $openInvoices($cast->schoolBId), $schedules($cast->schoolBId), $cohort($cast->schoolBId), $awardedInCohort($cast->schoolBId), $sponsoredInCohort($cast->schoolBId), $unplaceable($cast->schoolBId), $decidedNotes($cast->schoolBId), $decidedVoids($cast->schoolBId), $awaitingReview($cast->schoolBId), $returnedToFinance($cast->schoolBId)],
             ],
         );
 

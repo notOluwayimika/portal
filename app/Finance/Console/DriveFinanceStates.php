@@ -11,6 +11,7 @@ use App\Finance\Actions\CreateFeeSchedule;
 use App\Finance\Actions\GenerateInvoice;
 use App\Finance\Actions\RecordAccountPayment;
 use App\Finance\Actions\RecordPayment;
+use App\Finance\Actions\ReturnInvoice;
 use App\Finance\Actions\SubmitCreditNote;
 use App\Finance\Actions\SubmitDiscountPolicyChange;
 use App\Finance\Actions\SubmitFeeScheduleChange;
@@ -799,6 +800,100 @@ final class DriveFinanceStates
      * Σ(allocations) and Σ(approved credit notes) are the same two aggregates InvoiceSettlement reads,
      * so this counts open by the same definition the screen displays.
      */
+    /**
+     * ONE BILL SENT BACK TO FINANCE, through the real Action.
+     *
+     * The review queue's second stat card is the only surface a returned bill has anywhere until
+     * Phase B, and a fixture that cannot produce one renders it as a bare `0` — which is
+     * indistinguishable from a card wired to the wrong number. A drive that saw `0` there would
+     * have proved nothing about the card.
+     *
+     * THROUGH `ReturnInvoice`, NEVER A WRITE, and here that is not merely the fixture's rule: the
+     * three return columns are guarded by `finance_invoices_return_pairing_bi`/`_bu`, which SIGNAL
+     * 45000 unless `returned_at` arrives with BOTH companions in one statement. A seeder setting
+     * them piecemeal would be refused as errno 1644 by the database itself.
+     *
+     * THE ACTOR MUST BE THE AUDITOR. `ReturnInvoice` asserts `finance.invoice.reject` against the
+     * actor IN THE ACTIVE SCHOOL, and `internal_auditor` is the only role holding it — passing the
+     * bursar would meet the gate rather than the fixture.
+     *
+     * @return int the number of the bill that was returned, so the drive can find it on screen
+     */
+    public function returnedToFinance(User $auditor): int
+    {
+        // AN EXISTING BILL, NEVER A NEW ONE. `invoice()` generates, and `GenerateInvoice` refuses a
+        // second active scheduled invoice for an episode — the slice-2 duplicate guard, which is
+        // exactly the invariant a fixture must not route around.
+        //
+        // AND IT TAKES NO ENROLLMENT UUID, WHICH IS ARCHITECTURE RATHER THAN CONVENIENCE. The first
+        // version resolved an episode through `App\Models\StudentCurriculum` and was refused by
+        // ArchitectureBoundaryTest's "Finance does not reach into Academics models" — a rule
+        // `bin/ci-boundary-lint.php` does NOT enforce, so the two instruments are not redundant and
+        // a green lint is not a green boundary.
+        //
+        // The bill is chosen the way the QUEUE chooses it — oldest unreleased, unreturned and
+        // non-void in the active school, ordered `created_at, id`, which is
+        // `InvoiceReviewController::pending()`'s own ordering. So the fixture returns the bill an
+        // auditor would see at the top of the page, and the whole read stays inside Finance.
+        $invoice = Invoice::query()
+            ->where('school_id', ActiveSchool::getOrFail()->id)
+            ->whereNull(Invoice::RELEASE_STAMP_COLUMN)
+            ->whereNull('returned_at')
+            ->excludingVoid()
+            ->orderBy('created_at')
+            ->orderBy('id')
+            ->firstOrFail();
+
+        app(ReturnInvoice::class)->handle(
+            $invoice,
+            $auditor,
+            'The tuition line is charged at last term\'s rate.',
+        );
+
+        return $invoice->number;
+    }
+
+    /**
+     * Bills the Internal Audit review queue can act on — UNRELEASED and NOT out with Finance.
+     *
+     * ADDED FOR THE REVIEW-QUEUE DRIVE, and it is a different question from `openInvoiceCount`
+     * above rather than the same one twice. That one asks whether money is still owed on a bill;
+     * this one asks whether a HUMAN has signed it off. The two are independent: a fully-paid bill
+     * can be unreleased, and a released bill can be wide open. A fixture healthy on the first
+     * column can open the review queue onto nothing.
+     *
+     * `excludingVoid()` because the queue does — a void bill is not awaiting anybody.
+     */
+    public function awaitingReviewCount(int $schoolId): int
+    {
+        return Invoice::query()
+            ->where('school_id', $schoolId)
+            ->whereNull(Invoice::RELEASE_STAMP_COLUMN)
+            ->whereNull('returned_at')
+            ->excludingVoid()
+            ->count();
+    }
+
+    /**
+     * Bills sent back to Finance — unreleased AND returned.
+     *
+     * COUNTED SEPARATELY FROM THE ABOVE, NOT SUMMED, for the reason the decided-documents pair
+     * gives: the screen renders these as their own stat card, and a fixture with a healthy queue
+     * and zero returns renders that card as a bare `0` — which is indistinguishable from a card
+     * reading the wrong number. Until Phase B builds Finance's own queue this card is the ONLY
+     * surface a returned bill has anywhere in the system, so a zero here means the drive cannot
+     * see the thing the card exists for.
+     */
+    public function returnedToFinanceCount(int $schoolId): int
+    {
+        return Invoice::query()
+            ->where('school_id', $schoolId)
+            ->whereNull(Invoice::RELEASE_STAMP_COLUMN)
+            ->whereNotNull('returned_at')
+            ->excludingVoid()
+            ->count();
+    }
+
     public function openInvoiceCount(int $schoolId): int
     {
         return Invoice::query()

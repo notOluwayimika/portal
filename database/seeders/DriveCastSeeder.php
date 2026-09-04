@@ -44,6 +44,15 @@ class DriveCastSeeder extends Seeder
     public User $checker;
 
     /**
+     * Internal Audit's seat — the ONLY one that can open /internal-audit/review-queue.
+     *
+     * Exposed because the review-queue fixture state has to be authored AS this seat: releasing or
+     * returning a bill is refused for every other login in the cast, and the states this fixture
+     * stages are produced by executing the real Actions rather than by writing rows.
+     */
+    public User $auditor;
+
+    /**
      * School B's bursar — the isolation seat, exposed because the FINANCE half needs a maker inside
      * School B. `maker` above is a School A user, and a discount-policy change proposed by them in
      * School B's context would attribute the proposal to someone with no access to that school. The
@@ -486,6 +495,38 @@ class DriveCastSeeder extends Seeder
         $super->flushSchoolAccessCache();
 
         $this->schoolBMaker = $this->driveUser('school-b@drive.test', $schoolB, 'accounts_officer');
+
+        // ── TWO INTERNAL-AUDIT SEATS, ADDED FOR THE REVIEW-QUEUE DRIVE ──────────────────────────
+        //
+        // NOT ONE OF THE SEATS ABOVE CAN OPEN /internal-audit/review-queue. That page and its API
+        // group are gated on `finance.invoice.approve`, which `internal_auditor` is the ONLY role
+        // holding — RbacSeeder withholds it from `admin` and `accounts_officer` deliberately,
+        // because both hold `finance.invoice.generate` and MAKER_OVERRIDES names that as this
+        // checker's maker. super_admin does not help either: the ability terminates in a
+        // CHECKER_SEGMENT, so ApprovalAbility excludes it from the Gate::before bypass (ADR 0040).
+        //
+        // Without this seat the review queue could not be driven at all — the fifth instance of the
+        // failure SKILL.md enumerates, and the same shape as the scholarships one, where the
+        // fixture contained the string "scholarship" zero times.
+        $this->auditor = $this->driveUser('auditor@drive.test', $schoolA, 'internal_auditor');
+
+        // THE SECOND SEAT HOLDS `approve` AND NOT `reject`, AND IT IS NOT A SEAT THAT EXISTS IN
+        // PRODUCTION — which is precisely why the fixture has to build it.
+        //
+        // The review queue is reached through `finance.invoice.approve`; the return route adds
+        // `permission:finance.invoice.reject` on top of that group. So the seat that distinguishes
+        // the route's OWN gate from its group's gate must hold the first and not the second — and
+        // no seeded role does, because `internal_auditor` holds both by design. A drive using only
+        // `auditor@drive.test` cannot tell a gated Return control from an ungated one.
+        //
+        // Same shape and same justification as `drive_void_checker` above: a dedicated role, legal
+        // under the grant guard because it holds one checker side and no maker.
+        setPermissionsTeamId($schoolA->id);
+        $approveOnly = Role::firstOrCreate(['name' => 'drive_ia_approve_only', 'guard_name' => 'web']);
+        Permission::firstOrCreate(['name' => 'finance.invoice.approve', 'guard_name' => 'web']);
+        $approveOnly->syncPermissions(['finance.invoice.approve']);
+        setPermissionsTeamId(null);
+        $this->driveUser('approve-only@drive.test', $schoolA, 'drive_ia_approve_only');
 
         // TWO GUARDIAN-CAPABLE SEATS, ADDED FOR THE GUARDIAN-CREATE DRIVE.
         //

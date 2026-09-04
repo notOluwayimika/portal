@@ -218,9 +218,14 @@ export function PayInvoice({
 /**
  * The server's own refusal where there is one, and a generic sentence where there is not.
  *
- * THE STALE-PREVIEW CASE HAS ITS OWN COPY. Another guardian can settle the bill while this parent is
- * reading the confirmation, and initiate then correctly refuses what preview allowed. The generic
- * message would tell them their payment failed when in fact their child's fees are paid.
+ * THE STALE-PREVIEW CASE HAS ITS OWN COPY, AND IT IS DELIBERATELY NEUTRAL. Another guardian can
+ * settle the bill while this parent reads the confirmation, and initiate then correctly refuses what
+ * preview allowed — but 403/404 is ALSO what a voided invoice and an unresolvable uuid return, since
+ * the request refuses rather than 404s so as not to leak whether a uuid exists. Saying "settled"
+ * would be a specific claim the status code does not support, and false for the voided case: the
+ * same shape as a correct refusal carrying a wrong sentence. So the wording is true across all of
+ * them, and distinguishing settled from voided would need a signal the server does not currently
+ * send.
  *
  * THE PENDING CASE IS NOT HERE because this component never sees it: a parent who reaches Paystack
  * leaves this screen. It belongs to the return path (step 6).
@@ -242,7 +247,7 @@ function refusalMessage(error: unknown): string {
     }
 
     if (status === 403 || status === 404) {
-        return 'This bill was settled while you were on this screen. Nothing has been charged.';
+        return 'This bill is no longer payable — refresh to see its current state. Nothing has been charged.';
     }
 
     return 'We could not start this payment. Nothing has been charged.';

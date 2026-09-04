@@ -55,10 +55,29 @@ class ApprovalAbility
      * this map existed, names it, and reds on an unrecognised constant so a second map cannot
      * arrive unasserted.
      *
+     * ─── TWO ENTRIES, ONE EXCEPTION ────────────────────────────────────────────────────────────
+     *
+     * `finance.invoice.reject` joined on 2026-09-04 and the count arm in `SuperAdminMatrixTest`
+     * red, which is exactly what it is for: a second override must be READ by a human, not
+     * absorbed. Read, and it is not the convention failing twice.
+     *
+     * THE NUMBER THAT MATTERS IS THE NUMBER OF DISTINCT MAKERS, AND IT IS STILL ONE.
+     * `finance.invoice.generate` is the single maker in this codebase whose name predates the
+     * `.submit` convention; `approve` and `reject` are the two checker sides of that one act, so
+     * they name the same maker for the same reason. A pair of entries pointing at one maker is one
+     * exception written twice, not two exceptions — and the test now asserts that directly
+     * (`array_unique` over the values is 1) alongside the exact count, so a genuinely NEW
+     * exception, pointing at a SECOND pre-convention maker, still reds.
+     *
+     * If that distinct-maker count ever moves off 1, the convention is failing in the way this
+     * docblock warns about, and the fix is to name the next maker for the convention rather than
+     * to grow this list.
+     *
      * @var array<string, string>
      */
     public const MAKER_OVERRIDES = [
         'finance.invoice.approve' => 'finance.invoice.generate',
+        'finance.invoice.reject' => 'finance.invoice.generate',
     ];
 
     /**

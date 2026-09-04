@@ -111,10 +111,26 @@ it('D2 — the convention derives the pair, with a declared exception list', fun
     expect(ApprovalAbility::matchingMakerFor('finance.invoice.approve'))->toBe('finance.invoice.generate')
         ->and(ApprovalAbility::MAKER_OVERRIDES)->toHaveKey('finance.invoice.approve');
 
-    // AND THE EXCEPTION LIST IS SHORT ON PURPOSE. Asserted so that a second override cannot be
-    // added without someone reading this test and the docblock on MAKER_OVERRIDES — the convention
-    // is meant to carry the pairs, and a growing list of exceptions is the convention failing.
-    expect(ApprovalAbility::MAKER_OVERRIDES)->toHaveCount(1);
+    // The reject side, which joined on 2026-09-04. It names the SAME maker, because approve and
+    // reject are the two checker sides of one act.
+    expect(ApprovalAbility::matchingMakerFor('finance.invoice.reject'))->toBe('finance.invoice.generate')
+        ->and(ApprovalAbility::MAKER_OVERRIDES)->toHaveKey('finance.invoice.reject');
+
+    // AND THE EXCEPTION LIST IS SHORT ON PURPOSE. Asserted so that a new override cannot be added
+    // without someone reading this test and the docblock on MAKER_OVERRIDES — the convention is
+    // meant to carry the pairs, and a growing list of exceptions is the convention failing.
+    //
+    // THE COUNT MOVED 1 -> 2 AND THE ARM DID ITS JOB: adding `reject` red it, a human read it, and
+    // the entry was argued rather than absorbed. It is NOT weakened to a range or a minimum — a
+    // count that cannot red is the assertion deleted with extra steps.
+    //
+    // WHAT THE SECOND LINE PINS IS THE INVARIANT THE FIRST ONLY APPROXIMATES: the number of
+    // DISTINCT MAKERS. `finance.invoice.generate` is the one maker in this codebase whose name
+    // predates the `.submit` convention, and approve and reject both point at it — one exception
+    // written twice, not two exceptions. A genuinely new exception would name a SECOND
+    // pre-convention maker and move this number, which is the thing worth refusing.
+    expect(ApprovalAbility::MAKER_OVERRIDES)->toHaveCount(2)
+        ->and(array_unique(array_values(ApprovalAbility::MAKER_OVERRIDES)))->toHaveCount(1);
 });
 
 it('D2 — a checker-free edit to the same role passes (the rule is the pair, not the role)', function () {

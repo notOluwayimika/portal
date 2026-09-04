@@ -17,6 +17,7 @@
 use App\Exceptions\BusinessRuleException;
 use App\Finance\Actions\ApproveInvoice;
 use App\Finance\Actions\GenerateInvoice;
+use App\Finance\Actions\ReturnInvoice;
 use App\Finance\DTOs\InvoiceLineSpec;
 use App\Finance\Enums\InvoiceKind;
 use App\Finance\Enums\InvoiceStatus;
@@ -236,4 +237,40 @@ it('f — two auditors releasing the same bill produce ONE attestation', functio
     expect(DB::table('finance_invoices')->whereNotNull('reviewed_at')->count())->toBe(1)
         ->and((int) DB::table('finance_invoices')->where('id', $invoice->id)->first()->reviewed_by_user_id)
         ->toBe((int) $first->getKey());
+});
+
+// ── (g) APPROVE-vs-RETURN — the ruling that lives in this action, not in a trigger ─
+
+it('g — a bill out with Finance is refused, and the sentence names the returner', function () {
+    [$school, , $invoice] = ai_world();
+    $auditor = ai_seat($school, 'internal_auditor');
+    $returner = ai_seat($school, 'internal_auditor');
+
+    // Written through the ACTION, not by a raw update: the pairing trigger requires all three
+    // columns in one statement, so a fixture that set them piecemeal would be refused as 1644 and
+    // this arm would fail for a reason that has nothing to do with the guard under test.
+    ActiveSchool::runFor($school->id, fn () => app(ReturnInvoice::class)->handle($invoice, $returner, 'Tuition rate is stale'));
+
+    // The precondition of the whole arm: returning leaves the release axis untouched, so what
+    // refuses below cannot be `refuseIfAlreadyReleased` answering first.
+    expect(DB::table('finance_invoices')->where('id', $invoice->id)->first()->reviewed_at)->toBeNull();
+
+    $thrown = null;
+    try {
+        ActiveSchool::runFor($school->id, fn () => app(ApproveInvoice::class)->handle($invoice->fresh(), $auditor));
+    } catch (BusinessRuleException $e) {
+        $thrown = $e;
+    }
+
+    // NAME THE MECHANISM. The conditional UPDATE alone would also refuse this — with "nothing was
+    // changed", which names no cause. Asserting the pre-check's sentence pins WHICH guard answered
+    // and is what reds if refuseIfOutWithFinance is removed while the predicate stays.
+    expect($thrown)->not->toBeNull()
+        ->and($thrown->getMessage())->toContain('was returned to Finance by user#'.$returner->getKey())
+        ->and($thrown->getMessage())->toContain('cannot be released until Finance resubmits it');
+
+    // Refused, not merely reported: the release axis is still NULL and the return is intact.
+    $row = DB::table('finance_invoices')->where('id', $invoice->id)->first();
+    expect($row->reviewed_at)->toBeNull()
+        ->and($row->return_reason)->toBe('Tuition rate is stale');
 });

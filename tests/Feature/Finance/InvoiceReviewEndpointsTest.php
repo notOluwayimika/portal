@@ -11,6 +11,7 @@
 
 use App\Finance\Actions\ApproveInvoice;
 use App\Finance\Actions\GenerateInvoice;
+use App\Finance\Actions\ReturnInvoice;
 use App\Finance\DTOs\InvoiceLineSpec;
 use App\Finance\Enums\InvoiceKind;
 use App\Finance\Enums\InvoiceStatus;
@@ -231,4 +232,99 @@ it('g — a batch above the cap is refused before anything is released', functio
 
     // Refused BEFORE anything was released — the real invoice in the payload is untouched.
     expect(DB::table('finance_invoices')->where('id', $invoice->id)->first()->reviewed_at)->toBeNull();
+});
+
+// ── (h) THE RETURN AXIS LEAVES THE QUEUE ──────────────────────────────────────
+
+it('h — a returned bill is absent from the pending rows', function () {
+    $school = School::factory()->create();
+    $auditor = ire_seat($school, 'internal_auditor');
+    $pending = ire_invoice($school);
+    $returned = ire_invoice($school);
+
+    // THROUGH THE ACTION, NEVER A RAW UPDATE. The pairing trigger requires all three return columns
+    // in one statement, so a piecemeal fixture write is refused as 1644 and the arm would fail for
+    // a reason that has nothing to do with the filter under test.
+    ActiveSchool::runFor($school->id, fn () => app(ReturnInvoice::class)->handle($returned, $auditor, 'Tuition rate is stale'));
+
+    // The precondition: returning leaves the release axis untouched, so what removes the bill from
+    // the feed below can only be the new filter and not the release one.
+    expect(DB::table('finance_invoices')->where('id', $returned->id)->first()->reviewed_at)->toBeNull();
+
+    $rows = ire_get($this, $school, $auditor)->assertOk()->json();
+
+    expect(array_column($rows['data'], 'uuid'))->toBe([$pending->uuid]);
+});
+
+// ── (i) pagination.total FOLLOWS THE ROWS ────────────────────────────────────
+
+it('i — pagination.total counts only the awaiting-review set, not every unreleased bill', function () {
+    $school = School::factory()->create();
+    $auditor = ire_seat($school, 'internal_auditor');
+    ire_invoice($school);
+    ire_invoice($school);
+    $returned = ire_invoice($school);
+
+    ActiveSchool::runFor($school->id, fn () => app(ReturnInvoice::class)->handle($returned, $auditor, 'wrong fee line'));
+
+    $rows = ire_get($this, $school, $auditor)->assertOk()->json();
+
+    // `paginate()` derives last_page from this number, so a total describing a different set than
+    // the rows would make the PAGER lie. It is the filtered subset by necessity, and the
+    // unfiltered number moved to counts.unreleased_total — asserted here TOGETHER, because
+    // asserting only the total would pass a change that quietly dropped the count that replaced it.
+    expect($rows['pagination']['total'])->toBe(2)
+        ->and($rows['counts']['unreleased_total'])->toBe(3);
+});
+
+// ── (j) THE INVARIANT, OVER ALL FOUR STATES PLUS A VOID ──────────────────────
+
+it('j — unreleased_total equals awaiting_review plus returned_to_finance, and a void bill is in none', function () {
+    $school = School::factory()->create();
+    $auditor = ire_seat($school, 'internal_auditor');
+    $reviewer = ire_seat($school, 'internal_auditor');
+
+    // ALL FOUR STATES FROM 2026_09_04_100000'S DOCBLOCK, so the invariant is evaluated over the
+    // whole space rather than over the two arms that happen to be easy to build. A fixture holding
+    // only pending and returned rows would satisfy the arithmetic without ever exercising the
+    // predicates that exclude the other two.
+    $pendingOne = ire_invoice($school);
+    $pendingTwo = ire_invoice($school);
+
+    // 1. released BY A NAMED PERSON.
+    $released = ire_invoice($school);
+    ActiveSchool::runFor($school->id, fn () => app(ApproveInvoice::class)->handle($released, $reviewer));
+
+    // 2. GRANDFATHERED — a release stamp with a NULL actor, which the 31 August backfill created
+    //    and which no action can produce. Written raw ON PURPOSE: there is no writer for it, and
+    //    it is a legitimate state the counts must exclude for the same reason as the one above.
+    $grandfathered = ire_invoice($school);
+    DB::table('finance_invoices')->where('id', $grandfathered->id)
+        ->update(['reviewed_at' => now(), 'reviewed_by_user_id' => null]);
+
+    // 3. RETURNED — through the action, per arm (h).
+    $returned = ire_invoice($school);
+    ActiveSchool::runFor($school->id, fn () => app(ReturnInvoice::class)->handle($returned, $auditor, 'wrong fee line'));
+
+    // 4. VOID and unreleased — must be counted by NONE of the three. This is the arm that fails if
+    //    an excludingVoid() is dropped anywhere.
+    $void = ire_invoice($school);
+    DB::table('finance_invoices')->where('id', $void->id)->update(['status' => InvoiceStatus::Void->value]);
+
+    $counts = ire_get($this, $school, $auditor)->assertOk()->json('counts');
+
+    // The exact numbers first, so the invariant cannot be satisfied by three wrong values.
+    expect($counts['awaiting_review'])->toBe(2)
+        ->and($counts['returned_to_finance'])->toBe(1)
+        ->and($counts['unreleased_total'])->toBe(3);
+
+    // THE INVARIANT. A break means a FOURTH unreleased state has appeared and nobody updated these
+    // counts — not that the arithmetic is wrong.
+    expect($counts['unreleased_total'])->toBe($counts['awaiting_review'] + $counts['returned_to_finance']);
+
+    // And the void bill is in none of them: 2 + 1 = 3 only holds because it was excluded from all
+    // three. Named explicitly so the reason this fixture carries a void row survives.
+    expect(DB::table('finance_invoices')->where('id', $void->id)->first()->status)
+        ->toBe(InvoiceStatus::Void->value);
+    expect([$pendingOne->uuid, $pendingTwo->uuid])->not->toContain($void->uuid);
 });

@@ -7,6 +7,7 @@ use App\Finance\Actions\ApproveInvoice;
 use App\Finance\Models\Invoice;
 use App\Http\Controllers\Controller;
 use App\Support\ActiveSchool;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -35,13 +36,53 @@ use Illuminate\Http\Request;
  * and a duplicate field carrying the same number is a second spelling that can drift from the
  * first. What this docblock adds is that here it is LOAD-BEARING.
  *
- * THE DAY A FILTER IS ADDED TO THIS QUERY, `total` SILENTLY BECOMES THE FILTERED SUBSET AND THE
- * OMISSION DETECTOR NARROWS. It will still be a true number and still be called `total`, and
- * nothing will fail. So one of two things must hold in the change that adds the filter: either the
- * filter does not affect this count, or the separate unfiltered count arrives IN THAT SAME CHANGE.
- * A filter that ships without one of those has silently replaced "everything awaiting review" with
- * "everything awaiting review that matches what I happened to type", which is the reassuring
- * direction.
+ * THAT DAY HAS COME, AND THIS IS THE ANSWER RATHER THAN THE WARNING. `pending()` now filters
+ * `whereNull('returned_at')`, so the paragraph above is no longer a prediction and is not left
+ * standing beside the thing it predicted.
+ *
+ * OF THE TWO THINGS THAT HAD TO HOLD, THE SECOND WAS TAKEN: the separate unfiltered count arrives
+ * in the same change. The first was not available — `paginate()` derives `last_page` from the very
+ * count it reports, so a `total` describing a different set than the rows would make the PAGER lie,
+ * and a pager that says "page 1 of 108" over 25 rows of a 2,700-row set is a worse defect than the
+ * one being avoided.
+ *
+ * SO `pagination.total` IS NOW THE FILTERED SUBSET — bills awaiting review — and the omission
+ * detector has MOVED, deliberately and by name, into `counts.unreleased_total`, which is
+ * unfiltered. Anyone looking for "how many bills has nobody dealt with" reads that field, and the
+ * class-docblock argument for why that number matters is unchanged: an omission emits no activity
+ * row at any severity, throws nothing, and looks exactly like a quiet week.
+ *
+ * ─── AND `counts.returned_to_finance` IS LOAD-BEARING, NOT INFORMATIONAL ────────────────────────
+ *
+ * THERE IS NO FINANCE QUEUE YET — Phase B builds it. Until it exists, this number is the ONLY place
+ * in the entire system a returned bill is visible at all. Without it, returning a bill would make
+ * it VANISH from every screen: gone from the auditor's queue by the new filter, invisible to the
+ * payer because it is still unreleased, and with nowhere for Finance to find it.
+ *
+ * That is a worse hole than the one this field exists to detect, and worse in the direction that
+ * matters: an unreviewed bill is at least sitting in a queue somebody is working through, whereas a
+ * returned bill would have an owner who can drop it and no surface that would ever say so.
+ *
+ * ─── THE INVARIANT, AND WHAT ITS BREAKING MEANS ────────────────────────────────────────────────
+ *
+ *     unreleased_total == awaiting_review + returned_to_finance
+ *
+ * Asserted in `tests/Feature/Finance/InvoiceReviewEndpointsTest.php`. It holds because the three
+ * counts share every predicate except the return axis, which partitions the unreleased set in two.
+ *
+ * A BREAK MEANS A FOURTH UNRELEASED STATE HAS APPEARED AND NOBODY UPDATED THESE COUNTS — not that
+ * the arithmetic is wrong. That is the whole value of asserting it: the next axis added to this
+ * table reds here rather than quietly making one of these numbers describe less than its name says.
+ *
+ * ALL THREE CARRY `excludingVoid()`, AND THAT IS LOAD-BEARING RATHER THAN TIDY. If one arm counted
+ * void bills and the others did not, the invariant would fail for a reason that has nothing to do
+ * with review state — a red pointing at the wrong thing, which is how a real signal gets baselined.
+ * A mutation dropping `excludingVoid()` from one count reds the invariant arm; that is checked
+ * rather than assumed.
+ *
+ * WHY THIS IS NOT THE "SECOND SPELLING" THE PARAGRAPH ABOVE WARNS AGAINST. That warning was about a
+ * duplicate field carrying the SAME number as `pagination.total`, which can drift from it. These
+ * are DIFFERENT numbers — and one of them is the number `pagination.total` used to be.
  *
  * ─── A BATCH THAT HALF-SUCCEEDS MUST NOT ANSWER "done" ──────────────────────────────────────────
  *
@@ -101,10 +142,26 @@ class InvoiceReviewController extends Controller
         $page = Invoice::query()
             ->where('school_id', ActiveSchool::getOrFail()->id)
             ->whereNull(Invoice::RELEASE_STAMP_COLUMN)
+            // THE RETURN AXIS. A bill out with Finance is still unreleased, so without this it sat
+            // in the auditor's queue asking to be reviewed again while Finance was correcting it.
+            // This is the filter the class docblock spent a section predicting; the count that
+            // replaces what `total` used to mean arrives below, in the same change.
+            ->whereNull('returned_at')
             ->excludingVoid()
             ->orderBy('created_at')
             ->orderBy('id')
             ->paginate($perPage);
+
+        // THE THREE COUNTS. School-scoped and `excludingVoid()` on every arm — see the class
+        // docblock: an arm that counted void bills while the others did not would break the
+        // invariant for a reason that has nothing to do with review state.
+        // A FACTORY, NOT A SHARED BUILDER. Each call returns a fresh query, so the three counts
+        // cannot contaminate one another with a predicate meant for a sibling — the failure a
+        // single `$base` variable invites and that a reader cannot see at the call site.
+        $unreleased = fn (): Builder => Invoice::query()
+            ->where('school_id', ActiveSchool::getOrFail()->id)
+            ->whereNull(Invoice::RELEASE_STAMP_COLUMN)
+            ->excludingVoid();
 
         return response()->json([
             'data' => $page->getCollection()->map(fn (Invoice $invoice) => [
@@ -116,12 +173,21 @@ class InvoiceReviewController extends Controller
                 'issued_at' => $invoice->created_at->toIso8601String(),
             ])->all(),
             'pagination' => [
-                // THE INSTRUMENT — see the class docblock. The count of everything awaiting review,
-                // not the length of this page.
+                // NOW THE FILTERED SUBSET — bills awaiting review — because `paginate()` derives
+                // `last_page` from this number and a total describing a different set than the rows
+                // would make the pager lie. The omission detector moved to `counts.unreleased_total`.
                 'total' => $page->total(),
                 'per_page' => $page->perPage(),
                 'current_page' => $page->currentPage(),
                 'last_page' => $page->lastPage(),
+            ],
+            'counts' => [
+                'awaiting_review' => $unreleased()->whereNull('returned_at')->count(),
+                // THE ONLY SURFACE A RETURNED BILL HAS until Phase B builds the Finance queue.
+                'returned_to_finance' => $unreleased()->whereNotNull('returned_at')->count(),
+                // THE OMISSION DETECTOR, unfiltered by the return axis. This is what
+                // `pagination.total` used to be.
+                'unreleased_total' => $unreleased()->count(),
             ],
         ]);
     }

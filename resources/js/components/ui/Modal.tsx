@@ -65,16 +65,16 @@ export default function Modal({
             }}
         >
             <div
-                className={`w-full ${sizeClasses[size]} rounded-2xl bg-white border border-gray-200 shadow-xl overflow-hidden`}
+                className={`w-full ${sizeClasses[size]} rounded-2xl bg-white dark:bg-card border border-slate-100 dark:border-slate-800 shadow-xl overflow-hidden`}
             >
-                <div className="flex items-start justify-between border-b border-gray-200 px-6 py-4">
+                <div className="flex items-start justify-between border-b border-slate-100 dark:border-slate-800 px-6 py-4">
                     <div>
-                        <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
+                        <h2 className="text-lg font-semibold text-slate-900 dark:text-white">{title}</h2>
                     </div>
                     <button
                         type="button"
                         onClick={onClose}
-                        className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+                        className="rounded-lg p-2 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200"
                         aria-label="Close modal"
                     >
                         <XIcon className="h-5 w-5" />
@@ -84,7 +84,7 @@ export default function Modal({
                     {children}
                 </div>
                 {footer ? (
-                    <div className="border-t border-gray-200 px-6 py-4">{footer}</div>
+                    <div className="border-t border-slate-100 dark:border-slate-800 px-6 py-4">{footer}</div>
                 ) : null}
             </div>
         </div>

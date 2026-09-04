@@ -17,6 +17,7 @@ use App\Finance\Enums\InvoiceKind;
 use App\Finance\Enums\InvoiceStatus;
 use App\Finance\Models\Invoice;
 use App\Models\Curriculum;
+use App\Models\Role;
 use App\Models\School;
 use App\Models\Student;
 use App\Models\StudentCurriculum;
@@ -327,4 +328,278 @@ it('j — unreleased_total equals awaiting_review plus returned_to_finance, and 
     expect(DB::table('finance_invoices')->where('id', $void->id)->first()->status)
         ->toBe(InvoiceStatus::Void->value);
     expect([$pendingOne->uuid, $pendingTwo->uuid])->not->toContain($void->uuid);
+});
+
+// ═══ THE RETURN ENDPOINT ══════════════════════════════════════════════════════
+
+/** POST the return route for one invoice. */
+function ire_return($test, School $school, User $as, string $uuid, array $body)
+{
+    return $test->actingAs($as)->withSession(['school_id' => $school->id])
+        ->postJson('/api/internal-audit/invoices/'.$uuid.'/return', $body);
+}
+
+/**
+ * A seat holding `finance.invoice.approve` and NOT `finance.invoice.reject`.
+ *
+ * AN AD-HOC ROLE, AND THE DEVIATION FROM THIS FILE'S HEADER IS THE POINT. Every other seat here is
+ * a seeded one, because a hand-picked ability list proves only that the code reads `can()`. NO
+ * SEEDED SEAT CAN SERVE THIS ARM: `internal_auditor` is the only role holding either ability and it
+ * holds BOTH, by design — `RbacSeeder` grants approve and reject together and withholds both from
+ * `admin` and `accounts_officer` on the maker-checker argument.
+ *
+ * So the seat that would distinguish the route's own gate from its group's gate does not exist in
+ * the grants map, and constructing one is the only way to ask the question. That is a statement
+ * about the map being correct, not about this fixture being loose.
+ */
+function ire_approve_only_seat(School $school): User
+{
+    $previous = getPermissionsTeamId();
+    setPermissionsTeamId(null);
+    Role::firstOrCreate(['name' => 'ia_approve_only', 'guard_name' => 'web'])
+        ->givePermissionTo('finance.invoice.approve');
+    setPermissionsTeamId($previous);
+
+    $user = User::factory()->create(['school_id' => $school->id]);
+    $user->grantSchoolAccess($school, 'ia_approve_only');
+    $user->flushSchoolAccessCache();
+
+    return $user;
+}
+
+// ── (k) THE HAPPY PATH ────────────────────────────────────────────────────────
+
+it('k — internal_auditor returns a bill: 200, three columns set, reviewed_at still NULL', function () {
+    $school = School::factory()->create();
+    $auditor = ire_seat($school, 'internal_auditor');
+    $invoice = ire_invoice($school);
+
+    $body = ire_return($this, $school, $auditor, $invoice->uuid, ['reason' => 'Tuition rate is stale'])
+        ->assertOk()->json();
+
+    expect($body['uuid'])->toBe($invoice->uuid)
+        ->and($body['return_reason'])->toBe('Tuition rate is stale')
+        ->and((int) $body['returned_by_user_id'])->toBe((int) $auditor->getKey())
+        ->and($body['returned_at'])->not->toBeNull();
+
+    // Read from the database, not the response: an echoed payload the write never persisted would
+    // satisfy the expectations above.
+    $row = DB::table('finance_invoices')->where('id', $invoice->id)->first();
+    expect($row->returned_at)->not->toBeNull()
+        ->and((int) $row->returned_by_user_id)->toBe((int) $auditor->getKey())
+        ->and($row->return_reason)->toBe('Tuition rate is stale')
+        // THE SECOND AXIS IS UNTOUCHED. A returned bill stays unreleased, so it stays invisible to
+        // the payer — the safe direction and the point of the design.
+        ->and($row->reviewed_at)->toBeNull();
+});
+
+// ── (l) THE GATE ARM — THIS COMMIT'S POINT ───────────────────────────────────
+
+it('l — a seat with approve but NOT reject is refused the return route and allowed the feed', function () {
+    $school = School::factory()->create();
+    $seat = ire_approve_only_seat($school);
+    $invoice = ire_invoice($school);
+
+    // The discriminating precondition, read inside the school's team context because spatie scopes
+    // grants per team and `can()` outside one answers about the wrong school.
+    [$approve, $reject] = ActiveSchool::runFor($school->id, fn () => [
+        $seat->can('finance.invoice.approve'),
+        $seat->can('finance.invoice.reject'),
+    ]);
+    expect($approve)->toBeTrue()->and($reject)->toBeFalse();
+
+    // BOTH HALVES, OR THE ARM CANNOT TELL WHICH GATE ANSWERED. 403 alone would also be produced by
+    // the enclosing group refusing this seat outright; the 200 on pending proves the group let them
+    // through and the route's OWN middleware is what refused.
+    ire_return($this, $school, $seat, $invoice->uuid, ['reason' => 'wrong fee line'])->assertForbidden();
+    ire_get($this, $school, $seat)->assertOk();
+
+    expect(DB::table('finance_invoices')->where('id', $invoice->id)->first()->returned_at)->toBeNull();
+});
+
+// ── (m) THE OUTER GATE STILL ANSWERS FIRST FOR A SEAT HOLDING NEITHER ────────
+
+it('m — accounts_officer, holding neither checker ability, is refused by the GROUP gate', function () {
+    $school = School::factory()->create();
+    $officer = ire_seat($school, 'accounts_officer');
+    $invoice = ire_invoice($school);
+
+    // The MAKER seat: holds thirteen finance abilities including finance.invoice.generate, so a
+    // refusal here can only be the checker gate and not "the user holds nothing".
+    [$generate, $approve] = ActiveSchool::runFor($school->id, fn () => [
+        $officer->can('finance.invoice.generate'),
+        $officer->can('finance.invoice.approve'),
+    ]);
+    expect($generate)->toBeTrue()->and($approve)->toBeFalse();
+
+    // Refused on BOTH, which is what shows the two gates are LAYERED rather than swapped: arm (l)
+    // passes the group and fails the route, this one fails the group and so never reaches it.
+    ire_return($this, $school, $officer, $invoice->uuid, ['reason' => 'wrong fee line'])->assertForbidden();
+    ire_get($this, $school, $officer)->assertForbidden();
+});
+
+// ── (n) THE REQUEST LAYER — a field error, not the action's sentence ─────────
+
+it('n — a missing reason is refused by the REQUEST, with a field error on reason', function () {
+    $school = School::factory()->create();
+    $auditor = ire_seat($school, 'internal_auditor');
+    $invoice = ire_invoice($school);
+
+    $response = ire_return($this, $school, $auditor, $invoice->uuid, [])->assertStatus(422);
+
+    // A FIELD error, which is what a form can highlight — not ReturnInvoice's sentence. The two
+    // layers refuse differently on purpose and this arm pins which one answered.
+    $response->assertJsonValidationErrors('reason');
+
+    expect(DB::table('finance_invoices')->where('id', $invoice->id)->first()->returned_at)->toBeNull();
+});
+
+it('o — a 256-character reason is refused by the REQUEST max, not by the action', function () {
+    $school = School::factory()->create();
+    $auditor = ire_seat($school, 'internal_auditor');
+    $invoice = ire_invoice($school);
+
+    // A LITERAL 256, never derived from REASON_MAX: a payload built as `REASON_MAX + 1` submits
+    // "cap + 1" whatever the cap is and is structurally incapable of noticing the cap loosening.
+    $response = ire_return($this, $school, $auditor, $invoice->uuid, ['reason' => str_repeat('x', 256)])
+        ->assertStatus(422);
+
+    $response->assertJsonValidationErrors('reason');
+
+    // AND IT IS NOT THE ACTION'S SENTENCE. Both layers refuse a 256, and they say different things;
+    // without this the arm could not tell which one did, and the request's `max:` could be deleted
+    // with nothing going red.
+    expect($response->json('message'))->not->toContain('Shorten it rather than');
+
+    expect(DB::table('finance_invoices')->where('id', $invoice->id)->first()->returned_at)->toBeNull();
+});
+
+it('p — a whitespace-only reason is refused, and this arm records WHICH layer did it', function () {
+    $school = School::factory()->create();
+    $auditor = ire_seat($school, 'internal_auditor');
+    $invoice = ire_invoice($school);
+
+    // MEASURED, NOT ASSUMED. `bootstrap/app.php` does not DECLARE TrimStrings; it arrives from the
+    // framework's default global stack together with ConvertEmptyStringsToNull, so three spaces are
+    // trimmed to '' and converted to null before the FormRequest sees them, and `required` refuses
+    // with a field error. A framework default is a premise until something posts one — this is the
+    // post. If the default stack ever changes, this arm reds and ReturnInvoice's own trim-and-refuse
+    // stops being a backstop and becomes the only guard.
+    $response = ire_return($this, $school, $auditor, $invoice->uuid, ['reason' => '   '])->assertStatus(422);
+
+    $response->assertJsonValidationErrors('reason');
+    expect($response->json('message'))->not->toContain('the reason cannot be empty');
+
+    expect(DB::table('finance_invoices')->where('id', $invoice->id)->first()->returned_at)->toBeNull();
+});
+
+// ── (q, r) THE ACTION'S SENTENCES REACH THE CLIENT VERBATIM ─────────────────
+
+it('q — an already-returned bill is refused with the action\'s sentence, naming the first returner', function () {
+    $school = School::factory()->create();
+    $first = ire_seat($school, 'internal_auditor');
+    $second = ire_seat($school, 'internal_auditor');
+    $invoice = ire_invoice($school);
+
+    ire_return($this, $school, $first, $invoice->uuid, ['reason' => 'first reason'])->assertOk();
+
+    $message = ire_return($this, $school, $second, $invoice->uuid, ['reason' => 'second reason'])
+        ->assertStatus(422)->json('message');
+
+    expect($message)->toContain('already returned to Finance by user#'.$first->getKey());
+
+    expect(DB::table('finance_invoices')->where('id', $invoice->id)->first()->return_reason)->toBe('first reason');
+});
+
+it('r — a released bill is refused with the void-and-credit-note remedy', function () {
+    $school = School::factory()->create();
+    $auditor = ire_seat($school, 'internal_auditor');
+    $reviewer = ire_seat($school, 'internal_auditor');
+    $invoice = ire_invoice($school);
+
+    ActiveSchool::runFor($school->id, fn () => app(ApproveInvoice::class)->handle($invoice, $reviewer));
+
+    $message = ire_return($this, $school, $auditor, $invoice->uuid, ['reason' => 'wrong fee line'])
+        ->assertStatus(422)->json('message');
+
+    // THE REMEDY IS PART OF THE ASSERTION: an auditor told "no" with no route forward will find one
+    // that is not audited.
+    expect($message)->toContain('already released to its payer by user#'.$reviewer->getKey())
+        ->and($message)->toContain('void it and issue a credit note instead');
+});
+
+// ── (s) ISOLATION — UNKNOWN, NOT FORBIDDEN ───────────────────────────────────
+
+it('s — another school\'s invoice is UNKNOWN, not forbidden', function () {
+    $school = School::factory()->create();
+    $auditor = ire_seat($school, 'internal_auditor');
+
+    $other = School::factory()->create();
+    $foreign = ire_invoice($other);
+
+    $response = ire_return($this, $school, $auditor, $foreign->uuid, ['reason' => 'wrong fee line'])
+        ->assertNotFound();
+
+    // The house convention, and the reason the controller resolves manually inside the tenant
+    // rather than by route model binding: a 403 would confirm the row exists somewhere.
+    expect($response->json('message'))->toBe('No such invoice in this School.');
+
+    expect(DB::table('finance_invoices')->where('id', $foreign->id)->first()->returned_at)->toBeNull();
+});
+
+// ── (t) THE INTEGRATION ARM — the two halves of the slice meeting ────────────
+
+it('t — a return moves the bill between counts and leaves unreleased_total UNCHANGED', function () {
+    $school = School::factory()->create();
+    $auditor = ire_seat($school, 'internal_auditor');
+    ire_invoice($school);
+    ire_invoice($school);
+    $target = ire_invoice($school);
+
+    $before = ire_get($this, $school, $auditor)->assertOk()->json();
+    expect(array_column($before['data'], 'uuid'))->toContain($target->uuid)
+        ->and($before['counts'])->toBe([
+            'awaiting_review' => 3, 'returned_to_finance' => 0, 'unreleased_total' => 3,
+        ]);
+
+    ire_return($this, $school, $auditor, $target->uuid, ['reason' => 'Tuition rate is stale'])->assertOk();
+
+    $after = ire_get($this, $school, $auditor)->assertOk()->json();
+
+    // The row leaves the page...
+    expect(array_column($after['data'], 'uuid'))->not->toContain($target->uuid);
+
+    // ...and the counts move as one whole object, asserted together rather than field by field: a
+    // per-field assertion passes a change that silently added a fourth key or dropped one.
+    //
+    // THE CLAUSE THAT MATTERS IS `unreleased_total` STAYING 3. It is the entire argument for that
+    // field existing: the omission detector must NOT narrow when a bill is returned, or returning
+    // bills would quietly shrink the number that exists to reveal bills nobody has dealt with.
+    expect($after['counts'])->toBe([
+        'awaiting_review' => 2, 'returned_to_finance' => 1, 'unreleased_total' => 3,
+    ]);
+});
+
+// ── (u) THE TRAIL IS WRITTEN ON THE HTTP PATH ───────────────────────────────
+
+it('u — the HTTP return writes finance.invoice.returned carrying the reason', function () {
+    $school = School::factory()->create();
+    $auditor = ire_seat($school, 'internal_auditor');
+    $invoice = ire_invoice($school);
+
+    ire_return($this, $school, $auditor, $invoice->uuid, ['reason' => 'Tuition rate is stale'])->assertOk();
+
+    $row = DB::table('activity_log')
+        ->where('log_name', 'finance')->where('event', 'invoice.returned')
+        ->orderByDesc('id')->first();
+
+    expect($row)->not->toBeNull()
+        ->and((int) $row->causer_id)->toBe((int) $auditor->getKey());
+
+    $properties = json_decode($row->properties, true);
+
+    // The reason is the payload of the act — a row saying a bill was returned without saying what
+    // was wrong with it records the event and loses the event.
+    expect($properties['return_reason'])->toBe('Tuition rate is stale')
+        ->and($properties['invoice_uuid'])->toBe($invoice->uuid);
 });

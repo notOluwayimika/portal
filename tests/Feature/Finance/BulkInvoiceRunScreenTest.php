@@ -477,13 +477,24 @@ it('reports the schedule-level refusal in the JOB’s own words, before anything
     $response->assertOk()
         // VERBATIM from FeeScheduleLineMapper. A second wording on this side is a second thing that
         // can disagree with the job about why a run cannot happen.
-        ->assertJsonPath('refusal', 'Fee schedule ['.FeeSchedule::withoutGlobalScopes()->value('uuid').'] has no mandatory items, so it cannot produce a term bill.')
+        ->assertJsonPath('refusal', 'Fee schedule "'.FeeSchedule::withoutGlobalScopes()->value('label').'" has no mandatory items, so it cannot produce a term bill.')
         // The cohort is still reported: who is in it is a fact about the roster and does not depend
         // on whether a price list exists.
         ->assertJsonPath('cohort_size', 1)
         // No line count for a schedule that cannot produce lines. A 0 here would read as "a schedule
         // with no items" on the four refusals that have nothing to do with items.
         ->assertJsonPath('schedule.mandatory_item_count', null);
+
+    // AND THE UUID IS NOT IN THE SENTENCE. The label being right does not prove the uuid absent, so
+    // it is asserted separately.
+    //
+    // SCOPED TO `refusal`, NOT THE WHOLE BODY, AND THAT BOUNDARY IS THE POINT — measured, this arm
+    // first failed asserting over the whole payload. `schedule.uuid` is a STRUCTURED FIELD this
+    // endpoint returns on purpose (BulkInvoiceRunController:236), exactly as the 207 batch returns a
+    // per-item `uuid` key. The ticket is about PROSE an operator reads, not about machine-readable
+    // identity, and a rule that could not tell those apart would take the correlation key off every
+    // finance payload in the app.
+    expect($response->json('refusal'))->not->toContain(FeeSchedule::withoutGlobalScopes()->value('uuid'));
 
     expect(BulkInvoiceRun::withoutGlobalScopes()->count())->toBe(0);
 });

@@ -21,6 +21,7 @@ use App\Finance\DTOs\InvoiceLineSpec;
 use App\Finance\Enums\InvoiceKind;
 use App\Finance\Enums\InvoiceStatus;
 use App\Finance\Models\Invoice;
+use App\Finance\Services\ActorName;
 use App\Models\Curriculum;
 use App\Models\School;
 use App\Models\Student;
@@ -32,11 +33,26 @@ use App\Support\Money;
 use Database\Seeders\RbacSeeder;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class);
 
-beforeEach(fn () => (new RbacSeeder)->run());
+// THE MEMO IS PROCESS-LIFETIME, SO THE SUITE RESETS IT — and that is a property something
+// now asserts rather than an accident. `ActorName::$memo` is keyed "<schoolId>:<userId>" and
+// nothing cleared it between files. It was safe only because no test in this repository uses
+// `DatabaseMigrations` (measured: zero occurrences under tests/, against 264 files using
+// RefreshDatabase) and MySQL does not roll back AUTO_INCREMENT, so ids never recycle within a
+// run. Add one re-migrating file and ids restart at 1 while the memo still holds the previous
+// file's `1:1` — a name resolved for a different person, surfacing as a flake.
+//
+// This also gives `flushMemo()` its first caller, which is what its stated model
+// `SchoolFinanceSettings::flushPrefixMemo()` has had all along, in that file's own
+// `beforeEach`.
+beforeEach(function () {
+    (new RbacSeeder)->run();
+    ActorName::flushMemo();
+});
 
 /** A user holding exactly $role in $school, through the real grant path. */
 function ri_seat(School $school, string $role): User
@@ -161,8 +177,17 @@ it('c — returning a returned bill keeps the FIRST auditor\'s reason and return
         fn () => app(ReturnInvoice::class)->handle($invoice->fresh(), $second, 'second reason')
     ));
 
+    // TIGHTENED, NOT LOOSENED, when the sentence stopped naming `user#<id>`: a `toContain` became
+    // an exact `toBe`, so drift reds here instead of being absorbed.
     expect($thrown)->not->toBeNull()
-        ->and($thrown->getMessage())->toContain('already returned to Finance by user#'.$first->getKey());
+        ->and($thrown->getMessage())->toBe(
+            'Invoice '.$invoice->fresh()->displayNumber().' was already returned to Finance on '
+            .Carbon::parse($afterFirst->returned_at)->toDateString().' by '.$first->full_name
+            .'. It is awaiting correction.'
+        )
+        // Asserted SEPARATELY from the name: a present name does not prove an absent id.
+        ->and($thrown->getMessage())->not->toContain('user#')
+        ->and($thrown->getMessage())->not->toContain($invoice->uuid);
 
     $afterSecond = DB::table('finance_invoices')->where('id', $invoice->id)->first();
 
@@ -257,8 +282,12 @@ it('g — a RELEASED bill is refused, and the refusal carries the void-and-credi
     // THE REMEDY IS PART OF THE ASSERTION. An auditor told "no" with no route forward will find one
     // that is not audited; reversal has its own maker-checker path and the sentence must name it.
     expect($thrown)->not->toBeNull()
-        ->and($thrown->getMessage())->toContain('already released to its payer by user#'.$reviewer->getKey())
-        ->and($thrown->getMessage())->toContain('void it and issue a credit note instead');
+        ->and($thrown->getMessage())->toBe(
+            'Invoice '.$invoice->fresh()->displayNumber().' was already released to its payer by '
+            .$reviewer->full_name.'. It cannot be returned; void it and issue a credit note instead.'
+        )
+        ->and($thrown->getMessage())->not->toContain('user#')
+        ->and($thrown->getMessage())->not->toContain($invoice->uuid);
 
     expect(DB::table('finance_invoices')->where('id', $invoice->id)->first()->returned_at)->toBeNull();
 });

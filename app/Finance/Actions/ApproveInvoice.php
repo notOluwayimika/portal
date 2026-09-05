@@ -5,6 +5,7 @@ namespace App\Finance\Actions;
 use App\Exceptions\BusinessRuleException;
 use App\Finance\Enums\InvoiceStatus;
 use App\Finance\Models\Invoice;
+use App\Finance\Services\ActorName;
 use App\Models\User;
 use App\Support\SchoolContext;
 use Illuminate\Support\Facades\DB;
@@ -154,7 +155,7 @@ final class ApproveInvoice
             // charge the school has already withdrawn.
             if ($locked->status === InvoiceStatus::Void) {
                 throw new BusinessRuleException(
-                    'Invoice '.$locked->uuid.' is void and cannot be released to its payer.'
+                    'Invoice '.$locked->displayNumber().' is void and cannot be released to its payer.'
                 );
             }
 
@@ -184,7 +185,7 @@ final class ApproveInvoice
                 $this->refuseIfOutWithFinance($fresh);
 
                 throw new BusinessRuleException(
-                    'Invoice '.$locked->uuid.' could not be released; nothing was changed.'
+                    'Invoice '.$locked->displayNumber().' could not be released; nothing was changed.'
                 );
             }
 
@@ -221,6 +222,12 @@ final class ApproveInvoice
      * predates the control and was never anybody's to review. Telling an auditor "already approved
      * by user#null" would be false.
      *
+     * THE GRANDFATHERED BRANCH IS A NULL `reviewed_by_user_id` AND STAYS. It is a real, reachable
+     * state — `2026_08_31_100000` stamped the entire pre-control book that way — and it is a
+     * DIFFERENT question from whether the id resolves to a name, which {@see ActorName} answers.
+     * A null id means nobody reviewed it; an unresolvable id means somebody did and we cannot say
+     * who.
+     *
      * @throws BusinessRuleException
      */
     private function refuseIfAlreadyReleased(?Invoice $invoice): void
@@ -231,11 +238,17 @@ final class ApproveInvoice
 
         $reviewer = $invoice->reviewed_by_user_id;
 
+        // TWO SENTENCES, NOT ONE, AND THAT IS A READING RATHER THAN A STYLE CHOICE. Rendered with
+        // the fallback clause, the one-sentence form said "…by someone whose user account can no
+        // longer be found and cannot be released again", where "and cannot be released again" reads
+        // as a second thing about the ACCOUNT. Found by rendering every branch and reading it,
+        // which is the whole method this commit exists to apply.
         throw new BusinessRuleException(
-            $reviewer === null
-                ? 'Invoice '.$invoice->uuid.' was released before Internal Audit review existed '
-                    .'(grandfathered by 2026_08_31_100000) and cannot be released again.'
-                : 'Invoice '.$invoice->uuid.' was already released by user#'.$reviewer.'.'
+            'Invoice '.$invoice->displayNumber()
+            .($reviewer === null
+                ? ' was released before Internal Audit review existed (grandfathered by 2026_08_31_100000).'
+                : ' was already released '.ActorName::byClauseFor($reviewer, (int) $invoice->school_id).'.')
+            .' It cannot be released again.'
         );
     }
 
@@ -247,6 +260,14 @@ final class ApproveInvoice
      * auditor approving a bill Finance is holding is told "could not be released; nothing was
      * changed": true, naming no cause, and reading as a bug.
      *
+     * NO NULL BRANCH ON `returned_by_user_id`, AND THAT IS CORRECT RATHER THAN AN OVERSIGHT.
+     * `returned_at` non-null implies it non-null: the pairing trigger installed by
+     * `2026_09_04_100000` on BOTH `BEFORE INSERT` and `BEFORE UPDATE` signals SQLSTATE 45000 —
+     * "returned_at requires both return_reason and returned_by_user_id" — so the state this method
+     * guards on cannot exist without it. A branch here would be dead code wearing the clothes of
+     * caution, and the reader would have to work out which. {@see ActorName} still handles the
+     * separate case of an id that resolves to no user: that is a missing ROW, not a missing id.
+     *
      * @throws BusinessRuleException
      */
     private function refuseIfOutWithFinance(?Invoice $invoice): void
@@ -255,10 +276,14 @@ final class ApproveInvoice
             return;
         }
 
+        // THE DATE PRECEDES THE PERSON, and two sentences rather than one — both for the sibling
+        // method's rendered reason. "…by someone whose user account can no longer be found on
+        // 2026-09-05" attaches the date to the ACCOUNT, not to the return.
         throw new BusinessRuleException(
-            'Invoice '.$invoice->uuid.' was returned to Finance by user#'
-            .$invoice->returned_by_user_id.' on '.$invoice->returned_at->toDateString()
-            .' and is awaiting correction; it cannot be released until Finance resubmits it.'
+            'Invoice '.$invoice->displayNumber().' was returned to Finance on '
+            .$invoice->returned_at->toDateString().' '
+            .ActorName::byClauseFor($invoice->returned_by_user_id, (int) $invoice->school_id)
+            .'. It is awaiting correction and cannot be released until Finance resubmits it.'
         );
     }
 }

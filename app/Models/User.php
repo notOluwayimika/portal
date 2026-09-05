@@ -380,6 +380,35 @@ class User extends Authenticatable
     }
 
     /**
+     * Whether this user has standing in $schoolId — under EITHER access resolution, deliberately.
+     *
+     * NOT `canAccessSchool()`, and the difference is the whole reason this exists.
+     * `accessibleSchoolIds()` returns ONE of the two sources depending on
+     * `rbac.single_source_access`, and under the current default (off) it reads the legacy union
+     * only — `school_user` pivot ∪ guardian records ∪ `users.school_id` — so a user whose standing
+     * in a School comes from a ROLE in that School's team and nothing else resolves to `[]`
+     * there (the S7 finding, recorded on `accessibleSchoolIds()` above).
+     *
+     * That false negative is unacceptable for the caller this was written for. It scopes the
+     * rendering of a colleague's NAME in a refusal sentence, so a wrong "no" does not fail closed
+     * quietly: it tells an auditor that a named colleague's account no longer exists. Reading BOTH
+     * sources cannot produce that, and still refuses a user with no connection to the School at
+     * all — which is the disclosure this is here to stop.
+     *
+     * ITS CALLER IS NAMED IN PROSE, NOT AS A `{@see}` LINK, AND THAT IS DELIBERATE. Pint's
+     * `fully_qualified_strict_types` fixer rewrites a fully-qualified `{@see}` into a real `use`
+     * statement — measured on this very docblock — which would make the shared kernel import
+     * `App\Finance\Services\ActorName`. The caller is `App\Finance\Services\ActorName`; it holds
+     * the argument for scoping at all.
+     */
+    public function hasStandingInSchool(int $schoolId): bool
+    {
+        return $this->isSuperAdmin()
+            || $this->legacyAccessibleSchoolIds()->contains($schoolId)
+            || $this->schoolIdsFromRoles()->contains($schoolId);
+    }
+
+    /**
      * Enforce the S7 invariant: a school-scoped role may never be assigned with a
      * null permissions-team, because that grants access to no School (divergence).
      * `super_admin` is the sole team-less role and is exempt. This overrides the

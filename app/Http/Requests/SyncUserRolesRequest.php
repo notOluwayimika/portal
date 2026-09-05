@@ -99,7 +99,7 @@ class SyncUserRolesRequest extends FormRequest
             // DutySeparation::assertAssignmentAllowed still runs underneath, on every path:
             // spatie's syncRoles ends in `$this->assignRole($roles)`
             // (vendor HasRoles.php:313), which is overridden at
-            // app/Models/User.php:412 (User::assignRole). So widening this
+            // app/Models/User.php:419 (User::assignRole). So widening this
             // allowlist widens WHO may assign, never WHICH combinations are legal.
             if ($this->user()?->isSuperAdmin()) {
                 $assignable[] = 'admin';

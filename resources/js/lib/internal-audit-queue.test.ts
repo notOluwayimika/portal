@@ -218,8 +218,8 @@ describe('the reason', () => {
 
 describe('the return dialog', () => {
     // (i) SUBMIT IS GATED ON THE REASON AND ON `busy` SEPARATELY. A double-submit is refused by the
-    // server as "already returned to Finance by user#N" — a true sentence describing the operator's
-    // own first click, which reads as somebody else's return.
+    // server as "already returned to Finance on <date> by <name>" — a true sentence describing the
+    // operator's own first click, which reads as somebody else's return.
     it('enables submit only for an acceptable reason with no request in flight', () => {
         expect(
             returnDialogView({ raw: 'wrong fee line', busy: false }).canSubmit,
@@ -265,8 +265,17 @@ describe('a failed return', () => {
     // (l) THE ACTION'S SENTENCE PASSES THROUGH UNTOUCHED. It already names the first returner, the
     // remedy, or the measured length; a second spelling here would be poorer and could drift.
     it('surfaces the action sentence verbatim when there is no field error', () => {
+        // THE SERVER'S CURRENT SHAPE, kept in step with it deliberately. It used to read
+        // "Invoice <uuid> … by user#7"; both identifiers were replaced with the operator's own
+        // vocabulary in fix/refusals-name-the-bill-and-the-person. This arm does not ASSERT the
+        // server's wording — it asserts pass-through — but a fixture that no longer resembles
+        // anything the server sends is a worked example that teaches the wrong thing.
+        //
+        // THE NAME IS INITIALS, NOT A PERSON-SHAPED ONE. It reads identically for the purpose of
+        // this arm, and it cannot be mistaken for copied data by a reader who has not been told
+        // where it came from — which is the point of the ids-not-names rule.
         const sentence =
-            'Invoice abc was already returned to Finance by user#7 on 2026-09-04 and is awaiting correction.';
+            'Invoice BSS-000042 was already returned to Finance on 2026-09-04 by A. B.. It is awaiting correction.';
 
         expect(
             returnErrorMessage({ status: 422, data: { message: sentence } }),

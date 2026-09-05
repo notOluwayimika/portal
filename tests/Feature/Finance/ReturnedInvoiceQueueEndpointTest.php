@@ -117,8 +117,8 @@ it('a1 — released-AND-returned is unreachable in BOTH directions, so the relea
      * MEASURED, AND IT CHANGES WHAT THE ENDPOINT'S `whereNull(RELEASE_STAMP_COLUMN)` CLAIMS.
      *
      * The first draft of arm (a) tried to build a bill that was returned and THEN released, to show
-     * the filter excluding it. `ApproveInvoice` refuses that — "was returned to Finance by user#N …
-     * it cannot be released until Finance resubmits it" — which is Phase A commit 3's
+     * the filter excluding it. `ApproveInvoice` refuses that — "was returned to Finance by <name> on
+     * <date> … it cannot be released until Finance resubmits it" — which is Phase A commit 3's
      * approve-over-a-return ruling doing exactly its job. And `ReturnInvoice` refuses the other
      * order just as flatly.
      *

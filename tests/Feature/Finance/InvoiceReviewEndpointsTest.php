@@ -16,6 +16,7 @@ use App\Finance\DTOs\InvoiceLineSpec;
 use App\Finance\Enums\InvoiceKind;
 use App\Finance\Enums\InvoiceStatus;
 use App\Finance\Models\Invoice;
+use App\Finance\Services\ActorName;
 use App\Models\Curriculum;
 use App\Models\Role;
 use App\Models\School;
@@ -30,7 +31,21 @@ use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class);
 
-beforeEach(fn () => (new RbacSeeder)->run());
+// THE MEMO IS PROCESS-LIFETIME, SO THE SUITE RESETS IT — and that is a property something
+// now asserts rather than an accident. `ActorName::$memo` is keyed "<schoolId>:<userId>" and
+// nothing cleared it between files. It was safe only because no test in this repository uses
+// `DatabaseMigrations` (measured: zero occurrences under tests/, against 264 files using
+// RefreshDatabase) and MySQL does not roll back AUTO_INCREMENT, so ids never recycle within a
+// run. Add one re-migrating file and ids restart at 1 while the memo still holds the previous
+// file's `1:1` — a name resolved for a different person, surfacing as a flake.
+//
+// This also gives `flushMemo()` its first caller, which is what its stated model
+// `SchoolFinanceSettings::flushPrefixMemo()` has had all along, in that file's own
+// `beforeEach`.
+beforeEach(function () {
+    (new RbacSeeder)->run();
+    ActorName::flushMemo();
+});
 
 function ire_seat(School $school, string $role): User
 {
@@ -506,7 +521,12 @@ it('q — an already-returned bill is refused with the action\'s sentence, namin
     $message = ire_return($this, $school, $second, $invoice->uuid, ['reason' => 'second reason'])
         ->assertStatus(422)->json('message');
 
-    expect($message)->toContain('already returned to Finance by user#'.$first->getKey());
+    // THE NAME CROSSES THE WIRE, AND THE ID DOES NOT. This endpoint is the surface the ticket is
+    // about — the sentence is relayed verbatim into a 422 body an auditor reads on screen.
+    expect($message)->toContain('was already returned to Finance on ')
+        ->and($message)->toContain(' by '.$first->full_name.'. It is awaiting correction.')
+        ->and($message)->not->toContain('user#')
+        ->and($message)->not->toContain($invoice->uuid);
 
     expect(DB::table('finance_invoices')->where('id', $invoice->id)->first()->return_reason)->toBe('first reason');
 });
@@ -524,8 +544,62 @@ it('r — a released bill is refused with the void-and-credit-note remedy', func
 
     // THE REMEDY IS PART OF THE ASSERTION: an auditor told "no" with no route forward will find one
     // that is not audited.
-    expect($message)->toContain('already released to its payer by user#'.$reviewer->getKey())
-        ->and($message)->toContain('void it and issue a credit note instead');
+    expect($message)->toContain('already released to its payer by '.$reviewer->full_name)
+        ->and($message)->toContain('void it and issue a credit note instead')
+        ->and($message)->not->toContain('user#')
+        ->and($message)->not->toContain($invoice->uuid);
+});
+
+// ── (q2) THE BATCH RESOLVES EACH DISTINCT NAME ONCE, NOT ONCE PER REFUSED ITEM ──────────────────
+
+it('q2 — a batch where every item refuses resolves the reviewer and the prefix once each', function () {
+    $school = School::factory()->create();
+    $reviewer = ire_seat($school, 'internal_auditor');
+    $second = ire_seat($school, 'internal_auditor');
+
+    // SIX, NOT TWO. `approve()` catches BusinessRuleException PER ITEM inside a loop, so a naive
+    // resolver issues one user read and one settings read for every refused item. Two items cannot
+    // tell a constant apart from a linear cost; six can, and the assertion is a LITERAL rather than
+    // a formula in $count — an expectation derived from the batch size would restate whatever the
+    // implementation does.
+    $invoices = collect(range(1, 6))->map(fn () => ire_invoice($school));
+
+    foreach ($invoices as $invoice) {
+        ActiveSchool::runFor($school->id, fn () => app(ApproveInvoice::class)->handle($invoice, $reviewer));
+    }
+
+    $users = 0;
+    $settings = 0;
+
+    DB::listen(function ($query) use (&$users, &$settings) {
+        if (str_contains($query->sql, '`users`')) {
+            $users++;
+        }
+
+        if (str_contains($query->sql, 'finance_school_settings')) {
+            $settings++;
+        }
+    });
+
+    $response = ire_post($this, $school, $second, $invoices->pluck('uuid')->all());
+
+    // Every item refused, and with the sentence this commit is about — so the reads counted below
+    // are the ones the refusal path made, not an empty measurement.
+    $response->assertStatus(207)
+        ->assertJsonPath('approved', 0)
+        ->assertJsonPath('refused', 6);
+
+    expect($response->json('results.0.message'))
+        ->toContain('was already released by '.$reviewer->full_name)
+        ->and($response->json('results.5.message'))
+        ->toContain('was already released by '.$reviewer->full_name);
+
+    // MEASURED, NOT ASSUMED. `ActorName` memoises on "<schoolId>:<userId>" and
+    // SchoolFinanceSettings::invoiceNumberPrefixFor() memoises on school_id, so six refusals naming
+    // one reviewer cost one read of each. The `users` figure counts EVERY users read in the request
+    // — the authenticated actor's included — which is why the ceiling is 2 rather than 1.
+    expect($users)->toBeLessThanOrEqual(2)
+        ->and($settings)->toBe(1);
 });
 
 // ── (s) ISOLATION — UNKNOWN, NOT FORBIDDEN ───────────────────────────────────

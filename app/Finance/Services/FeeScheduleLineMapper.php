@@ -97,8 +97,15 @@ final class FeeScheduleLineMapper
         // another School's lines outright, because FeeItem is absent from `rbac.fail_closed_models`
         // and the scope is therefore fail-open (SchoolScope.php:48-50, :59-64).
         if ((int) $schedule->school_id !== $schoolId) {
+            // THE SCHEDULE IS NAMED BY NOTHING HERE, and that is the isolation ruling rather than a
+            // regression from the uuid this used to carry. Its `label` is ANOTHER School's authored
+            // text, and rendering it to this School's operator would make the refusal a disclosure
+            // — a worse defect than the one the rest of this commit fixes. `SchoolContext`'s own
+            // sentence ("That invoice belongs to another School.") names nothing for the same
+            // reason. `school#{$schoolId}` is the CALLER's own School and stays: it is what makes
+            // the sentence diagnosable at all now that the subject is anonymous.
             throw new BusinessRuleException(
-                "Fee schedule [{$schedule->uuid}] belongs to another School; it cannot be billed for school#{$schoolId}."
+                "That fee schedule belongs to another School; it cannot be billed for school#{$schoolId}."
             );
         }
 
@@ -117,8 +124,12 @@ final class FeeScheduleLineMapper
         $ambientSchoolId = ActiveSchool::id();
 
         if ($ambientSchoolId !== null && (int) $ambientSchoolId !== $schoolId) {
+            // ANONYMOUS FOR THE MIRROR IMAGE OF THE REASON ABOVE. Guard 1 has already established
+            // the schedule belongs to `$schoolId`; the reader of this sentence is in the AMBIENT
+            // School, which is a different one. So the label would again be another School's text
+            // rendered to someone outside it.
             throw new BusinessRuleException(
-                "Fee schedule [{$schedule->uuid}] cannot be billed for school#{$schoolId} from another School's context."
+                "That fee schedule cannot be billed for school#{$schoolId} from another School's context."
             );
         }
 
@@ -130,7 +141,7 @@ final class FeeScheduleLineMapper
         // the enum now carries the ruling and its reasons. Widening the set moves both sites.
         if (! $schedule->status->isBillable()) {
             throw new BusinessRuleException(
-                "Fee schedule [{$schedule->uuid}] is {$schedule->status->value}; only an active schedule may be billed from."
+                "Fee schedule \"{$schedule->label}\" is {$schedule->status->value}; only an active schedule may be billed from."
             );
         }
 
@@ -150,7 +161,7 @@ final class FeeScheduleLineMapper
         // longer be an isolation failure wearing a pricing failure's message.
         if ($items->isEmpty()) {
             throw new BusinessRuleException(
-                "Fee schedule [{$schedule->uuid}] has no mandatory items, so it cannot produce a term bill."
+                "Fee schedule \"{$schedule->label}\" has no mandatory items, so it cannot produce a term bill."
             );
         }
 
@@ -164,7 +175,7 @@ final class FeeScheduleLineMapper
 
         if ($currencies->count() > 1) {
             throw new BusinessRuleException(
-                "Fee schedule [{$schedule->uuid}] mixes currencies (".$currencies->implode(', ').'); its mandatory items must agree.'
+                "Fee schedule \"{$schedule->label}\" mixes currencies (".$currencies->implode(', ').'); its mandatory items must agree.'
             );
         }
 

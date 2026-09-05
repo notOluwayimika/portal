@@ -13,6 +13,7 @@ use App\Models\Scopes\SchoolScope;
 use App\Models\StudentCurriculum;
 use App\Models\Term;
 use App\Models\User;
+use App\Services\Rollover\ClosingSessionSubjects;
 use App\Services\Rollover\NextYearPlacement;
 use App\Services\Rollover\NextYearPlacementResolver;
 use App\Services\StudentSubjectService;
@@ -495,44 +496,27 @@ class MoveToNextYearJob implements ShouldQueue
     }
 
     /**
-     * Last year's instance of the DESTINATION's level: the same `class_level_arm_id`, `exam_type_id`
-     * and `is_ccm`, with its term inside the CLOSING session, and which actually has subjects.
+     * Last year's instance of the DESTINATION's level.
      *
-     * The keys are taken from the DESTINATION rather than from the source curriculum, and that is the
-     * point of the whole lookup — the source is a Year 11 row and would seed Year 12 with Year 11's
-     * subjects, which is the behaviour the "no cloning across a level boundary" rule correctly
-     * forbids. `is_ccm` is part of the key so a CCM destination seeds from the prior CCM curriculum
-     * and never from its non-CCM sibling, whose weights mean something different.
+     * THE BODY MOVED TO {@see ClosingSessionSubjects} AND THE REASONING WENT WITH IT. It is not a
+     * tidy-up: the rollover PREVIEW has to tell an operator whether a destination with no subjects
+     * will be populated here at commit or will genuinely land empty, and a screen that flags on a
+     * different rule than this method seeds on is a screen that lies. Two implementations cannot be
+     * held to that by testing them apart; one construction can. Same reason
+     * {@see NextYearPlacementResolver} is shared between this job and the planner.
      *
-     * `whereHas` rather than a plain match: a closing session can hold a bare row of its own (created
-     * by the year before's rollover and never configured), and inheriting emptiness from it would
-     * silently shadow a term that does have the list.
-     *
-     * DETERMINISTIC BY THE TERM'S ORDER, DESCENDING — the latest term of the closing session, since
-     * that is the most recently edited statement of what the level teaches. The id tie-break makes the
-     * answer total rather than merely usually-unique. The destination cannot select itself: it sits in
-     * the TARGET session, and passesGuards refuses a target session equal to the source's.
+     * The shared lookup keys on the destination's IDENTITY rather than on a model, because the
+     * preview's destination does not exist yet — see that class.
      */
     private function closingSessionCurriculumFor(Curriculum $destination): ?Curriculum
     {
-        $closingSessionId = $this->sourceSessionId();
-
-        if ($closingSessionId === null) {
-            return null;
-        }
-
-        return Curriculum::withoutGlobalScope(SchoolScope::class)
-            ->select('curricula.*')
-            ->join('terms', 'terms.id', '=', 'curricula.term_id')
-            ->where('terms.academic_session_id', $closingSessionId)
-            ->where('curricula.school_id', $this->schoolId)
-            ->where('curricula.class_level_arm_id', $destination->class_level_arm_id)
-            ->where('curricula.exam_type_id', $destination->exam_type_id)
-            ->where('curricula.is_ccm', $destination->is_ccm)
-            ->whereHas('curriculumSubjects')
-            ->orderByDesc('terms.order')
-            ->orderByDesc('curricula.id')
-            ->first();
+        return ClosingSessionSubjects::candidate(
+            $this->schoolId,
+            (int) $destination->class_level_arm_id,
+            (int) $destination->exam_type_id,
+            (bool) $destination->is_ccm,
+            $this->sourceSessionId(),
+        );
     }
 
     /**

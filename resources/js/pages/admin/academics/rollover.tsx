@@ -41,10 +41,17 @@ interface PlacementPupil {
 interface PlacementRow {
     source: string;
     destination: string;
-    /** null means the rollover would CREATE this destination — so it would have no subjects. */
+    /** null means the rollover would CREATE this destination. */
     destination_curriculum_id: number | null;
     destination_key: string;
+    /**
+     * WILL LAND EMPTY — no compulsory subjects, and end-of-year's subject inheritance will not fix
+     * it. Not "has no curriculum yet": a destination that does not exist is usually SEEDED from last
+     * year, and this flag is false for those.
+     */
     destination_is_unconfigured: boolean;
+    /** Unconfigured today, populated at commit from the same level's prior session. */
+    destination_will_inherit: boolean;
     pupil_count: number;
     pupils: PlacementPupil[];
 }
@@ -64,7 +71,10 @@ interface Placement {
     }[];
     /** Pupils in every bucket combined — reconciled against `pupil_count` so none can go missing. */
     accounted_pupils: number;
+    /** Destinations that will genuinely land with no subjects. The red warning's number. */
     unconfigured_count: number;
+    /** Destinations the commit will populate from last year. Informational — never a blocker. */
+    inheriting_count: number;
     /**
      * OPAQUE. Echoed back on commit exactly as received, never rebuilt from the rows above.
      *
@@ -508,7 +518,7 @@ export default function RolloverPage({ sessions, terms }: RolloverPageProps) {
                                 {plan?.placement.unconfigured_count === 1
                                     ? 'has'
                                     : 'have'}{' '}
-                                no curriculum set up. Pupils placed there will
+                                no subjects to inherit. Pupils placed there will
                                 have <strong>no subjects</strong>, and nothing
                                 will attach them afterwards — set the subjects
                                 up first if you can.
@@ -691,25 +701,49 @@ function PlacementPanel({ plan }: { plan: RolloverPlan }) {
                 the observer's remediation fallback, CurriculumEnrollmentService,
                 CurriculumReassignmentService), and all of them have run by the time anyone
                 notices. */}
+            {/* INHERITING — informational, deliberately NOT red. These destinations have no
+                subjects today and the rollover will give them last year's list for the same class
+                level. Saying nothing at all would be worse than saying this: the rows carry a badge,
+                and an unexplained badge sends the operator looking for a problem that is not there. */}
+            {placement.inheriting_count > 0 && (
+                <div className="rounded-md border bg-muted px-3 py-2 text-xs">
+                    <p className="font-medium">
+                        {placement.inheriting_count} destination
+                        {placement.inheriting_count === 1 ? '' : 's'} will
+                        inherit last year&apos;s subjects.
+                    </p>
+                    <p className="mt-1 text-muted-foreground">
+                        These have no curriculum yet. The rollover creates each
+                        one and copies the subject list from the same class
+                        level in the closing session.{' '}
+                        <strong>No action needed</strong> — and setting them up
+                        by hand risks the mismatch described below.
+                    </p>
+                </div>
+            )}
+
             {placement.unconfigured_count > 0 && (
                 <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
                     <p className="font-medium">
                         {placement.unconfigured_count} destination
-                        {placement.unconfigured_count === 1 ? '' : 's'} ha
-                        {placement.unconfigured_count === 1 ? 's' : 've'} no
-                        curriculum yet.
+                        {placement.unconfigured_count === 1 ? '' : 's'} will
+                        land with no subjects.
                     </p>
                     <p className="mt-1">
-                        End-of-year does not carry subjects across — the new
-                        class level defines its own. The rollover will create
-                        these curricula empty, pupils will land with no
-                        subjects, and{' '}
-                        <strong>nothing attaches them afterwards</strong>. Set
-                        them up first if you can.
+                        There is nothing to inherit for{' '}
+                        {placement.unconfigured_count === 1
+                            ? 'this one'
+                            : 'these'}{' '}
+                        — the same class level has no prior-session curriculum
+                        with subjects to copy. Pupils will land with no subjects
+                        and <strong>nothing attaches them afterwards</strong>.
+                        Set them up first if you can.
                     </p>
                     {/* THE THREE THINGS THAT MUST MATCH, because a prepared curriculum the job does
                         not FIND is worse than none — it creates a second one and leaves the
-                        prepared one orphaned, which looks identical to having done nothing. */}
+                        prepared one orphaned, which looks identical to having done nothing. This is
+                        also why the inheriting note above tells the operator NOT to pre-build: the
+                        hazard is the same, and it used to be advertised to every destination. */}
                     <ul className="mt-2 list-disc space-y-0.5 pl-4">
                         <li>
                             the class level&apos;s <strong>first</strong>{' '}
@@ -829,7 +863,13 @@ function PlacementTable({
                                     {row.destination}
                                     {row.destination_is_unconfigured && (
                                         <span className="ml-2 rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-800 dark:bg-red-950/60 dark:text-red-300">
-                                            no curriculum yet
+                                            will land empty
+                                        </span>
+                                    )}
+                                    {row.destination_will_inherit && (
+                                        <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                                            will inherit last year&apos;s
+                                            subjects
                                         </span>
                                     )}
                                 </td>

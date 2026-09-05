@@ -27,6 +27,7 @@ use App\Finance\Enums\DiscountPolicyStatus;
 use App\Finance\Enums\FeeScheduleChangeKind;
 use App\Finance\Enums\FeeScheduleStatus;
 use App\Finance\Enums\InvoiceKind;
+use App\Finance\Enums\InvoiceLineKind;
 use App\Finance\Enums\VoidRequestStatus;
 use App\Finance\Exports\DiscountAwardImportTemplateExport;
 use App\Finance\Models\BankAccount;
@@ -44,6 +45,7 @@ use App\Support\ActiveSchool;
 use App\Support\Money;
 use App\Support\SchoolDay;
 use Illuminate\Support\Carbon;
+use RuntimeException;
 
 /**
  * The FINANCE half of the drive fixture: given ENROLLMENT UUIDs (handed in from outside — this
@@ -955,6 +957,95 @@ final class DriveFinanceStates
     }
 
     /**
+     * A RELEASED BILL A PARENT CAN ACTUALLY READ — two charges and a reduction, not one opaque row.
+     *
+     * ── WHY THE SINGLE-LINE VERSION COULD NOT DRIVE THE SCREEN IT WAS FOR ──
+     *
+     * {@see Invoice()} builds ONE free-text `Tuition` line for the whole amount, which was right for
+     * every state above it: those are settlement fixtures, and settlement does not care how a bill
+     * is composed. The payer BREAKDOWN is the opposite — composition is the entire subject — and on a
+     * one-line bill the breakdown renders `Tuition NGN 247,500` above `Total NGN 247,500`. That page
+     * loads, looks correct, and cannot tell a screen that lists lines from one that reprints the
+     * total. It also carries no reduction, so the one thing the ruling turns on — reductions shown
+     * beneath charges, on the payer's own bill — never appears at all.
+     *
+     * The sixth instance of this fixture's oldest failure, and the first found on a PARENT screen:
+     * a count that reads healthy (`Released bills: 1`) while the screen it was added for is
+     * degenerate. Hence {@see releasedInvoiceWithReductionCount()} beside it — the count of the right
+     * SHAPE, which is the distinction `Award pairs` had to make for the import drive.
+     *
+     * ── THE ARITHMETIC, AND WHY IT SURVIVES EITHER DISCOUNT BASE ──
+     *
+     * NGN 250,000 tuition + NGN 25,000 levy = NGN 275,000 gross, less the seeded 10% sibling policy
+     * = NGN 27,500, for the SAME NGN 247,500 total the single-line version produced. The figure is
+     * held deliberately: it is the number in the ruling that produced this method, and moving it
+     * would silently unmoor every document that cites it.
+     *
+     * BOTH charge lines are discountable, so `discountable` and `total` denote the same money here
+     * and the total is 247,500 under EITHER base. That is a fixture the base axis cannot be read off
+     * — stated rather than left to be discovered, because this file warns about exactly that shape
+     * one screen over. It is deliberate: the drive this bill exists for is about RENDERING, and a
+     * headline figure that moved when a policy attribute moved would be the more expensive trap. The
+     * base axis is carried by the cohort award holders, which is where it belongs.
+     *
+     * ── THROUGH THE REAL PATHS, AS EVERYTHING HERE IS ──
+     *
+     * The reduction cites the seeded policy because `finance_invoice_lines_reduction_guard` REFUSES a
+     * reduction line whose policy is null, inactive, cross-school or approval-requiring — the same
+     * guard that refused this method's first draft, correctly. The percentage is resolved into a
+     * concrete negative naira figure by {@see GenerateInvoice}, never stored as "10%", so the parent
+     * reads the money rather than a rate.
+     */
+    public function releasedInvoiceWithReduction(string $enrollmentUuid, User $auditor): void
+    {
+        $schoolId = ActiveSchool::getOrFail()->id;
+        $account = $this->ensureBankAccount($schoolId);
+
+        app(GenerateInvoice::class)->handle(
+            $enrollmentUuid,
+            [
+                new InvoiceLineSpec('Tuition', Money::fromKobo(25_000_000), bankAccountId: $account),
+                new InvoiceLineSpec('Development levy', Money::fromKobo(2_500_000), bankAccountId: $account),
+                new InvoiceLineSpec(
+                    self::DRIVE_POLICY_NAME,
+                    null,
+                    kind: InvoiceLineKind::Discount,
+                    percent: 10,
+                    discountPolicyId: $this->ensureDiscountPolicy($schoolId),
+                ),
+            ],
+            InvoiceKind::Scheduled,
+        );
+
+        $invoice = Invoice::query()
+            ->where('school_id', $schoolId)
+            ->whereNull(Invoice::RELEASE_STAMP_COLUMN)
+            ->whereNull('returned_at')
+            ->excludingVoid()
+            ->orderByDesc('id')
+            ->firstOrFail();
+
+        // THE FIXTURE ASSERTS ITS OWN WORK, exactly as linkPayerWards() does, and for a sharper
+        // reason: every figure above is an INPUT to an arithmetic performed elsewhere. The 10% is
+        // resolved by GenerateInvoice against a base read off the cited policy, so a policy edit —
+        // a percent amended on the discount-policies screen, a base switched to `total` — silently
+        // moves this total while every line still renders and the page still loads. A drive would
+        // then be read against a headline figure nobody had re-derived. Three lines and NGN 247,500
+        // are the claim this method's docblock makes; this is that claim executable.
+        $lineCount = $invoice->lines()->count();
+
+        if ($lineCount !== 3 || $invoice->total->toKobo() !== 24_750_000) {
+            throw new RuntimeException(
+                'Breakdown fixture: expected 3 lines totalling 24750000 kobo, got '
+                .$lineCount.' line(s) totalling '.$invoice->total->toKobo()
+                .' kobo. The cited discount policy has probably moved.'
+            );
+        }
+
+        app(ApproveInvoice::class)->handle($invoice, $auditor);
+    }
+
+    /**
      * Bills a PAYER can actually see — released, not void.
      *
      * ── WHY THIS COLUMN EXISTS, AND IT IS THE SIXTH TIME ──
@@ -974,6 +1065,31 @@ final class DriveFinanceStates
             ->where('school_id', $schoolId)
             ->whereNotNull(Invoice::RELEASE_STAMP_COLUMN)
             ->excludingVoid()
+            ->count();
+    }
+
+    /**
+     * Released bills carrying a REDUCTION — the breakdown drive's denominator, and a different
+     * question from {@see releasedInvoiceCount()} rather than the same one narrower.
+     *
+     * That column asks whether a payer may see anything at all. This one asks whether what they see
+     * has a SHAPE worth looking at: a bill of one charge renders a breakdown identical to its own
+     * total, so a fixture reading `Released bills: 1` can be perfectly healthy on the question that
+     * column asks and useless for the screen. Zero here and the reduction grouping — the whole
+     * subject of the ruling that parents see their discounts — is unreachable, on a page that loads.
+     *
+     * NEGATIVE `amount_minor` is the test, not `kind`. The sign carries the arithmetic while the kind
+     * carries the reason, so a `waiver` and a `discount` both count and a mislabelled reduction is
+     * still found. Reading `kind` here would ask the fixture to agree with a label rather than with
+     * the money.
+     */
+    public function releasedInvoiceWithReductionCount(int $schoolId): int
+    {
+        return Invoice::query()
+            ->where('school_id', $schoolId)
+            ->whereNotNull(Invoice::RELEASE_STAMP_COLUMN)
+            ->excludingVoid()
+            ->whereHas('lines', fn ($lines) => $lines->where('amount_minor', '<', 0))
             ->count();
     }
 

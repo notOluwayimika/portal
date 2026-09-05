@@ -136,6 +136,22 @@ class DriveCastSeeder extends Seeder
      */
     public array $parentWards = [];
 
+    /**
+     * EVERY SEAT THIS CLASS MINTS, in mint order — the denominator for the printed sign-in table.
+     *
+     * It exists because that table is a SECOND, HAND-MAINTAINED list, and it had silently drifted to
+     * four short: twelve seats were being created and eight printed, with `auditor@drive.test` and
+     * `parent@drive.test` — the two the parent-facing drives sign in as — among the missing. Nothing
+     * failed. The table simply did not mention them, which for a driver reading it is the same as
+     * their not existing.
+     *
+     * {@see SeedDriveFixture} asserts this array against the rows it prints and REFUSES to seed on a
+     * mismatch, so a seat added below cannot go unlisted. The labels stay hand-written — "Void-only
+     * checker (no credit-note.approve)" says something a role name does not — but their COVERAGE is
+     * now checked rather than trusted.
+     */
+    public array $mintedSeats = [];
+
     /** The guardian-create drive's operator seat (School A) and its isolation counterpart (School B). */
     public ?User $adminA = null;
 
@@ -817,6 +833,10 @@ class DriveCastSeeder extends Seeder
             $user->grantSchoolAccess($school, $role);
             $user->flushSchoolAccessCache();
         }
+
+        // Recorded at the single point every seat passes through, so the registry cannot disagree
+        // with what was actually minted — the reason it lives here and not in a list beside it.
+        $this->mintedSeats[] = $email;
 
         return $user;
     }

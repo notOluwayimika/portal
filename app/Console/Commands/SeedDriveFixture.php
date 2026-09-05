@@ -263,7 +263,10 @@ class SeedDriveFixture extends Command
          * That combination is unreachable from every other state this fixture stages.
          */
         ActiveSchool::runFor($cast->schoolAId, function () use ($cast, $states) {
-            $states->releasedInvoice($cast->parentWards['released'], 24_750_000, $cast->auditor);
+            // RELEASED, AND COMPOSED. Two charges and a sibling reduction totalling the same
+            // NGN 247,500 — because a one-line bill renders a "breakdown" identical to its own
+            // total, which is a page that loads and a drive that proves nothing.
+            $states->releasedInvoiceWithReduction($cast->parentWards['released'], $cast->auditor);
 
             // WITHHELD: raised and never released. Renders identically to a ward with nothing owed,
             // which is the withholding working rather than the screen failing.
@@ -273,19 +276,54 @@ class SeedDriveFixture extends Command
             $states->unallocatedRemainder($cast->parentWards['credit'], $cast->schoolAId, false);
         });
 
-        $this->alignedTable(
-            ['Role in the drive', 'Email'],
-            [
-                ['Maker (accounts_officer)', 'maker@drive.test'],
-                ['Full checker (executive_director)', 'checker@drive.test'],
-                ['Void-only checker (no credit-note.approve)', 'void-checker@drive.test'],
-                ['Super admin', 'super@drive.test'],
-                ['School B bursar (isolation)', 'school-b@drive.test'],
-                ['Admin (guardians screen)', 'admin@drive.test'],
-                ['School B admin (guardian isolation)', 'admin-b@drive.test'],
-                ['Guardian editor, NO update_credentials', 'guardian-editor@drive.test'],
-            ],
-        );
+        /*
+         * THE SIGN-IN TABLE IS A SECOND, HAND-MAINTAINED COPY OF THE CAST, so it is ASSERTED against
+         * the cast below rather than trusted to have kept up. It had not: TWELVE seats were being
+         * minted and EIGHT printed, and the four it omitted included `auditor@drive.test` and
+         * `parent@drive.test` — the seats the review-queue and parent-Fees drives exist to sign in
+         * as. A driver reading this table to find a login would have concluded the payer seat did not
+         * exist, which is precisely how this fixture's history says a drive fails.
+         *
+         * NOTHING WENT RED, because nothing was asking. The command printed a complete-LOOKING table
+         * of eight and said nothing about the four it had just made. That is this file's own coverage
+         * discipline — a gate reports what it EXAMINED, and the unrecognised bucket must be asserted
+         * zero — turned on its own output.
+         *
+         * The labels stay hand-written, because "Void-only checker (no credit-note.approve)" says
+         * something a role name cannot. It is their COVERAGE that is now checked rather than trusted.
+         */
+        $seats = [
+            ['Maker (accounts_officer)', 'maker@drive.test'],
+            ['Full checker (executive_director)', 'checker@drive.test'],
+            ['Void-only checker (no credit-note.approve)', 'void-checker@drive.test'],
+            ['Super admin', 'super@drive.test'],
+            ['School B bursar (isolation)', 'school-b@drive.test'],
+            ['Admin (guardians screen)', 'admin@drive.test'],
+            ['School B admin (guardian isolation)', 'admin-b@drive.test'],
+            ['Guardian editor, NO update_credentials', 'guardian-editor@drive.test'],
+            ['Internal auditor — RELEASES bills to payers', 'auditor@drive.test'],
+            ['IA approve-only (holds approve, NOT reject)', 'approve-only@drive.test'],
+            ['Teacher (assignment fixture; no finance role)', 'teacher@drive.test'],
+            ['PAYER — three wards, one per condition', 'parent@drive.test'],
+        ];
+
+        // BOTH DIRECTIONS. An unlisted seat is the drift that actually happened; a listed seat that
+        // is no longer minted names a login nobody can use, which fails a drive just as completely
+        // and reads as a broken feature rather than a stale row. One assertion cannot stand in for
+        // the other — each is satisfied by a state the other permits.
+        $listed = array_column($seats, 1);
+        $unlisted = array_values(array_diff($cast->mintedSeats, $listed));
+        $stale = array_values(array_diff($listed, $cast->mintedSeats));
+
+        if ($unlisted !== [] || $stale !== []) {
+            throw new RuntimeException(
+                'Sign-in table disagrees with the cast: '
+                .count($unlisted).' minted seat(s) unlisted ['.implode(', ', $unlisted).'], '
+                .count($stale).' listed seat(s) never minted ['.implode(', ', $stale).'].'
+            );
+        }
+
+        $this->alignedTable(['Role in the drive', 'Email'], $seats);
         $this->newLine();
 
         /*
@@ -547,11 +585,29 @@ class SeedDriveFixture extends Command
          */
         $releasedBills = fn (int $schoolId): int => ActiveSchool::runFor($schoolId, fn () => $states->releasedInvoiceCount($schoolId));
 
+        /*
+         * `Released w/ reduction` — THE SEVENTH COLUMN, AND THE FIRST ADDED BECAUSE A COUNT WAS THE
+         * WRONG SHAPE RATHER THAN MISSING.
+         *
+         * `Released bills` above answers "may a payer see anything at all". It read 1 while the one
+         * bill it counted carried a single `Tuition` line for the whole amount — so the breakdown
+         * screen rendered one row above a total reading the same figure. Nothing was empty and
+         * nothing was broken; the fixture simply could not distinguish a screen that LISTS lines
+         * from one that reprints the total, and it carried no reduction at all, which is the half of
+         * the ruling that says parents see their discounts.
+         *
+         * That is this file's oldest failure in its subtler form: not a zero, but a healthy-looking
+         * count of the wrong unit — the distinction `Award pairs` had to draw against
+         * `Discount policies`. Zero here and the reduction grouping is unreachable on a page that
+         * loads correctly.
+         */
+        $releasedWithReduction = fn (int $schoolId): int => ActiveSchool::runFor($schoolId, fn () => $states->releasedInvoiceWithReductionCount($schoolId));
+
         $this->alignedTable(
-            ['School', 'Academic sessions', 'Terms', 'Class levels', 'Bank accounts', 'Discount policies', 'Payments (portal)', 'Payments (migrated)', 'Payments w/ remainder', 'Open invoices', 'Students', 'Guardians', 'Teachers', 'Released bills', 'Scholarships', 'Scholarships (unconfigured)'],
+            ['School', 'Academic sessions', 'Terms', 'Class levels', 'Bank accounts', 'Discount policies', 'Payments (portal)', 'Payments (migrated)', 'Payments w/ remainder', 'Open invoices', 'Students', 'Guardians', 'Teachers', 'Released bills', 'Released w/ reduction', 'Scholarships', 'Scholarships (unconfigured)'],
             [
-                ['A (school#'.$cast->schoolAId.')', $count('academic_sessions', $cast->schoolAId), $count('terms', $cast->schoolAId), $count('class_levels', $cast->schoolAId), $accounts($cast->schoolAId), $policies($cast->schoolAId), $payments($cast->schoolAId, 'portal'), $payments($cast->schoolAId, 'migrated'), $remainders($cast->schoolAId), $openInvoices($cast->schoolAId), $count('students', $cast->schoolAId), $count('guardians', $cast->schoolAId), $count('teachers', $cast->schoolAId), $releasedBills($cast->schoolAId), $scholarships($cast->schoolAId), $unconfiguredScholarships($cast->schoolAId)],
-                ['B (school#'.$cast->schoolBId.')', $count('academic_sessions', $cast->schoolBId), $count('terms', $cast->schoolBId), $count('class_levels', $cast->schoolBId), $accounts($cast->schoolBId), $policies($cast->schoolBId), $payments($cast->schoolBId, 'portal'), $payments($cast->schoolBId, 'migrated'), $remainders($cast->schoolBId), $openInvoices($cast->schoolBId), $count('students', $cast->schoolBId), $count('guardians', $cast->schoolBId), $count('teachers', $cast->schoolBId), $releasedBills($cast->schoolBId), $scholarships($cast->schoolBId), $unconfiguredScholarships($cast->schoolBId)],
+                ['A (school#'.$cast->schoolAId.')', $count('academic_sessions', $cast->schoolAId), $count('terms', $cast->schoolAId), $count('class_levels', $cast->schoolAId), $accounts($cast->schoolAId), $policies($cast->schoolAId), $payments($cast->schoolAId, 'portal'), $payments($cast->schoolAId, 'migrated'), $remainders($cast->schoolAId), $openInvoices($cast->schoolAId), $count('students', $cast->schoolAId), $count('guardians', $cast->schoolAId), $count('teachers', $cast->schoolAId), $releasedBills($cast->schoolAId), $releasedWithReduction($cast->schoolAId), $scholarships($cast->schoolAId), $unconfiguredScholarships($cast->schoolAId)],
+                ['B (school#'.$cast->schoolBId.')', $count('academic_sessions', $cast->schoolBId), $count('terms', $cast->schoolBId), $count('class_levels', $cast->schoolBId), $accounts($cast->schoolBId), $policies($cast->schoolBId), $payments($cast->schoolBId, 'portal'), $payments($cast->schoolBId, 'migrated'), $remainders($cast->schoolBId), $openInvoices($cast->schoolBId), $count('students', $cast->schoolBId), $count('guardians', $cast->schoolBId), $count('teachers', $cast->schoolBId), $releasedBills($cast->schoolBId), $releasedWithReduction($cast->schoolBId), $scholarships($cast->schoolBId), $unconfiguredScholarships($cast->schoolBId)],
             ],
         );
 

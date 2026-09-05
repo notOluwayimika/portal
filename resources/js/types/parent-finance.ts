@@ -30,8 +30,27 @@ export interface FinanceWardStudent {
 }
 
 /**
+ * One line of a bill as a PAYER sees it — the three fields `GuardianInvoiceLineResource` admits,
+ * and no more. `id`, `note`, `fee_item_id`, `bank_account_id` and the rest are refused server-side;
+ * this type is the wire shape rather than a subset chosen here.
+ */
+export interface FinanceWardInvoiceLine {
+    /** WHAT the charge is — "Tuition", "Development levy". Not re-worded for parents. */
+    description: string;
+    /** `charge`, `waiver` or `discount` — what the line MEANS. The SIGN below is what it DOES. */
+    kind: string;
+    /** SIGNED. Negative on a reduction, and the lines sum to `total` on the invoice. */
+    amount: Money;
+}
+
+/**
  * One invoice as a PAYER sees it. Deliberately not the staff invoice shape: no `status`, no
- * `settlement_state`, no `lines`, and none of the bursar's eligibility flags.
+ * `settlement_state`, and none of the bursar's eligibility flags.
+ *
+ * `lines` WAS in that refused list, on the reasoning that a payer needs only what lets them decide
+ * and pay. Segun overruled it on 5 September 2026: a parent asked for a term's fees may see what
+ * they comprise, discounts included. The old reasoning is recorded rather than deleted in
+ * `GuardianInvoiceResource`'s docblock, which is where it was argued.
  */
 export interface FinanceWardInvoice {
     /** The invoice uuid — the identifier a payment would be initiated against. */
@@ -46,6 +65,15 @@ export interface FinanceWardInvoice {
     total: Money;
     /** What is still owed — the figure the parent is being asked for. */
     outstanding: Money;
+    /**
+     * What the bill is MADE OF — charges and any reductions, signed, summing to `total`.
+     *
+     * Optional because `whenLoaded` omits the key entirely when the relation was not eager-loaded,
+     * and that is a real state rather than a theoretical one: it is exactly the defect this feature
+     * hit in its first hour, where a missing `->with('lines')` would have rendered a breakdown of
+     * zero rows on a bill with three. Typed as absent-or-present so a consumer has to decide.
+     */
+    lines?: FinanceWardInvoiceLine[];
 }
 
 /**

@@ -40,6 +40,8 @@ use App\Finance\Actions\SubmitVoidRequest;
 use App\Finance\DTOs\InvoiceLineSpec;
 use App\Finance\Enums\CreditNoteKind;
 use App\Finance\Enums\InvoiceKind;
+use App\Finance\Enums\InvoiceLineKind;
+use App\Finance\Models\DiscountPolicy;
 use App\Finance\Models\Invoice;
 use App\Finance\Services\GuardianPaymentAuthorisation;
 use App\Models\Curriculum;
@@ -636,13 +638,20 @@ it('carries NONE of the staff eligibility flags or internal state', function () 
 
     $row = ppf_hit($school, $me)->assertOk()->json('data.0.invoices.0');
 
-    foreach (['can_record_payment', 'can_submit_credit_note', 'can_request_void', 'void_blocked_reason', 'lines'] as $leak) {
+    // `lines` LEFT THIS LIST ON 2026-09-05, by ruling — see GuardianInvoiceResource. It sat here
+    // because the payer shape deliberately withheld the breakdown, and that was sound for a payer
+    // deciding WHETHER to pay and wrong for one deciding WHAT THEY ARE PAYING FOR. Every other entry
+    // stays: each is a STAFF eligibility answer or the school's own accounting position narrated
+    // back to the person it is about.
+    foreach (['can_record_payment', 'can_submit_credit_note', 'can_request_void', 'void_blocked_reason'] as $leak) {
         expect($row)->not->toHaveKey($leak);
     }
 
     // Pinned as an exact key set, so a field ADDED later fails here rather than reaching the portal
-    // unreviewed — the shape is a contract a second developer is building against.
-    expect(array_keys($row))->toBe(['id', 'display_number', 'kind', 'academic_context', 'total', 'outstanding']);
+    // unreviewed — the shape is a contract a second developer is building against. This arm is what
+    // made the ruling visible as a RED rather than a silent widening, which is the point of pinning
+    // a set instead of listing refusals.
+    expect(array_keys($row))->toBe(['id', 'display_number', 'kind', 'academic_context', 'total', 'outstanding', 'lines']);
 });
 
 it('carries ward identity as uuid and name ONLY', function () {
@@ -745,4 +754,99 @@ it('mayPay() is FALSE for a user with no guardian row in the active school', fun
     ActiveSchool::runFor($school->id, fn () => expect(
         app(GuardianPaymentAuthorisation::class)->mayPay($stranger, $invoice)
     )->toBeFalse());
+});
+
+/*
+|--------------------------------------------------------------------------
+| 10 · What the bill COMPRISES — ruled 2026-09-05
+|--------------------------------------------------------------------------
+|
+| A parent was being asked for a term's fees against a document number and a term label. The ruling
+| is all-or-nothing: lines and discounts together, because a discount IS a line and hiding it
+| produces arithmetic a parent cannot reconcile.
+*/
+
+/** A released bill carrying a charge, a second charge and a DISCOUNT — the shape the ruling is about. */
+function ppf_discountedInvoice(School $school, Student $student): Invoice
+{
+    return ppf_release(ActiveSchool::runFor($school->id, function () use ($school, $student) {
+        $enrollment = StudentCurriculum::create([
+            'student_id' => $student->id,
+            'curriculum_id' => Curriculum::factory()->create(['school_id' => $school->id])->id,
+            'status' => 'active',
+        ]);
+
+        // AN ACTIVE POLICY, BECAUSE THE DATABASE REFUSES A REDUCTION WITHOUT ONE: "a reduction line
+        // must reference an active discount policy; discretionary reductions go through a credit
+        // note". The first version of this fixture omitted it and was refused — the guard catching a
+        // test inventing a state the system does not permit, which is the guard working.
+        $policy = DiscountPolicy::create([
+            'school_id' => $school->id, 'name' => 'Staff discount', 'basis' => 'percent',
+            'percent' => 10, 'requires_approval' => false, 'status' => 'active',
+        ]);
+
+        return app(GenerateInvoice::class)->handle(
+            $enrollment->uuid,
+            [
+                new InvoiceLineSpec('Tuition', Money::fromKobo(25_000_000), bankAccountId: testBankAccountId()),
+                new InvoiceLineSpec('Development levy', Money::fromKobo(3_000_000), bankAccountId: testBankAccountId()),
+                // NEGATIVE, and tagged `discount`. The sign is the arithmetic — see InvoiceLine.
+                new InvoiceLineSpec('Staff discount', Money::fromKobo(-5_000_000), kind: InvoiceLineKind::Discount, discountPolicyId: $policy->id, bankAccountId: testBankAccountId()),
+            ],
+            InvoiceKind::Scheduled,
+        );
+    }));
+}
+
+it('shows a parent what the bill comprises, discount included', function () {
+    $school = al_makeSchool();
+    $student = ppf_student($school, 'Ada');
+    ppf_discountedInvoice($school, $student);
+    [$guardian] = ppf_guardian($school, [$student]);
+
+    $lines = collect(ppf_hit($school, $guardian)->assertOk()->json('data.0.invoices.0.lines'));
+
+    expect($lines)->toHaveCount(3)
+        ->and($lines->pluck('description')->all())->toBe(['Tuition', 'Development levy', 'Staff discount'])
+        // THE DISCOUNT KEEPS ITS SIGN AND ITS OWN LABEL. Netting it away, or re-wording it for
+        // parents, would put two vocabularies on one bill — a family compares this against paper.
+        ->and($lines->firstWhere('kind', 'discount')['amount']['amount_minor'])->toBe(-5_000_000);
+});
+
+it('LINES SUM TO THE TOTAL — the property the whole all-or-nothing ruling rests on', function () {
+    $school = al_makeSchool();
+    $student = ppf_student($school, 'Ada');
+    $invoice = ppf_discountedInvoice($school, $student);
+    [$guardian] = ppf_guardian($school, [$student]);
+
+    $payload = ppf_hit($school, $guardian)->assertOk()->json('data.0.invoices.0');
+
+    // THE ARM THAT MATTERS, and it is not "lines are present". A payload that shipped the two
+    // charges and dropped the discount would pass a presence check and hand a parent
+    // 25,000,000 + 3,000,000 = 28,000,000 above a total of 23,000,000 — arithmetic they cannot
+    // reconcile, which is WORSE than the opaque row this replaced. That is the entire reason the
+    // ruling is all-or-nothing rather than "show lines, decide about discounts later".
+    //
+    // Summed HERE, in the test, from the payload — never from the model. Asserting the model's own
+    // sum would restate the database's arithmetic instead of checking what crossed the wire.
+    $summed = collect($payload['lines'])->sum(fn (array $line) => $line['amount']['amount_minor']);
+
+    expect($summed)->toBe($payload['total']['amount_minor'])
+        ->and($summed)->toBe(23_000_000)
+        // AND THE INVOICE'S OWN TOTAL, so a payload that got both the lines AND the total wrong in
+        // the same direction cannot satisfy the first assertion by agreeing with itself.
+        ->and($summed)->toBe($invoice->total->toKobo());
+});
+
+it('carries none of the line fields that answer a STAFF question', function () {
+    $school = al_makeSchool();
+    $student = ppf_student($school, 'Ada');
+    ppf_discountedInvoice($school, $student);
+    [$guardian] = ppf_guardian($school, [$student]);
+
+    $line = ppf_hit($school, $guardian)->assertOk()->json('data.0.invoices.0.lines.0');
+
+    // AN ALLOWLIST, ASSERTED AS A SET rather than field by field. A `not->toHaveKey` per refused
+    // field passes silently over the next one somebody adds; an exact key set reds on it.
+    expect(array_keys($line))->toBe(['description', 'kind', 'amount']);
 });

@@ -33,9 +33,32 @@ use Illuminate\Http\Resources\Json\JsonResource;
  * ABSENT ON PURPOSE, so a later reader does not read the omission as an oversight: `status` (the
  * read excludes void, so every invoice here is issued), `settlement_state` (derivable from `total`
  * and `outstanding`, and one axis is enough on a payer surface), `number` (the internal integer),
- * `billed_to_name` (the parent knows who they are), `lines`, `cancelled_at`, `cancel_reason`. The
+ * `billed_to_name` (the parent knows who they are), ~~`lines`~~, `cancelled_at`, `cancel_reason`. The
  * portal is being built against this shape, so the shape freezes: adding a field later is easy,
  * removing one from a contract someone has built against is not.
+ *
+ * ── `lines` IS NO LONGER ABSENT — SUPERSEDED BY RULING, 2026-09-05 ─────────────────────────────
+ *
+ * The reasoning above listed `lines` among the deliberate omissions, on the principle that a payer
+ * needs what lets them DECIDE AND PAY. **That reasoning is kept rather than deleted, because it was
+ * sound for the question it answered and wrong about a different one.**
+ *
+ * It is right that a payer deciding WHETHER to pay needs only the outstanding figure. It is wrong
+ * about a payer deciding WHAT THEY ARE PAYING FOR — and a drive of this screen with a real term bill
+ * on it found the consequence: a parent asked for NGN 247,500 against a document number and a term
+ * label, with no way to see it comprised tuition, a levy and a discount. Meanwhile the confirmation
+ * screen beside it states the payment processing charge to the naira. A parent could see exactly
+ * what the provider took and nothing about what the school was charging.
+ *
+ * **The ruling is all-or-nothing, and the code is why.** A discount is a LINE carrying a negative
+ * amount — `InvoiceLine`'s own docblock: *"the SIGN of `amount` … the literal signed SUM(lines) that
+ * never branches on kind"*. So showing lines shows discounts automatically, and hiding a discount
+ * would require filtering the collection — extra work, and it breaks the sum. A parent would read
+ * `Tuition NGN 300,000` above `Total NGN 247,500` and have arithmetic they cannot reconcile, which
+ * is worse than the opaque row this replaced.
+ *
+ * `GuardianInvoiceLineResource` decides the line's own shape field by field, on the same principle
+ * that made this class not `InvoiceResource`.
  *
  * THE INVOICE MUST ARRIVE THROUGH THE READ MODEL. `outstanding` is derived by InvoiceSettlement,
  * which reads the `allocated_minor` / `approved_credit_minor` aggregates off the model and treats an
@@ -62,6 +85,10 @@ class GuardianInvoiceResource extends JsonResource
             'academic_context' => $this->academic_context,
             'total' => $this->total,
             'outstanding' => $settlement['outstanding'],
+            // WHAT THE BILL COMPRISES. `whenLoaded` because the read model is the only sanctioned
+            // way in and it eager-loads them — an invoice arriving without the relation returns no
+            // lines rather than triggering a query per invoice on a list.
+            'lines' => GuardianInvoiceLineResource::collection($this->whenLoaded('lines')),
         ];
     }
 }

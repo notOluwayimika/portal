@@ -2,6 +2,7 @@ import { usePage } from '@inertiajs/react';
 import axios from 'axios';
 import { AlertTriangle, CheckCircle2, FileText, Wallet } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { InvoiceBreakdown } from '@/components/parent/invoice-breakdown';
 import { PayInvoice } from '@/components/parent/pay-invoice';
 import { formatNaira } from '@/lib/format';
 import {
@@ -88,6 +89,13 @@ function InvoiceRow({
                     </div>
                 </div>
             </div>
+
+            {/*
+                WHAT THE BILL IS FOR, beneath the figures rather than above them. The amounts are why
+                a parent opens this screen; the composition is what they ask about when the figure
+                surprises them. Closed by default — see InvoiceBreakdown.
+            */}
+            <InvoiceBreakdown invoice={invoice} />
 
             {/*
                 THE PAY AFFORDANCE, AND ITS CONDITION IS "THIS BILL IS IN THE LIST".

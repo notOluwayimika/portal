@@ -22,6 +22,7 @@ use App\Finance\DTOs\InvoiceLineSpec;
 use App\Finance\Enums\InvoiceKind;
 use App\Finance\Enums\InvoiceStatus;
 use App\Finance\Models\Invoice;
+use App\Finance\Services\ActorName;
 use App\Models\Curriculum;
 use App\Models\School;
 use App\Models\Student;
@@ -31,11 +32,26 @@ use App\Support\ActiveSchool;
 use App\Support\Money;
 use Database\Seeders\RbacSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class);
 
-beforeEach(fn () => (new RbacSeeder)->run());
+// THE MEMO IS PROCESS-LIFETIME, SO THE SUITE RESETS IT — and that is a property something
+// now asserts rather than an accident. `ActorName::$memo` is keyed "<schoolId>:<userId>" and
+// nothing cleared it between files. It was safe only because no test in this repository uses
+// `DatabaseMigrations` (measured: zero occurrences under tests/, against 264 files using
+// RefreshDatabase) and MySQL does not roll back AUTO_INCREMENT, so ids never recycle within a
+// run. Add one re-migrating file and ids restart at 1 while the memo still holds the previous
+// file's `1:1` — a name resolved for a different person, surfacing as a flake.
+//
+// This also gives `flushMemo()` its first caller, which is what its stated model
+// `SchoolFinanceSettings::flushPrefixMemo()` has had all along, in that file's own
+// `beforeEach`.
+beforeEach(function () {
+    (new RbacSeeder)->run();
+    ActorName::flushMemo();
+});
 
 /** A user holding exactly $role in $school, through the real grant path. */
 function ai_seat(School $school, string $role): User
@@ -153,8 +169,19 @@ it('c — approving an already-released bill leaves the first reviewer in place'
         $thrown = $e;
     }
 
+    // TIGHTENED, NOT LOOSENED, when the sentence stopped naming `user#<id>`: this was a
+    // `toContain` and is now an exact `toBe`, so any drift in the sentence reds here rather than
+    // being absorbed. See docs/handoff/tickets/the-fold-refusal-names-ids-where-the-gate-names-the-class.md.
     expect($thrown)->not->toBeNull()
-        ->and($thrown->getMessage())->toContain('already released by user#'.$first->getKey());
+        ->and($thrown->getMessage())->toBe(
+            'Invoice '.$invoice->fresh()->displayNumber().' was already released by '
+            .$first->full_name.'. It cannot be released again.'
+        )
+        // THE ID FORMS ARE ABSENT, asserted separately. A name being PRESENT does not prove an id
+        // is not ALSO there, and the message this replaced would satisfy a name-only assertion if
+        // both were rendered.
+        ->and($thrown->getMessage())->not->toContain('user#')
+        ->and($thrown->getMessage())->not->toContain($invoice->uuid);
 
     $afterSecond = DB::table('finance_invoices')->where('id', $invoice->id)->first();
 
@@ -265,12 +292,97 @@ it('g — a bill out with Finance is refused, and the sentence names the returne
     // NAME THE MECHANISM. The conditional UPDATE alone would also refuse this — with "nothing was
     // changed", which names no cause. Asserting the pre-check's sentence pins WHICH guard answered
     // and is what reds if refuseIfOutWithFinance is removed while the predicate stays.
+    $returnedOn = Carbon::parse(DB::table('finance_invoices')->where('id', $invoice->id)->value('returned_at'))
+        ->toDateString();
+
     expect($thrown)->not->toBeNull()
-        ->and($thrown->getMessage())->toContain('was returned to Finance by user#'.$returner->getKey())
-        ->and($thrown->getMessage())->toContain('cannot be released until Finance resubmits it');
+        ->and($thrown->getMessage())->toBe(
+            'Invoice '.$invoice->fresh()->displayNumber().' was returned to Finance on '
+            .$returnedOn.' by '.$returner->full_name
+            .'. It is awaiting correction and cannot be released until Finance resubmits it.'
+        )
+        ->and($thrown->getMessage())->not->toContain('user#')
+        ->and($thrown->getMessage())->not->toContain($invoice->uuid);
 
     // Refused, not merely reported: the release axis is still NULL and the return is intact.
     $row = DB::table('finance_invoices')->where('id', $invoice->id)->first();
     expect($row->reviewed_at)->toBeNull()
         ->and($row->return_reason)->toBe('Tuition rate is stale');
+});
+
+// ── (g2, g3) THE TWO WAYS A NAME CANNOT BE TOLD — AND NEITHER FALLS BACK TO `user#<id>` ─────────
+
+it('g2 — a reviewer id with no user row degrades to a sentence, never to user#<id>', function () {
+    [$school, , $invoice] = ai_world();
+    $auditor = ai_seat($school, 'internal_auditor');
+
+    // A DANGLING ID IS REACHABLE, WHICH IS WHY THIS ARM EXISTS. `reviewed_by_user_id` is a LOOKUP
+    // and not a foreign key — plain nullable unsignedBigInteger, no constrained(), stated in
+    // 2026_08_31_100000 and confirmed by no foreign-key clause naming the column anywhere in
+    // database/migrations — so nothing stops the user row going away underneath it.
+    //
+    // WRITTEN AS AN ABSENT ID RATHER THAN BY DELETING A USER: deleting exercises whatever cascades
+    // other tables happen to declare, which is a different mechanism from the one under test.
+    $absent = ((int) DB::table('users')->max('id')) + 1000;
+
+    DB::table('finance_invoices')->where('id', $invoice->id)->update([
+        'reviewed_at' => now(),
+        'reviewed_by_user_id' => $absent,
+    ]);
+
+    $thrown = null;
+    try {
+        ActiveSchool::runFor($school->id, fn () => app(ApproveInvoice::class)->handle($invoice->fresh(), $auditor));
+    } catch (BusinessRuleException $e) {
+        $thrown = $e;
+    }
+
+    // NOT the grandfathered sentence, which is a DIFFERENT state — a NULL id means nobody reviewed
+    // it, an unresolvable id means somebody did and we cannot say who. Asserting the exact string
+    // is what keeps those two apart; "it threw" would be satisfied by either.
+    expect($thrown)->not->toBeNull()
+        ->and($thrown->getMessage())->toBe(
+            'Invoice '.$invoice->fresh()->displayNumber()
+            .' was already released by someone whose user account can no longer be found.'
+            .' It cannot be released again.'
+        )
+        ->and($thrown->getMessage())->not->toContain('user#')
+        ->and($thrown->getMessage())->not->toContain((string) $absent)
+        ->and($thrown->getMessage())->not->toContain('grandfathered');
+});
+
+it('g3 — a reviewer id belonging to ANOTHER School is not named, and no name leaks', function () {
+    [$school, , $invoice] = ai_world();
+    $auditor = ai_seat($school, 'internal_auditor');
+
+    // A user with standing in School B and none in School A. `SchoolScope` does not apply to User
+    // at all — `SchoolScope::apply()` (app/Models/Scopes/SchoolScope.php:24) returns early on a
+    // User instance — so a bare User::find() WOULD resolve them and render their name into School
+    // A's screen. This is the arm that reds if the scope in ActorName is removed.
+    $foreign = ai_seat(School::factory()->create(), 'internal_auditor');
+
+    DB::table('finance_invoices')->where('id', $invoice->id)->update([
+        'reviewed_at' => now(),
+        'reviewed_by_user_id' => $foreign->getKey(),
+    ]);
+
+    $thrown = null;
+    try {
+        ActiveSchool::runFor($school->id, fn () => app(ApproveInvoice::class)->handle($invoice->fresh(), $auditor));
+    } catch (BusinessRuleException $e) {
+        $thrown = $e;
+    }
+
+    expect($thrown)->not->toBeNull()
+        ->and($thrown->getMessage())->toBe(
+            'Invoice '.$invoice->fresh()->displayNumber()
+            .' was already released by someone whose user account can no longer be found.'
+            .' It cannot be released again.'
+        )
+        // THE DISCLOSURE THAT MUST NOT HAPPEN, named piece by piece rather than as a whole name:
+        // a first name alone is already a leak, and asserting only the full name would pass a
+        // sentence that rendered half of it.
+        ->and($thrown->getMessage())->not->toContain($foreign->first_name)
+        ->and($thrown->getMessage())->not->toContain($foreign->last_name)
+        ->and($thrown->getMessage())->not->toContain('user#');
 });

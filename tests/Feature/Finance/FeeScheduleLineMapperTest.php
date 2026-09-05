@@ -87,6 +87,25 @@ function fslmLinesAs(?int $ambient, int $schoolId, FeeSchedule $schedule): array
     return $ambient === null ? $call() : ActiveSchool::runFor($ambient, $call);
 }
 
+/**
+ * The refusal SENTENCE, for the arms that assert what is ABSENT from it.
+ *
+ * `toThrow()` matches a substring and hands the exception back to nobody, so it cannot express "and
+ * this other string is not in there". Presence and absence are two claims and the second is the one
+ * this commit is about: a rendered label or uuid alongside a correct sentence would satisfy every
+ * `toThrow` in this file.
+ */
+function fslmRefusal(callable $call): string
+{
+    try {
+        $call();
+    } catch (BusinessRuleException $e) {
+        return $e->getMessage();
+    }
+
+    throw new RuntimeException('Expected a BusinessRuleException and none was thrown.');
+}
+
 it('maps ONLY the mandatory items, in sort_order then id, as charge lines citing their item', function () {
     // INSERTION ORDER DISAGREES WITH sort_order ON PURPOSE. Inserted Feeding, Transport, Tuition,
     // Uniform; sorted they are Tuition (0), Transport (1, optional), Feeding (2), Uniform (3,
@@ -159,8 +178,12 @@ it('refuses a schedule whose mandatory items are absent, naming the schedule', f
         ['description' => 'Uniform', 'amount_minor' => 50000, 'currency' => 'NGN', 'is_mandatory' => false],
     ]);
 
+    // NAMED BY ITS LABEL, WHICH IS WHAT THE OPERATOR AUTHORED — not by the uuid this used to carry.
+    // The negative is asserted separately: a label being present does not prove a uuid absent.
     expect(fn () => fslmLines($school, $schedule))
-        ->toThrow(BusinessRuleException::class, "Fee schedule [{$schedule->uuid}] has no mandatory items");
+        ->toThrow(BusinessRuleException::class, "Fee schedule \"{$schedule->label}\" has no mandatory items");
+
+    expect(fslmRefusal(fn () => fslmLines($school, $schedule)))->not->toContain($schedule->uuid);
 });
 
 it('refuses a schedule whose mandatory items mix currencies, naming the schedule', function () {
@@ -173,7 +196,9 @@ it('refuses a schedule whose mandatory items mix currencies, naming the schedule
     ]);
 
     expect(fn () => fslmLines($school, $schedule))
-        ->toThrow(BusinessRuleException::class, "Fee schedule [{$schedule->uuid}] mixes currencies");
+        ->toThrow(BusinessRuleException::class, "Fee schedule \"{$schedule->label}\" mixes currencies");
+
+    expect(fslmRefusal(fn () => fslmLines($school, $schedule)))->not->toContain($schedule->uuid);
 });
 
 it('bills from an ACTIVE schedule and refuses every other lifecycle state', function (FeeScheduleStatus $status) {
@@ -189,8 +214,10 @@ it('bills from an ACTIVE schedule and refuses every other lifecycle state', func
 
     expect(fn () => fslmLines($school, $schedule))->toThrow(
         BusinessRuleException::class,
-        "Fee schedule [{$schedule->uuid}] is {$status->value}; only an active schedule may be billed from.",
+        "Fee schedule \"{$schedule->label}\" is {$status->value}; only an active schedule may be billed from.",
     );
+
+    expect(fslmRefusal(fn () => fslmLines($school, $schedule)))->not->toContain($schedule->uuid);
 })->with([
     // ADMITTED. The one approved, current price list. The RULING and its reasons now live on
     // FeeScheduleStatus::billable(), which FeeScheduleLookup::activeFor() reads too — the datasets
@@ -234,10 +261,20 @@ it('refuses a schedule belonging to another School, whatever the ambient context
     // only the isolation guard can produce a throw.
     $runner = School::factory()->create();
 
+    // THE SCHEDULE IS NAMED BY NOTHING, AND THAT IS THE ASSERTION. Its label is the OWNER School's
+    // authored text and the reader of this sentence is outside that School, so rendering it would
+    // make the isolation refusal a disclosure. The sentence still names WHICH guard answered — it
+    // is distinct from the ambient-context guard's, which the arm below pins — so this is not a
+    // loosening into "it threw".
     expect(fn () => fslmLinesAs($ambient === 'none' ? null : $runner->id, $runner->id, $schedule))->toThrow(
         BusinessRuleException::class,
-        "Fee schedule [{$schedule->uuid}] belongs to another School; it cannot be billed for school#{$runner->id}.",
+        "That fee schedule belongs to another School; it cannot be billed for school#{$runner->id}.",
     );
+
+    $refusal = fslmRefusal(fn () => fslmLinesAs($ambient === 'none' ? null : $runner->id, $runner->id, $schedule));
+
+    expect($refusal)->not->toContain($schedule->uuid)
+        ->and($refusal)->not->toContain($schedule->label);
 
     // And the owner can still bill it — so the guard refuses the foreign case, not every case.
     expect(fslmLines($owner, $schedule))->toHaveCount(1);
@@ -263,8 +300,15 @@ it('refuses to bill for one School from another School’s ambient context', fun
 
     expect(fn () => fslmLinesAs($other->id, $owner->id, $schedule))->toThrow(
         BusinessRuleException::class,
-        "Fee schedule [{$schedule->uuid}] cannot be billed for school#{$owner->id} from another School's context.",
+        "That fee schedule cannot be billed for school#{$owner->id} from another School's context.",
     );
+
+    // ANONYMOUS FOR THE MIRROR REASON: guard 1 has passed, so the schedule is the DECLARED School's
+    // and the reader is in the ambient one — a different School either way.
+    $refusal = fslmRefusal(fn () => fslmLinesAs($other->id, $owner->id, $schedule));
+
+    expect($refusal)->not->toContain($schedule->uuid)
+        ->and($refusal)->not->toContain($schedule->label);
 });
 
 it('maps a schedule with NO ambient context at all, when the School is named correctly', function () {
@@ -323,7 +367,7 @@ it('has the mapper and the prefill lookup agree, per status, because both read t
     }
 
     expect(fn () => fslmLines($school, $schedule))->toThrow(BusinessRuleException::class,
-        "Fee schedule [{$schedule->uuid}] is {$status->value}");
+        "Fee schedule \"{$schedule->label}\" is {$status->value}");
 })->with([
     'active' => [FeeScheduleStatus::Active],
     'draft' => [FeeScheduleStatus::Draft],

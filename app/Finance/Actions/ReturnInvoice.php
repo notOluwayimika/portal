@@ -5,6 +5,7 @@ namespace App\Finance\Actions;
 use App\Exceptions\BusinessRuleException;
 use App\Finance\Enums\InvoiceStatus;
 use App\Finance\Models\Invoice;
+use App\Finance\Services\ActorName;
 use App\Models\User;
 use App\Support\SchoolContext;
 use Illuminate\Support\Facades\DB;
@@ -173,7 +174,7 @@ final class ReturnInvoice
             // and the remedy has already been applied.
             if ($locked->status === InvoiceStatus::Void) {
                 throw new BusinessRuleException(
-                    'Invoice '.$locked->uuid.' is void; there is nothing for Finance to correct.'
+                    'Invoice '.$locked->displayNumber().' is void; there is nothing for Finance to correct.'
                 );
             }
 
@@ -201,7 +202,7 @@ final class ReturnInvoice
                 $this->refuseIfAlreadyReturned($fresh);
 
                 throw new BusinessRuleException(
-                    'Invoice '.$locked->uuid.' could not be returned; nothing was changed.'
+                    'Invoice '.$locked->displayNumber().' could not be returned; nothing was changed.'
                 );
             }
 
@@ -234,7 +235,8 @@ final class ReturnInvoice
      *
      * The two shapes are reported differently ON PURPOSE, exactly as `ApproveInvoice` does: a stamp
      * with an actor is a colleague's signature, a stamp without one is `2026_08_31_100000`'s
-     * grandfathering, and naming "user#null" would be false.
+     * grandfathering, and naming "user#null" would be false. The null-id branch therefore stays; it
+     * is a different question from whether an id RESOLVES, which {@see ActorName} answers.
      *
      * @throws BusinessRuleException
      */
@@ -246,12 +248,15 @@ final class ReturnInvoice
 
         $reviewer = $invoice->reviewed_by_user_id;
 
+        // TWO SENTENCES, for the sibling's rendered reason: the one-sentence form ended
+        // "…can no longer be found and cannot be returned", where the second clause reads as being
+        // about the account rather than about the bill.
         throw new BusinessRuleException(
-            'Invoice '.$invoice->uuid.' was already released to its payer'
+            'Invoice '.$invoice->displayNumber().' was already released to its payer'
             .($reviewer === null
-                ? ' before Internal Audit review existed (grandfathered by 2026_08_31_100000)'
-                : ' by user#'.$reviewer)
-            .' and cannot be returned; void it and issue a credit note instead.'
+                ? ' before Internal Audit review existed (grandfathered by 2026_08_31_100000).'
+                : ' '.ActorName::byClauseFor($reviewer, (int) $invoice->school_id).'.')
+            .' It cannot be returned; void it and issue a credit note instead.'
         );
     }
 
@@ -262,6 +267,13 @@ final class ReturnInvoice
      * reason with another's and leave no trace of the first, and the reason is the entire content of
      * the act.
      *
+     * NO NULL BRANCH ON `returned_by_user_id`, AND THAT IS CORRECT RATHER THAN AN OVERSIGHT — the
+     * sibling's reason, verbatim: `2026_09_04_100000`'s pairing trigger fires on BOTH `BEFORE
+     * INSERT` and `BEFORE UPDATE` and signals SQLSTATE 45000 unless `returned_at`, `return_reason`
+     * and `returned_by_user_id` are set together, so the state this method guards on cannot exist
+     * with a null id. A branch would be dead code wearing the clothes of caution. An id that
+     * resolves to no USER ROW is a separate case and {@see ActorName} carries it.
+     *
      * @throws BusinessRuleException
      */
     private function refuseIfAlreadyReturned(?Invoice $invoice): void
@@ -270,10 +282,12 @@ final class ReturnInvoice
             return;
         }
 
+        // THE DATE PRECEDES THE PERSON, for the sibling's rendered reason.
         throw new BusinessRuleException(
-            'Invoice '.$invoice->uuid.' was already returned to Finance by user#'
-            .$invoice->returned_by_user_id.' on '.$invoice->returned_at->toDateString()
-            .' and is awaiting correction.'
+            'Invoice '.$invoice->displayNumber().' was already returned to Finance on '
+            .$invoice->returned_at->toDateString().' '
+            .ActorName::byClauseFor($invoice->returned_by_user_id, (int) $invoice->school_id)
+            .'. It is awaiting correction.'
         );
     }
 }

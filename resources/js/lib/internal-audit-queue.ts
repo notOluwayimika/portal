@@ -248,8 +248,9 @@ export interface ReturnDialogView {
  * WHAT THE RETURN DIALOG DECIDES, so the component only paints it.
  *
  * `busy` GATES SUBMIT SEPARATELY FROM THE REASON, and the two are not collapsed into one boolean:
- * a double-submit is refused by the server as "already returned to Finance by user#N", which is a
- * true sentence describing the operator's own click and reads as somebody else's return.
+ * a double-submit is refused by the server as "already returned to Finance on <date> by <name>",
+ * which is a true sentence describing the operator's own click and reads as somebody else's
+ * return.
  */
 export function returnDialogView(state: {
     raw: string;

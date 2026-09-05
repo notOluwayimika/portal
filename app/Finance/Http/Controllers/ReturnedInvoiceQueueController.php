@@ -94,8 +94,13 @@ use Illuminate\Support\Collection;
  * the page needs no uuid and is therefore not given one.
  *
  * A BOUNDARY, STATED SO IT IS NOT READ AS A GENERAL FIX: this is about what a NEW screen renders. It
- * does NOT touch the uuids already inside `ApproveInvoice`'s and `ReturnInvoice`'s refusal
- * sentences, which is its own commit and still queued. Those actions are untouched here.
+ * did NOT touch the uuids inside `ApproveInvoice`'s and `ReturnInvoice`'s refusal sentences, which
+ * was left as its own commit — `fix/refusals-name-the-bill-and-the-person`, since landed. Those
+ * sentences now carry `Invoice::displayNumber()` and a name from
+ * `App\Finance\Services\ActorName` — named in prose rather than as a `{@see}` link, so Pint does
+ * not add an import this class never calls — and
+ * `tests/Arch/FinanceRefusalsNameNoInternalIdentifiersTest` is what stops the next one being
+ * written the old way.
  *
  * IF THE RETURNER CANNOT BE RESOLVED, `returned_by` IS NULL AND THE SCREEN SAYS SO. It cannot happen
  * today — the pairing trigger from `2026_09_04_100000` refuses a `returned_at` without a

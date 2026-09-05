@@ -97,6 +97,16 @@ final class InvoiceReadModel
             ->where('student_id', $studentId)
             ->excludingVoid()
             ->releasedToPayers()
+            // THE LINES, EAGER-LOADED HERE AND NOWHERE ELSE. `GuardianInvoiceResource` ships them
+            // through `whenLoaded`, which returns NOTHING rather than querying when the relation is
+            // absent — so without this the payer screen would render a breakdown of zero rows,
+            // silently, on a bill that has three. Same shape as the settlement aggregates two lines
+            // down: a read model is the only sanctioned way in precisely because the resource cannot
+            // tell a missing relation from an empty one.
+            //
+            // `with`, not a per-invoice read: this returns a list, and lazy-loading would be one
+            // query per bill on a screen showing every ward's.
+            ->with('lines')
             ->tap($this->settlementSums(...))
             ->orderBy('id')
             ->get()

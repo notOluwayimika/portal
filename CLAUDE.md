@@ -549,6 +549,30 @@ one level up, to the premise rather than to the result.
   every deviation from it reds. Both are "make the assertion the only thing that can be satisfied",
   approached from opposite sides.
 
+  **AND A BITE-PROOF IS NOT DONE WHEN IT REDS — IT IS DONE WHEN IT REDS *EXACTLY THE ARMS THAT
+  ASSERT THE PROPERTY*, AND LEAVES THE REST GREEN.** The older form of this rule asks only *does
+  removing the production code fail the test*. That question is satisfied by a suite-wide red, and a
+  suite-wide red is equally consistent with the arms coupling to something INCIDENTAL — you learn
+  the code is load-bearing without learning what it is load-bearing FOR, which is the claim the
+  arms were written to make.
+
+  Measured 2026-09-05, on `formatNairaMagnitude`: removing the `Math.abs` reds the two arms that
+  name the sign (`expected '-₦2,000.00' to be '₦2,000.00'`) and leaves the positive-amount and zero
+  arms GREEN — because neither of those exercises a sign. Four arms, two red, and *which* two is the
+  evidence: it says the arms are independent of each other and aimed at separate facts. Had all four
+  gone red, the honest reading would have been that they share a dependency none of them names.
+
+  So record the blast radius, not just the flip: **N arms, which N reded, and why the green ones
+  were right to stay green.** A green that is CORRECT under the mutation is as much a part of the
+  proof as the red — the same both-directions discipline as a gate needing its known-negative arm,
+  moved from the gate to the mutation.
+
+  **Its companion, in how an arm is CONSTRUCTED:** the "differs only in the sign" arm asserts against
+  `formatNaira` of the positive twin rather than against a literal string. That pins the
+  RELATIONSHIP between the two renderers and lets grouping, kobo and currency move together, so the
+  arm cannot go red for a reason it is not about. Property over case again — this time in the
+  assertion's construction rather than in its subject.
+
 - **PIN AN EXACT KEY SET, NEVER A LIST OF REFUSALS — so widening a surface costs a DECISION.** When
   the ruling landed that parents see invoice lines, the arm pinning `lines` as ABSENT went red. That
   is a ruling arriving as a failing test rather than as a silent widening: the old answer had been

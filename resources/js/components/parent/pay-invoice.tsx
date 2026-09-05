@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { useState } from 'react';
 import { formatNaira } from '@/lib/format';
+import { paymentReturnUrl } from '@/lib/payment-return-url';
 import type { FinanceWardInvoice, Money } from '@/types/parent-finance';
 
 /**
@@ -82,7 +83,16 @@ export function PayInvoice({
             // AMOUNT ONLY. The gross is not sent back — see the note on this component.
             const { data } = await axios.post<{ authorization_url: string }>(
                 `/api/parent/invoices/${invoice.id}/payment`,
-                { amount_minor: amount },
+                {
+                    amount_minor: amount,
+                    // WHERE PAYSTACK RETURNS THE PAYER (§6 step 6). Absolute, built from this
+                    // origin, and pinned to the registered route by `GatewayReturnRouteTest` —
+                    // which reads `PAYMENT_RETURN_PATH` out of the module rather than restating it.
+                    //
+                    // WITHOUT THIS LINE Paystack falls back to the dashboard's default return URL
+                    // and the payer never reaches the page built to tell them what happened.
+                    callback_url: paymentReturnUrl(window.location.origin),
+                },
             );
 
             window.location.href = data.authorization_url;

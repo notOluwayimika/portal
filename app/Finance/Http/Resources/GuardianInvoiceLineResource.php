@@ -33,11 +33,20 @@ use Illuminate\Http\Resources\Json\JsonResource;
  * endpoint that accepts one, and this surface's whole security property is that it carries no
  * identifier a caller could tamper with.
  *
- * `note` — operator free text (`GenerateInvoiceRequest`), with NO STATED AUDIENCE. It may read
- * "pro-rata, joined mid-term", which a parent would want; it may equally read "mother disputes,
- * chased twice", which is the school narrating its own position back to the person it is about —
- * the exact reason `void_blocked_reason` is refused one level up. Publishing it to payers is a
- * decision nobody has taken, so it is refused pending one rather than shipped by default.
+ * `note` — REFUSED PERMANENTLY, and this is a position rather than a pending question.
+ *
+ * It is operator free text (`GenerateInvoiceRequest`) with no declared audience. **A field's
+ * audience is a property of how it was WRITTEN, not of where it is displayed.** Every note in the
+ * table was typed by a member of staff who believed only staff would read it. Publishing them to
+ * parents does not make that text safe; it makes it visible. It may read "pro-rata, joined
+ * mid-term", which a parent would want — and over enough rows it will also read "mother disputes,
+ * chased twice", which is the school narrating its own position back to the person it is about.
+ * That is not a risk at scale, it is a certainty, and it is the exact reason `void_blocked_reason`
+ * is refused one level up.
+ *
+ * **If a school wants a parent to understand why a line reads as it does, that is a NEW field**,
+ * written by someone who knows a parent will read it. Retro-fitting an audience onto existing text
+ * is the thing that cannot be done.
  *
  * `fee_item_id` / `discount_policy_id` — catalogue references. The parent gets the DESCRIPTION and
  * the AMOUNT, which is what a bill says; which internal row priced it is not their question.

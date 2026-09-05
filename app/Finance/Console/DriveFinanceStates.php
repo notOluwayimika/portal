@@ -42,6 +42,7 @@ use App\Models\User;
 use App\Support\ActiveSchool;
 use App\Support\Money;
 use App\Support\SchoolDay;
+use Illuminate\Support\Carbon;
 
 /**
  * The FINANCE half of the drive fixture: given ENROLLMENT UUIDs (handed in from outside — this
@@ -851,6 +852,63 @@ final class DriveFinanceStates
         );
 
         return $invoice->number;
+    }
+
+    /**
+     * SEVERAL bills returned to Finance, at DIFFERENT AGES — the Phase B queue's precondition.
+     *
+     * ONE RETURNED BILL CANNOT DRIVE THAT SCREEN, and this is the fixture-degeneracy rule rather
+     * than a preference. With a single row, "oldest returned first" is satisfied by EVERY ordering
+     * — insertion, id, newest-first, random — so the drive could not tell a correct sort from an
+     * absent one. And with all rows returned in the same second, the age card reads `today`
+     * whatever it is wired to, so the one number that distinguishes a worked queue from an
+     * abandoned one would be untestable by eye.
+     *
+     * THREE, AT THREE DISTINCT AGES, AND RETURNED OUT OF ORDER. The oldest is returned LAST, so
+     * insertion order, id order and `returned_at` order all disagree — an implementation that
+     * ordered by anything but `returned_at` puts a different bill at the top.
+     *
+     * ONE OF THE AGES IS PAST A WEEK, deliberately: the screen changes the age card's TONE past
+     * `STALLED_AFTER_DAYS`, and a fixture whose oldest bill is two days old renders only the calm
+     * branch. Both branches have to be reachable or the drive proves one of them.
+     *
+     * ─── THE CLOCK IS MOVED, AND THAT IS THE ONE THING HERE THAT IS NOT THE REAL PATH ───────────
+     *
+     * Every return still goes THROUGH `ReturnInvoice`, so the pairing trigger, the ability check,
+     * the released-bill guard and the compare-and-swap all run exactly as they do in production.
+     * What the fixture supplies is the WHEN: `Carbon::setTestNow` moves the clock the action reads
+     * through `now()`, and is cleared in a `finally` so nothing downstream inherits it.
+     *
+     * IT IS ADMISSIBLE FOR THE REASON THE `scholarships.kind` EXEMPTION IS, and the argument is
+     * made here at the line rather than borrowed: a bill returned nine days ago is a state that
+     * EXISTS IN PRODUCTION and that no current code path can create on demand — the only writer
+     * stamps `now()`, so the sole alternative is to wait nine days. Nothing about the ROW is
+     * fabricated; only the moment of the act is chosen, and the act itself is real.
+     *
+     * @param  list<int>  $daysAgo  how long ago each bill was returned, oldest first
+     * @return list<array{number: int, days: int}> the bills returned, in the order they will appear
+     */
+    public function returnedToFinanceAged(User $auditor, array $daysAgo): array
+    {
+        $staged = [];
+
+        // RETURNED YOUNGEST-FIRST so the oldest is written LAST and therefore carries the HIGHEST
+        // id and the latest `updated_at`. Any ordering that is not `returned_at ASC` then puts the
+        // wrong bill on top, which is what makes the drive's first row an assertion.
+        foreach (array_reverse($daysAgo) as $days) {
+            try {
+                Carbon::setTestNow(Carbon::now()->subDays($days));
+                $staged[] = ['number' => $this->returnedToFinance($auditor), 'days' => $days];
+            } finally {
+                // IN A `finally`, NOT AFTER THE CALL. A refusal mid-loop would otherwise leave the
+                // whole process running on a clock nine days in the past, and every later fixture
+                // state — payments, runs, activity rows — would be stamped there too.
+                Carbon::setTestNow();
+            }
+        }
+
+        // Back into the order the queue will render them.
+        return array_reverse($staged);
     }
 
     /**

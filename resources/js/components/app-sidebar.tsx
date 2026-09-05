@@ -22,6 +22,7 @@ import {
     Shield,
     ShieldCheck,
     UserCog,
+    Undo2,
     Users,
     Wallet,
 } from 'lucide-react';
@@ -517,6 +518,28 @@ export function AppSidebar() {
                     title: 'Bulk manual invoicing',
                     href: '/finance/manual-invoice-runs',
                     icon: Receipt,
+                });
+            }
+
+            // Returned to Finance — the reader for Internal Audit's return. Keyed on
+            // `finance.invoice.generate`, the SAME ability as the two acts above and for the same
+            // reason one more time: the seat that RAISES a bill is the seat that CORRECTS it, so
+            // nothing was coined for this either, and the item and its route ask exactly the same
+            // question.
+            //
+            // IT IS A READ, and it sits with the acts rather than with the config items below
+            // because it is a WORK QUEUE — the thing a bursar opens to find what is waiting for
+            // them — not a screen that changes how the school is set up.
+            //
+            // NOT UNDER THE INTERNAL AUDIT GROUP. That group is outside `can('finance.access')` and
+            // exists for a seat that holds no finance access at all; this item is for the bursar,
+            // who holds finance.access and not the auditor's abilities. The two sides of one act
+            // are two seats, and the menu has to say so.
+            if (can('finance.invoice.generate')) {
+                financeItems.push({
+                    title: 'Returned to Finance',
+                    href: '/finance/returned-bills',
+                    icon: Undo2,
                 });
             }
 

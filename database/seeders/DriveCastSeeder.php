@@ -11,6 +11,7 @@ use App\Models\ClassLevel;
 use App\Models\ClassLevelArm;
 use App\Models\ClassLevelArmTeacher;
 use App\Models\Curriculum;
+use App\Models\Guardian;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\Scholarship;
@@ -23,6 +24,7 @@ use App\Models\User;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use RuntimeException;
 
 /**
  * The NON-Finance half of the drive fixture: schools, the cast of users (with their real RBAC
@@ -105,6 +107,34 @@ class DriveCastSeeder extends Seeder
      */
     public array $cohortAwardees = [];
 
+    /**
+     * THE PAYER SEAT — `parent@drive.test`, School A, holding `guardian`.
+     *
+     * Every other seat in this cast is STAFF. `guardian-editor@drive.test` holds
+     * `drive_guardian_editor`, which is the ability to ADMINISTER guardians, not `parent_portal.access`
+     * — so before this seat existed nobody in the fixture could log in and see the parent Fees screen
+     * at all, and a drive of it was impossible rather than merely empty.
+     */
+    public ?User $parent = null;
+
+    /**
+     * The payer seat's three wards, keyed by the CONDITION each one exists to render.
+     *
+     * THREE, BECAUSE THE SCREEN HAS THREE ANSWERS AND ONLY ONE IS THE HAPPY PATH:
+     *
+     *   `released`  a bill the payer can see and pay — the only ward with a Pay control.
+     *   `withheld`  a bill exists and Internal Audit has not released it. **Renders identically to
+     *               a ward with nothing owed**, deliberately: the endpoint withholds unreleased bills
+     *               on BOTH keys, so the screen cannot hint that something is hidden. A fixture
+     *               without this ward cannot show that the withholding is real rather than asserted.
+     *   `credit`    account credit and NOTHING released. This is the screen most parents get, and it
+     *               is the only one where the copy does any work — two numbers with no account of
+     *               their relationship is what makes a parent telephone the school.
+     *
+     * @var array<string, string> enrollment UUIDs keyed by condition
+     */
+    public array $parentWards = [];
+
     /** The guardian-create drive's operator seat (School A) and its isolation counterpart (School B). */
     public ?User $adminA = null;
 
@@ -179,6 +209,17 @@ class DriveCastSeeder extends Seeder
         $this->enrollments['patVoid'] = $this->enrollFor($schoolA, $pat);
 
         $this->student($schoolA, 'Emma', 'Empty'); // no enrollment — the "no invoices" edge
+
+        // THE PAYER'S THREE WARDS. Unplaced on purpose, like every episode that is not the bulk-run
+        // cohort: they are billed directly by the states below, never through a run, so coordinates
+        // would only move the `Cohort at slot` count another drive reads.
+        $this->parentWards = [
+            'released' => $this->enroll($schoolA, 'Ada', 'Payer'),
+            'withheld' => $this->enroll($schoolA, 'Bem', 'Payer'),
+            'credit' => $this->enroll($schoolA, 'Chidi', 'Payer'),
+        ];
+
+        $this->linkPayerWards();
 
         // LAST, so these four land at the END of each school's printed admission-number list and a
         // driver of the award import can pick them out without cross-referencing the cast.
@@ -648,9 +689,82 @@ class DriveCastSeeder extends Seeder
         });
         setPermissionsTeamId(null);
         $this->guardianEditor = $this->driveUser('guardian-editor@drive.test', $schoolA, 'drive_guardian_editor');
+
+        /*
+         * THE PAYER SEAT, and the first non-staff login in this cast.
+         *
+         * `guardian` is a canonical role holding `parent_portal.access` (RbacSeeder), which is what
+         * gates every parent route — the Fees page, the wards page and the payment endpoints. Nothing
+         * fixture-local is needed: unlike `void-checker` and `guardian-editor`, this seat is not a
+         * deliberately partial holder, it is an ordinary parent.
+         *
+         * THE GUARDIAN ROW AND THE PIVOT ARE THE POINT. The role alone reaches the page and sees
+         * NOTHING: `GuardianFinanceController::wards` derives the wards from a `guardians` row for
+         * this user in the active school and its `students` pivot. A seat with the role and no row is
+         * the legitimate "no children linked" state, not a payer — so a drive of the screen's actual
+         * subject needs the relationship, and it is built here rather than in the Finance states
+         * because this class owns the cast and imports no Finance code.
+         */
+        $this->parent = $this->driveUser('parent@drive.test', $schoolA, 'guardian');
+
+        // THE ROW ONLY. The PIVOT is attached in `run()` after `$parentWards` is populated — see
+        // `linkPayerWards()`. It was attached here first and silently did nothing: `seedCast()` runs
+        // BEFORE the enrollments block that fills that array, so the loop iterated an empty array,
+        // wrote no pivot rows, and raised nothing. The seat existed, the guardian row existed, the
+        // count table read `Guardians 1`, and the payer had no children.
+        Guardian::forceCreate([
+            'uuid' => (string) Str::uuid(),
+            'school_id' => $schoolA->id,
+            'user_id' => $this->parent->id,
+            'first_name' => 'Payer',
+            'last_name' => 'Drive',
+            'phone' => '08000000001',
+            'status' => 'active',
+        ]);
     }
 
     /** A drive user: fixed password, verified email, NO 2FA secret, optionally school-scoped to $role. */
+    /**
+     * Attach the payer's three wards — AFTER `$parentWards` is populated, which is the whole point.
+     *
+     * The first version did this inside `seedCast()`, which runs BEFORE the enrollments block that
+     * fills that array. The loop iterated nothing, wrote nothing, and raised nothing: the seat, the
+     * role and the guardian row were all correct, `Guardians` counted 1, and the payer had no
+     * children. It surfaced only when a human signed in and looked — which is the failure a drive
+     * exists to catch, reproduced inside the fixture built for the drive.
+     *
+     * IT ASSERTS ITS OWN WORK. A seeder that attaches nothing is indistinguishable from one that
+     * attaches correctly, and this method is the one place that knows how many wards there should
+     * be. `sizeof` on both sides rather than a bare non-empty check: two of three attaching is the
+     * failure that would leave a drive missing exactly one condition.
+     */
+    private function linkPayerWards(): void
+    {
+        $guardian = Guardian::withoutGlobalScopes()->where('user_id', $this->parent->id)->firstOrFail();
+
+        foreach ($this->parentWards as $condition => $enrollmentUuid) {
+            $studentId = StudentCurriculum::withoutGlobalScopes()
+                ->where('uuid', $enrollmentUuid)
+                ->value('student_id');
+
+            if ($studentId === null) {
+                throw new RuntimeException("Payer ward [{$condition}] resolved no student from enrollment {$enrollmentUuid}.");
+            }
+
+            $guardian->students()->syncWithoutDetaching([
+                $studentId => ['relationship' => 'mother', 'is_primary' => true, 'can_login' => true],
+            ]);
+        }
+
+        $linked = DB::table('guardian_student')->where('guardian_id', $guardian->id)->count();
+
+        if ($linked !== count($this->parentWards)) {
+            throw new RuntimeException(
+                "Payer seat linked {$linked} ward(s); expected ".count($this->parentWards).'.'
+            );
+        }
+    }
+
     private function driveUser(string $email, School $school, ?string $role): User
     {
         $user = User::forceCreate([

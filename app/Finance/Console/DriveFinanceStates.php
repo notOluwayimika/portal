@@ -5,6 +5,7 @@ namespace App\Finance\Console;
 use App\Finance\Actions\ApproveCreditNote;
 use App\Finance\Actions\ApproveDiscountPolicyChange;
 use App\Finance\Actions\ApproveFeeScheduleChange;
+use App\Finance\Actions\ApproveInvoice;
 use App\Finance\Actions\ApproveVoidRequest;
 use App\Finance\Actions\AwardStudentDiscount;
 use App\Finance\Actions\CreateFeeSchedule;
@@ -864,6 +865,60 @@ final class DriveFinanceStates
      *
      * `excludingVoid()` because the queue does — a void bill is not awaiting anybody.
      */
+    /**
+     * A bill RELEASED TO ITS PAYER, through the real action — the state the parent Fees screen needs.
+     *
+     * ── RELEASED BY THE ACTION, NEVER BY STAMPING THE COLUMN ──
+     *
+     * `ApproveInvoice` is the only writer of the release stamp and its write is a compare-and-swap
+     * (`WHERE reviewed_at IS NULL`). A fixture that set the column directly would produce a row the
+     * system can reach, so the NULL-`kind` exemption does not cover it — and it would skip the very
+     * path a drive of the payer screen is there to exercise end to end.
+     *
+     * ── TWO ACTORS, BECAUSE THE FIXTURE HAS NO CHOICE ──
+     *
+     * Grant-time segregation of duties refuses both sides of a Finance pair to one user, so the bill
+     * is raised by the school's bursar and released by `auditor@drive.test`. That is not a nicety of
+     * this method; `User::assignRole` would have thrown before a single-actor fixture existed.
+     */
+    public function releasedInvoice(string $enrollmentUuid, int $kobo, User $auditor): void
+    {
+        $this->invoice($enrollmentUuid, $kobo);
+
+        $invoice = Invoice::query()
+            ->where('school_id', ActiveSchool::getOrFail()->id)
+            ->whereNull(Invoice::RELEASE_STAMP_COLUMN)
+            ->whereNull('returned_at')
+            ->excludingVoid()
+            ->orderByDesc('id')
+            ->firstOrFail();
+
+        app(ApproveInvoice::class)->handle($invoice, $auditor);
+    }
+
+    /**
+     * Bills a PAYER can actually see — released, not void.
+     *
+     * ── WHY THIS COLUMN EXISTS, AND IT IS THE SIXTH TIME ──
+     *
+     * `Awaiting review` counts the queue's input; this counts its OUTPUT, and a fixture can be
+     * healthy on the first and empty on the second. Every existing column answers a question about
+     * a STAFF screen — a cohort to bill, a policy to amend, a payment with a remainder — and the
+     * parent Fees screen reads none of them. Zero here and every ward renders "Nothing outstanding",
+     * which is the page working and a drive that proves nothing.
+     *
+     * That is the failure this fixture's own history records five times over: a drive opening onto
+     * emptiness because the count table measured everything except the thing that screen needed.
+     */
+    public function releasedInvoiceCount(int $schoolId): int
+    {
+        return Invoice::query()
+            ->where('school_id', $schoolId)
+            ->whereNotNull(Invoice::RELEASE_STAMP_COLUMN)
+            ->excludingVoid()
+            ->count();
+    }
+
     public function awaitingReviewCount(int $schoolId): int
     {
         return Invoice::query()

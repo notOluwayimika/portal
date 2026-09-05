@@ -33,7 +33,42 @@ use Illuminate\Support\Facades\Route;
  * it from the Gate::before bypass (ADR 0040): approval authority comes from an explicit grant,
  * never from platform authority. `finance.invoice.reject` terminates in `reject`, the OTHER checker
  * segment, so the return route is excluded on the same ground. RouteAccessMap::derive() models
- * that, which is why the committed access map shows only `internal_auditor` for all three routes.
+ * that, and the committed access map shows `internal_auditor` alone for each of the three routes
+ * declared below.
+ *
+ * ── AND THAT LAST CLAUSE IS TRUE ONLY BECAUSE SOMEBODY TYPED THE ROW ──────────────────────────
+ *
+ * READ IT AS A WARNING RATHER THAN AS REASSURANCE. Rows enter these fixtures only when an author
+ * runs a generator (`rbac:derive-access`, `rbac:derive-map`) and commits the row by hand. What
+ * each oracle can see when nobody does is NOT the same, and the difference is the whole reason
+ * this route stayed invisible — so it is stated per-oracle rather than as one sentence about both.
+ *
+ * THE ACCESS ORACLE IS BLIND TO ABSENCE, FULL STOP. All three of its arms are fixture-bound or
+ * hand-listed — tests/Feature/Rbac/RouteAccessParityTest.php:45 ($fixture) iterates the fixture's
+ * keys; tests/Feature/Rbac/RouteAccessParityTest.php:73 (ACCESS_DEVIATIONS) iterates a const that
+ * is currently empty; and tests/Feature/Rbac/RouteAccessParityTest.php:141 (with) is a
+ * hand-written dataset of 15 named routes. Nothing in that file ever enumerates the live route
+ * table, so a route the fixture does not name is not asserted anywhere in it.
+ *
+ * THE MIDDLEWARE ORACLE IS NARROWER THAN THAT, AND THE NARROWER STATEMENT IS THE USEFUL ONE. Its
+ * first arm is fixture-bound the same way, at
+ * tests/Feature/Rbac/RouteMiddlewareBaselineTest.php:28 ($fixture). But its SECOND arm —
+ * tests/Feature/Rbac/RouteMiddlewareBaselineTest.php:53 ($unguardedNew) — iterates $live and reds
+ * on any registered route that is absent from the fixture AND carries no middleware beginning
+ * `auth`. So it DOES catch an absent route: an UNAUTHENTICATED one. What it cannot see is an
+ * AUTHENTICATED absent route — the shape of every `permission:`-gated route, this one included.
+ * That is not a gap in the arm but its declared asymmetry, stated in that file's own docblock, and
+ * it exists so parallel Finance work does not go red on every new route.
+ *
+ * THE RETURN ROUTE IS THE PROOF, AND THE SENTENCE ABOVE USED TO BE FALSE. It shipped absent from
+ * BOTH fixtures while this docblock asserted what "the committed access map shows" — the map held
+ * two of these three routes and not the return, and the route carries `auth:sanctum`, so the one
+ * arm that looks at live routes passed it freely. It survived review because the map CONTAINED
+ * exactly three keys matching `internal-audit`, so a reader checking the claim BY COUNT confirmed
+ * it: pending, approve, and `GET /internal-audit/review-queue`, which is the Inertia page declared
+ * in routes/web.php and not one of this file's routes at all. A count agreed; the set did not.
+ * (After the commit that added this paragraph the map contains FOUR such keys, the return route
+ * being the fourth — so the count no longer agrees either, which is the point of fixing it.)
  *
  * ── THE RETURN ROUTE CARRIES ITS OWN GATE, AND THE CONSEQUENCE IS THAT IT NEEDS BOTH ───────────
  *

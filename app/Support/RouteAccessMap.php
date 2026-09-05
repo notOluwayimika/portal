@@ -56,8 +56,24 @@ class RouteAccessMap
                     // The bypass admits super_admin only while the flag is on AND
                     // no listed ability is a checker action — ADR 0040 exclusions
                     // are never bypassed, so a `permission:*.approve` route admits
-                    // only genuine holders. (No route carries one today; deriving
-                    // it correctly is what keeps the C2 oracle true when one does.)
+                    // only genuine holders.
+                    //
+                    // THIS BRANCH IS LOAD-BEARING, NOT HYPOTHETICAL. It used to say
+                    // "no route carries one today". Measured 2026-09-05: 20 of the
+                    // 437 registered routes carry a checker-segment permission — 16
+                    // finance (five pending queues, ten decision endpoints, and the
+                    // /finance/approvals page) plus internal audit's FOUR. So this is
+                    // the branch deciding super_admin's absence from 20 rows of the
+                    // committed access map, not a case waiting to arrive.
+                    //
+                    // THE COUNT IS ITEMISED BECAUSE THE FIRST VERSION OF THIS COMMENT
+                    // SAID "THREE" AND DID NOT SUM. Internal audit's fourth is
+                    // `GET /internal-audit/review-queue`, the Inertia page declared in
+                    // routes/web.php rather than under /api — which is exactly why it
+                    // is the one a reader drops. It had already produced one false
+                    // statement elsewhere by being overlooked (see the docblock in
+                    // routes/endpoints/internal-audit.php), so a total here without a
+                    // breakdown that reconciles to it is not worth writing.
                     $bypassable = collect($listed)
                         ->every(fn ($p) => ! ApprovalAbility::isExcludedFromSuperAdminBypass($p));
 

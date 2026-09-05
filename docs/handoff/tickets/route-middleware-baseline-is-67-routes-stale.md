@@ -2,6 +2,12 @@
 
 **Raised:** 2026-08-31 · **From:** `feat/paystack-webhook` · **Severity:** ticket
 
+> **Re-measured 2026-09-05** (`fix/return-route-in-both-route-oracles`): the backlog is **70**, not
+> 67 — 437 registered routes against 367 fixture keys, reconciling exactly, with zero fixture keys
+> that are not registered. That branch added three rows and left the rest; the figure had drifted
+> upward before it did. **The 67 in the title is a point-in-time number and the file is not renamed
+> for it — re-derive rather than deriving from either figure.**
+
 ## What
 
 `php artisan rbac:derive-map` on `staging` + this branch produces **68 additions and zero

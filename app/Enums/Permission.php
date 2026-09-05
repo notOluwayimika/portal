@@ -185,11 +185,6 @@ enum Permission: string
     // ApprovalAbility::CHECKER_SEGMENTS, and its maker is finance.invoice.generate above — NOT the
     // `.submit` the naming convention would derive. That exception is declared in
     // ApprovalAbility::MAKER_OVERRIDES and asserted by GrantsMapSeparationTest.
-    //
-    // `.reject` IS DELIBERATELY ABSENT. The return-to-Finance path ships on 13 September with the
-    // pay half. A permission declared ahead of the code that uses it is the `pending_emitters`
-    // mistake the activity catalogue already carries twice (finance.refund_issued,
-    // finance.fee_adjusted), and this slice does not repeat it.
     case FINANCE_INVOICE_APPROVE = 'finance.invoice.approve';
     // Internal Audit RETURNING a raised bill to Finance instead of releasing it (Phase A). The
     // other half of the review decision: `approve` makes the bill visible to its payer, this one

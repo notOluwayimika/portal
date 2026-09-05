@@ -98,7 +98,7 @@ class OpeningBalanceBatchController extends Controller
      *
      * THE GATE IS THE MAKER ABILITY, and it coins nothing: `finance.opening-balance.submit` is the
      * submit half of the triple §9 step 4c already ships
-     * (`app/Enums/Permission.php:263 (FINANCE_OPENING_BALANCE_SUBMIT)`, with its
+     * (`app/Enums/Permission.php:258 (FINANCE_OPENING_BALANCE_SUBMIT)`, with its
      * `…approve`/`…reject` siblings on the two lines below). The person who
      * downloads the template is the person who will upload the file — so the checker's
      * `…approve` (which gates `pending` above) is the wrong ability here, and a template behind

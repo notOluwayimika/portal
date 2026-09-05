@@ -2685,6 +2685,12 @@
             "internal_auditor"
         ]
     },
+    "POST /api/internal-audit/invoices/{uuid}/return": {
+        "auth": true,
+        "roles": [
+            "internal_auditor"
+        ]
+    },
     "POST /api/login": {
         "auth": false,
         "roles": [

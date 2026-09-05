@@ -503,6 +503,75 @@ one level up, to the premise rather than to the result.
   this time one layer below the surface, in the data model. **Before comparing two numbers from a
   row, ask of each: does anything ever DECREMENT this?**
 
+- **AN ABSENCE RENDERED AS A VALUE DESTROYS THE DISTINCTION IT WAS RECORDING — make unknown
+  REPRESENTABLE, never synthesised.** Three instances measured in one week, in three different
+  layers, and the family is the point rather than any one of them:
+
+  | absence | coerced into | why it is invisible |
+  | --- | --- | --- |
+  | `allocated_minor` un-hydrated | `0` | "nothing allocated" and "I did not ask" render identically; `withSum` returns NULL for no rows, so null is not the discriminator either — `array_key_exists` on `getAttributes()` is |
+  | `whenLoaded('lines')` not eager-loaded | an EMPTY breakdown | a bill of three lines renders as a bill of none, with a 200 and no error |
+  | term/class unknown on an enrollment | the STRING `Enrollment <uuid>` | prose shaped like an answer, and a payer reads a uuid where a term belongs |
+
+  Every one was invisible until somebody constructed the case that separates the two states, and
+  none of them failed loudly: they returned a legitimate-looking value of the right type. That is
+  what distinguishes this from an ordinary bug — **there is no error to notice, because the coercion
+  is the answer.**
+
+  **THE THIRD IS THE SHARPEST, AND SAYS WHY THIS IS NOT MERELY A CODING RULE.** The first two are
+  recomputed per request and heal the moment the code is fixed. The third is written into
+  `finance_invoices.academic_context` — a SNAPSHOT column, `string` NOT NULL, whose creating
+  migration states the intent outright ("displayed labels are SNAPSHOTS — copied, never re-joined").
+  So the coercion is PERSISTED: rows issued before the fix keep the synthesised prose permanently,
+  and there is nothing to re-derive them from, because for an unplaced enrollment the coordinates
+  genuinely do not exist. **A lossy coercion at the edge of a snapshot is not a display bug; it is
+  data loss with a plausible face**, and it can only ever be fixed forward.
+
+  The fix shape is the same in all three: give UNKNOWN its own representation — a missing key, a
+  null, an explicit enum member — and let each consumer decide what to do with it. Do not decide on
+  their behalf at the moment you have the information, because that is the one moment the
+  distinction still exists. Same discipline as a gate reporting *unrecognised* as its own bucket
+  rather than folding it into *skipped*, applied to a value instead of to coverage.
+
+- **ASSERT THE PROPERTY, NOT THE CASE — a property holds against the failures you did not
+  enumerate.** The arm `lines sum to total` was specified to catch a missing discount line. What it
+  actually caught was a missing `->with('lines')` in the read model, a defect on a code path nobody
+  was thinking about (row two of the table above). An arm aimed at the discount —
+  `expect($lines)->toContain($discount)` — would have caught the discount and nothing else, and
+  would have passed happily on a payload that does not add up.
+
+  A case-assertion is a list of the failures you IMAGINED, and its coverage stops exactly where your
+  imagination did. Reach for the invariant the feature rests on — a sum, a conservation, a
+  round-trip — over an enumeration of what you expect to see.
+
+  It is the INVERSE MOVE of the fixture rule above it, and the two are easy to confuse: there you
+  ADD structure so nothing but the rule under test can produce the pass; here you WIDEN the claim so
+  every deviation from it reds. Both are "make the assertion the only thing that can be satisfied",
+  approached from opposite sides.
+
+- **PIN AN EXACT KEY SET, NEVER A LIST OF REFUSALS — so widening a surface costs a DECISION.** When
+  the ruling landed that parents see invoice lines, the arm pinning `lines` as ABSENT went red. That
+  is a ruling arriving as a failing test rather than as a silent widening: the old answer had been
+  asserted, so changing it required somebody to decide rather than to edit. A test written as "these
+  fields are present" stays green while a payload grows a field nobody ruled on — which is precisely
+  how a payer surface accretes `created_by_user_id`. One red per deliberate change buys the
+  guarantee that no undeliberate one is possible.
+
+- **A FIELD'S AUDIENCE IS A PROPERTY OF HOW IT WAS WRITTEN, NOT OF WHERE YOU DISPLAY IT.** `note` on
+  an invoice line is operator free text with no declared audience; every row in that column was
+  typed by staff who believed only staff would read it. Putting it on a parent's screen does not
+  make the text safe, it makes it visible — and over enough rows "mother disputes, chased twice"
+  stops being a risk and becomes a certainty. The same shape as `void_blocked_reason` one level up.
+  So the answer is not a display toggle: internal stays internal, and a payer-facing explanation is
+  a NEW field written knowing who reads it. **An audience cannot be retro-fitted onto text that
+  already exists.**
+
+  **AND WHEN SUCH A THING NEEDS A RULING, SEND A PROPOSAL RATHER THAN AN OPEN QUESTION, because the
+  framing decides the answer.** "Should parents see `note`?" invites a yes nobody has thought
+  through. Naming the default, and what the alternative would cost, is a decision somebody can make
+  in a line — and it is the same discipline as writing a claim no wider than its artifact, applied
+  to the question instead of to the answer.
+
 - **A control the server never receives is theatre, and theatre is worse than
   absence.** The rollover commit took two session ids and nothing else, so it could
   not distinguish a plan the operator had read from one a client had merely fetched,

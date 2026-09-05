@@ -28,6 +28,40 @@ export function formatNaira(money: Money): string {
 }
 
 /**
+ * THE SAME RENDERING, WITHOUT THE SIGN — for the one case where a LABEL already carries the
+ * direction and the number carrying it too says it twice, once negatively.
+ *
+ * ── WHY THIS EXISTS, MEASURED ──
+ *
+ * The parent Fees screen rendered `In credit` above `formatNaira(account.balance)`. `balance` is
+ * signed and the sign IS the meaning — negative means the school owes the parent — so a ward in
+ * credit read **"In credit -₦2,000.00"**. Both halves were correct and the pair was not: a parent
+ * cannot tell whether the minus means *we owe you* or *you owe less*, and it sat four lines above a
+ * banner reading "₦2,000.00 credit on this student's account". Found by driving the screen; no
+ * assertion in this repository could have seen it, because every value involved was right.
+ *
+ * ── THE RULE, WHICH IS GENERAL ──
+ *
+ * **Direction is carried by the label OR by the number, never by both.** Where a caller has already
+ * branched on direction to choose its wording, it passes the magnitude. Where nothing states the
+ * direction, {@see formatNaira} is correct and this is not — a bare signed figure needs its sign.
+ *
+ * ── AND IT IS NAMED FOR WHAT IT DOES ──
+ *
+ * Not an `abs` folded into formatNaira behind a flag, and not a caller-side `Math.abs` — the first
+ * would let a reader of the call site believe the sign survived, and the second is exactly the JS
+ * money arithmetic `bin/ci-money-lint.php` bans outside this file. A dropped sign that a reader
+ * cannot distinguish from a bug is the thing the name exists to prevent, which is why it says
+ * `Magnitude` at the call site rather than in a comment.
+ */
+export function formatNairaMagnitude(money: Money): string {
+    return formatNaira({
+        ...money,
+        amount_minor: Math.abs(money.amount_minor),
+    });
+}
+
+/**
  * Parse a naira amount the user typed ("2500.75") into integer minor units (250075) to
  * send to the API — the inverse boundary of formatNaira, and the ONLY sanctioned place a
  * money value is converted. Float-free on purpose: `2500.75 * 100` misfires in floating

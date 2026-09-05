@@ -3,6 +3,7 @@ import type { Money } from '@/types/finance';
 import {
     differenceMinor,
     formatNaira,
+    formatNairaMagnitude,
     minorToNairaInput,
     nairaToMinor,
     sumMinor,
@@ -234,5 +235,37 @@ describe('differenceMinor', () => {
 
     it('subtracts at a magnitude needing two thousands separators', () => {
         expect(differenceMinor(1234567890, 890)).toBe(1234567000);
+    });
+});
+
+describe('formatNairaMagnitude', () => {
+    // The bug it was written for: `In credit` above `-NGN 2,000.00`, where the label and the number
+    // both claimed a direction and one of them claimed the opposite one.
+    it('drops the sign so a directional label is not contradicted', () => {
+        expect(
+            formatNairaMagnitude({ amount_minor: -200000, currency: 'NGN' }),
+        ).toBe('\u20A62,000.00');
+    });
+
+    it('leaves a positive amount exactly as formatNaira renders it', () => {
+        const money: Money = { amount_minor: 200000, currency: 'NGN' };
+
+        expect(formatNairaMagnitude(money)).toBe(formatNaira(money));
+    });
+
+    // Zero has no direction, and -0 must not leak a sign through Math.abs.
+    it('renders zero without a sign', () => {
+        expect(
+            formatNairaMagnitude({ amount_minor: -0, currency: 'NGN' }),
+        ).toBe('\u20A60.00');
+    });
+
+    // It changes the SIGN and nothing else — kobo, grouping and currency are untouched. Asserted
+    // against formatNaira of the positive twin rather than against a literal, so the two renderers
+    // cannot drift apart in any dimension but the one this function exists to change.
+    it('differs from formatNaira only in the sign', () => {
+        expect(
+            formatNairaMagnitude({ amount_minor: -123456789, currency: 'NGN' }),
+        ).toBe(formatNaira({ amount_minor: 123456789, currency: 'NGN' }));
     });
 });

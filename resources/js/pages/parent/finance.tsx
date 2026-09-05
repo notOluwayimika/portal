@@ -3,7 +3,7 @@ import axios from 'axios';
 import { AlertTriangle, CheckCircle2, FileText, Wallet } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { PayInvoice } from '@/components/parent/pay-invoice';
-import { formatNaira } from '@/lib/format';
+import { formatNaira, formatNairaMagnitude } from '@/lib/format';
 import {
     hasAvailableCredit,
     isInCredit,
@@ -134,7 +134,17 @@ function WardCard({
                                 : 'font-semibold text-gray-900'
                         }
                     >
-                        {formatNaira(account.balance)}
+                        {/*
+                            THE LABEL ABOVE ALREADY SAYS WHICH DIRECTION THIS IS, so the number
+                            must not say it again. `balance` is signed and the sign is its meaning,
+                            which rendered as "In credit -NGN 2,000.00" — a parent cannot tell
+                            whether the minus means the school owes them or that they owe less.
+                            Magnitude under a directional label; the signed form stays correct
+                            everywhere the direction is not otherwise stated.
+                        */}
+                        {inCredit
+                            ? formatNairaMagnitude(account.balance)
+                            : formatNaira(account.balance)}
                     </p>
                 </div>
             </header>

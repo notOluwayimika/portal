@@ -809,6 +809,13 @@
         "tenant",
         "permission:finance.access"
     ],
+    "GET /api/v1/finance/invoices/returned": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:finance.access",
+        "permission:finance.invoice.generate"
+    ],
     "GET /api/v1/finance/opening-balance-batches/pending": [
         "api",
         "auth:sanctum",
@@ -879,6 +886,13 @@
         "tenant",
         "permission:finance.access",
         "permission:finance.credit-note.approve|finance.credit-note.reject|finance.invoice.void-request.approve|finance.invoice.void-request.reject|finance.invoice.approve|finance.invoice.reject|finance.discount-policy.change.approve|finance.discount-policy.change.reject|finance.fee-schedule.change.approve|finance.fee-schedule.change.reject|finance.opening-balance.approve|finance.opening-balance.reject"
+    ],
+    "GET /finance/returned-bills": [
+        "web",
+        "auth",
+        "tenant",
+        "permission:finance.access",
+        "permission:finance.invoice.generate"
     ],
     "GET /finance/students/{student}/statement": [
         "web",
@@ -1557,6 +1571,13 @@
         "auth:sanctum",
         "tenant",
         "permission:finance.invoice.approve"
+    ],
+    "POST /api/internal-audit/invoices/{uuid}/return": [
+        "api",
+        "auth:sanctum",
+        "tenant",
+        "permission:finance.invoice.approve",
+        "permission:finance.invoice.reject"
     ],
     "POST /api/login": [
         "api"

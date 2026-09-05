@@ -20,6 +20,21 @@ and the table paints, which is why this is invisible unless the console is read.
 opening-balance drive found its second defect in the console rather than on the screen; this is the
 same shape.**
 
+## IT IS NOT `/students`-ONLY — measured 2026-09-05
+
+The teachers screen hits it too. Opening the Edit Teacher form on the drive fixture logs the SAME
+`Curriculum.php:176` error, and the console shows `Failed to fetch resources`:
+
+```
+GET /api/teachers/resources   → 500
+drive.ERROR: Attempt to read property "name" on null  {"file":"…/app/Models/Curriculum.php","line":176}
+```
+
+So the title understates it: at least two `resources` endpoints resolve curricula through the same
+null-dereferencing path, and the visible symptom differs by screen — an empty select here, a failed
+panel on `/students`. **Whatever guards line 176 fixes both**, and a fix verified only against
+`/students` would leave the other reachable.
+
 ## How it was traced
 
 `storage/logs/laravel.log`, on the `drive` channel, at the moment of the request:

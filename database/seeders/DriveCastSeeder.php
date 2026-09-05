@@ -20,6 +20,7 @@ use App\Models\StudentCurriculum;
 use App\Models\Teacher;
 use App\Models\Term;
 use App\Models\User;
+use App\Services\GuardianService;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -560,6 +561,41 @@ class DriveCastSeeder extends Seeder
                 ],
                 ['teacher_id' => $teacher->id, 'gender' => null, 'assigned_by' => $this->adminA?->id],
             );
+        }
+
+        // ── ONE GUARDIAN, ADDED SO THE EDIT-GUARDIAN MODAL CAN BE OPENED AT ALL ────────────────
+        //
+        // `Guardians` has been a printed ZERO in the count table since that column was added, and
+        // the table's own rule says a zero means the screen cannot author anything. It is worse than
+        // that here: `EditGuardianModal` is reachable only from `admin/guardians/show.tsx`, which
+        // needs a guardian to show, so the modal — and the `SelectField` defect inside it — could
+        // not be driven by anybody. The column was telling the truth and nothing acted on it.
+        //
+        // THROUGH THE REAL SERVICE, not a row write: `GuardianService::createGuardianWithUser` is
+        // the path the guardians screen uses, it normalises phone numbers at the storage boundary,
+        // and it mints the login. A direct insert would produce a guardian in a shape the
+        // application never creates — exactly what this fixture exists not to do.
+        $guardian = app(GuardianService::class)->createGuardianWithUser(
+            [
+                'first_name' => 'Drive',
+                'last_name' => 'Guardian',
+                'gender' => 'female',
+                'phone' => '08030000001',
+                'occupation' => 'Engineer',
+            ],
+            $schoolA->id,
+            canLogin: false,
+            email: null,
+        )['guardian'];
+
+        // Linked to a student, because the show screen renders the guardian's wards and an
+        // unlinked guardian is a second empty state to drive past.
+        $firstStudent = Student::where('school_id', $schoolA->id)->first();
+
+        if ($firstStudent !== null) {
+            $guardian->students()->syncWithoutDetaching([
+                $firstStudent->id => ['relationship' => 'mother', 'is_primary' => true, 'can_login' => false],
+            ]);
         }
 
         // ── TWO INTERNAL-AUDIT SEATS, ADDED FOR THE REVIEW-QUEUE DRIVE ──────────────────────────

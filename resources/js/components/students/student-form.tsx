@@ -1,5 +1,10 @@
 import axios from 'axios';
 import { useEffect, useState } from 'react';
+import {
+    GuardianSubForm,
+    emptyGuardianEntry,
+} from '@/components/students/guardian-sub-form';
+import type { GuardianFormEntry } from '@/components/students/guardian-sub-form';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ProfileImageUpload } from '@/components/ui/profile-image-upload';
@@ -12,11 +17,6 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import type { Scholarship, SportHouse, Student } from '@/types/models';
-import {
-    GuardianSubForm,
-    emptyGuardianEntry,
-    type GuardianFormEntry,
-} from '@/components/students/guardian-sub-form';
 
 interface StudentFormProps {
     student?: Student | null;
@@ -56,7 +56,6 @@ const emptyFields = {
 export function StudentForm({
     student,
     onSuccess,
-    onCancel,
     formId = 'student-form',
     onProcessingChange,
 }: StudentFormProps) {
@@ -100,9 +99,17 @@ export function StudentForm({
         isEdit ? [] : [emptyGuardianEntry({ is_primary: true })],
     );
 
+    // THE DEPENDENCY IS NAMED, NOT REF'D AWAY. All three parents pass a bare `useState`
+    // setter — students/show.tsx:547, students/index.tsx:838, teachers/index.tsx:618 — and
+    // React guarantees a setter's identity is stable for the component's lifetime, so this
+    // effect fires exactly as often as it did before the dependency was added: when
+    // `processing` changes. There is nothing to memoise and no reason for a latest-callback
+    // ref, and the ref would be the worse answer beyond today: if a future parent passes an
+    // inline arrow the effect will re-run more and that will be VISIBLE, whereas a ref would
+    // swallow it. The dep array keeps a parent's instability the parent's problem.
     useEffect(() => {
         onProcessingChange?.(processing);
-    }, [processing]);
+    }, [processing, onProcessingChange]);
 
     useEffect(() => {
         let isMounted = true;
@@ -117,6 +124,7 @@ export function StudentForm({
                 }
             })
             .catch((err) => console.error('Failed to fetch resources:', err));
+
         return () => {
             isMounted = false;
         };
@@ -126,7 +134,10 @@ export function StudentForm({
         setPhoto(file);
         const url = URL.createObjectURL(file);
         setPhotoPreview((prev) => {
-            if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev);
+            if (prev && prev.startsWith('blob:')) {
+                URL.revokeObjectURL(prev);
+            }
+
             return url;
         });
     };
@@ -143,29 +154,63 @@ export function StudentForm({
         formData.append('gender', fields.gender);
         formData.append('date_of_birth', fields.date_of_birth);
         formData.append('curriculum_id', fields.curriculum_id);
-        if (fields.admission_number)
+
+        if (fields.admission_number) {
             formData.append('admission_number', fields.admission_number);
-        if (fields.admission_date)
+        }
+
+        if (fields.admission_date) {
             formData.append('admission_date', fields.admission_date);
-        if (fields.address) formData.append('address', fields.address);
-        if (fields.nationality)
+        }
+
+        if (fields.address) {
+            formData.append('address', fields.address);
+        }
+
+        if (fields.nationality) {
             formData.append('nationality', fields.nationality);
-        if (fields.other_nationality)
+        }
+
+        if (fields.other_nationality) {
             formData.append('other_nationality', fields.other_nationality);
-        if (fields.state_of_origin)
+        }
+
+        if (fields.state_of_origin) {
             formData.append('state_of_origin', fields.state_of_origin);
-        if (fields.religion) formData.append('religion', fields.religion);
-        if (fields.previous_school)
+        }
+
+        if (fields.religion) {
+            formData.append('religion', fields.religion);
+        }
+
+        if (fields.previous_school) {
             formData.append('previous_school', fields.previous_school);
-        if (fields.sport_house_id)
+        }
+
+        if (fields.sport_house_id) {
             formData.append('sport_house_id', fields.sport_house_id);
-        if (fields.scholarship_id)
+        }
+
+        if (fields.scholarship_id) {
             formData.append('scholarship_id', fields.scholarship_id);
-        if (photo) formData.append('photo', photo);
+        }
+
+        if (photo) {
+            formData.append('photo', photo);
+        }
+
         if (!isEdit) {
-            const payload = guardians.map(({ looked_up: _l, ...rest }) => rest);
+            // `looked_up` is a client-side lookup marker, not payload. Dropped by omission
+            // rather than by a discarded binding, which the linter counts as an unused variable.
+            const payload = guardians.map((g) => {
+                const rest = { ...g };
+                delete (rest as Partial<GuardianFormEntry>).looked_up;
+
+                return rest;
+            });
             formData.append('guardians', JSON.stringify(payload));
         }
+
         formData.append('_method', 'PATCH');
 
         try {
@@ -206,7 +251,9 @@ export function StudentForm({
 
     const guardianErrors: Record<string, string> = {};
     Object.entries(errors).forEach(([key, val]) => {
-        if (key.startsWith('guardians')) guardianErrors[key] = val;
+        if (key.startsWith('guardians')) {
+            guardianErrors[key] = val;
+        }
     });
 
     return (
@@ -280,11 +327,13 @@ export function StudentForm({
                             checked={showAdmissionNumber}
                             onChange={(e) => {
                                 setShowAdmissionNumber(e.target.checked);
-                                if (!e.target.checked)
+
+                                if (!e.target.checked) {
                                     setFields((f) => ({
                                         ...f,
                                         admission_number: '',
                                     }));
+                                }
                             }}
                             className="h-4 w-4 rounded border-gray-300"
                         />

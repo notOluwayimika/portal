@@ -167,6 +167,19 @@ return [
         '*.bulk_*',
         'auth.login',
         'auth.logout',
+        // A PAYMENT CONFIRMATION THAT WAS REFUSED because this system did not collect the money.
+        // App\Finance\Actions\SettleGatewayTransaction::announce() writes it when a payment's
+        // origin is not receiptable — `migrated` (collected by WCBS before the cutover, so nobody
+        // at Brookstone handed that parent this system's receipt) or an origin the allowlist does
+        // not recognise. `opening-balance-import-spec.md` §4 requires the refusal be STATED rather
+        // than silent, and this row is where it is stated.
+        //
+        // NOTICE RATHER THAN WARNING, and the line is worth drawing. It is not a failure: the
+        // refusal is the system working, and on a gateway settlement it is unreachable by
+        // construction because `claim()` only ever settles `origin = 'gateway'`. It sits above
+        // `info` because if it ever DOES appear it means a caller wired a confirmation for money
+        // this system never took, and that is a defect in the caller rather than a routine act.
+        'finance.payment_receipt_refused',
     ],
 
     // Default bucket for anything unmatched.

@@ -8,6 +8,7 @@ use App\Finance\Console\ImportOpeningBalances;
 use App\Finance\Enums\DiscountBasis;
 use App\Finance\Enums\DiscountPolicyStatus;
 use App\Finance\Exports\OpeningBalanceImportTemplateExport;
+use App\Finance\Http\Controllers\GatewayReturnController;
 use App\Finance\Http\Controllers\InvoiceDetailController;
 use App\Finance\Http\Controllers\PaymentReceiptController;
 use App\Finance\Models\DiscountPolicy;
@@ -1187,6 +1188,23 @@ Route::middleware(['auth', 'tenant', 'permission:parent_portal.access'])->group(
     Route::get('parent/finance', function () {
         return Inertia::render('parent/finance');
     })->name('parent.finance');
+
+    /*
+     * WHERE PAYSTACK SENDS THE PAYER BACK (§6 step 6).
+     *
+     * A WEB ROUTE, not an API one, because the PAYER'S BROWSER is redirected here — there is no XHR
+     * and no token, and the page has to render for a human who has just left a checkout.
+     *
+     * SAME GATE AS ITS SIBLINGS. `parent_portal.access` and nothing new: this is a parent looking at
+     * their own payment, and which transaction they may see is answered by the reference routing to
+     * their school plus the row existing there — the same shape the webhook uses, minus the trust.
+     *
+     * THE QUERY STRING NAMES A TRANSACTION AND PROVES NOTHING. `?reference=` and `?trxref=` arrive
+     * from the payer's own browser; every fact about the money comes from `verify()`. See the
+     * controller.
+     */
+    Route::get('parent/payments/return', GatewayReturnController::class)
+        ->name('parent.finance.payment.return');
 });
 
 Route::middleware(['auth', 'tenant', 'permission:boarding_portal.access'])->group(function () {

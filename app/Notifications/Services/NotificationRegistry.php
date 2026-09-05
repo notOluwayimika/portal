@@ -78,6 +78,25 @@ class NotificationRegistry
                 userConfigurable: true,
                 excludeActor: true,
             ),
+            new TypeDefinition(
+                type: NotificationType::PAYMENT_RECEIVED,
+                // The same relationship shape as RESULT_READY: the payload names a student and the
+                // resolver reads their guardians. Guardians PLURAL and school-scoped — the resolver
+                // relies on the global SchoolScope inside `ActiveSchool::runFor` rather than
+                // filtering `users.school_id`, which is the legacy fallback and simply wrong for a
+                // parent with children at two schools.
+                resolver: GuardiansOfStudentResolver::class,
+                defaultChannels: [ChannelKey::IN_APP, ChannelKey::EMAIL],
+                // NOT CONFIGURABLE — a receipt is an obligation, not a subscription. A parent may
+                // not opt out of being told money left their account, and the preferences UI shows
+                // it locked with the reason rather than offering a toggle that is ignored.
+                userConfigurable: false,
+                // NO ACTOR EXISTS on a gateway payment: the payer is the recipient's own household
+                // and `received_by_user_id` is null on this origin. Left true because the exclusion
+                // is a no-op against a null actor, and flipping it would state something false
+                // about the type.
+                excludeActor: true,
+            ),
         ];
 
         return collect($definitions)->keyBy(fn (TypeDefinition $d) => $d->type->value)->all();

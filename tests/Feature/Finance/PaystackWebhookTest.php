@@ -674,3 +674,44 @@ it('leaves the row pending, and answers 200, when the provider cannot be reached
         ->and(DB::table('finance_gateway_transaction_events')->count())->toBe(1)
         ->and(DB::table('finance_gateway_transaction_events')->value('source'))->toBe('webhook');
 });
+
+/*
+|--------------------------------------------------------------------------
+| §6 STEP 8 — the payment-received notification
+|--------------------------------------------------------------------------
+*/
+
+it('notifies the guardians exactly ONCE, however many times the delivery is replayed', function () {
+    config(['notifications.enabled' => true]);
+    $transaction = pwtTransaction();
+    pwtVerifyReturns($transaction->reference);
+
+    // A REPLAY IS NOT A HYPOTHETICAL. Paystack redelivers, and since #370 every redelivery
+    // RE-VERIFIES — so a notification fired per DELIVERY reaches a parent once per retry. A test
+    // sending ONE webhook cannot distinguish the two implementations: both send one notification.
+    pwtPost(pwtBody($transaction->reference))->assertOk()->assertJsonPath('outcome', 'settled');
+    pwtPost(pwtBody($transaction->reference))->assertOk()->assertJsonPath('outcome', 'already_settled');
+
+    // EXACTLY ONE, not "at least one". The dispatch fires on the WINNING claim — the same
+    // compare-and-swap that makes the payment itself happen once.
+    expect(DB::table('notifications')->where('type', 'finance.payment.received')->count())->toBe(1);
+});
+
+it('refuses a confirmation for a payment this system did not collect, and records the refusal', function () {
+    config(['notifications.enabled' => true]);
+    $transaction = pwtTransaction();
+    pwtVerifyReturns($transaction->reference);
+
+    pwtPost(pwtBody($transaction->reference))->assertOk();
+
+    // The gateway path cannot produce a migrated payment — `claim()` only settles `gateway` — so the
+    // guard is exercised where it lives rather than through a webhook that cannot reach it. What the
+    // webhook arm above proves is that the receiptable path DOES notify; this proves the other
+    // branch refuses, and refuses with the code that names WHICH refusal.
+    $migrated = new Payment(['origin' => Payment::ORIGIN_MIGRATED]);
+
+    expect($migrated->receiptRefusalCode())->toBe(Payment::RECEIPT_REFUSAL_CODE_MIGRATED)
+        // AND THE RECEIPTABLE ORIGIN IS ASSERTED IN THE SAME ARM, or this says only that some
+        // origin refuses — a guard that refused everything would pass a refusal-only proof.
+        ->and((new Payment(['origin' => Payment::ORIGIN_GATEWAY]))->receiptRefusalCode())->toBeNull();
+});

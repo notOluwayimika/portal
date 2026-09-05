@@ -19,8 +19,8 @@
  * ⚠️ TWO ARMS PLANT INTO THE REAL TREE and two EDIT THE REAL CONFIG, so this is safe only while Pest
  * runs sequentially — the same constraint tests/Arch/SqlClockLintCoverageTest.php carries, and for
  * the same reason: the green arm asserts the lint passes over a tree the other arms have defects in.
- * Verified at this commit: bin/quality:357 (arch) is `pest --group=arch` (step 16) and the suite step
- * is plain `pest` (bin/quality:418 (pest), step 18); `--parallel` appears only on Pint. Every plant and every edit is undone in a `finally`;
+ * Verified at this commit: bin/quality:369 (arch) is `pest --group=arch` (step 16) and the suite step
+ * is plain `pest` (bin/quality:430 (pest), step 18); `--parallel` appears only on Pint. Every plant and every edit is undone in a `finally`;
  * .gitignore covers the residue a SIGKILL would leave, which is the only outcome that outlives the
  * run and is committable.
  *

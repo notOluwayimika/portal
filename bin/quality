@@ -266,8 +266,20 @@ check "lint-changed" bash bin/lint-changed.sh "$BASE"
 
 # 4. tsc ratchet — pest/tsc may exit non-zero; the RATCHET script is the gate.
 step "types (tsc ratchet vs tsc-baseline)"
-pnpm run types:check >/tmp/quality-tsc.txt 2>&1 || true
-check "tsc-ratchet" php bin/ci-tsc-ratchet.php /tmp/quality-tsc.txt
+#    AND THE EXIT STATUS IS EVIDENCE, NOT NOISE — `|| true` used to be on the line below and it
+#    discarded the only thing that distinguishes a clean tsc from a tsc that never ran. Both write
+#    an EMPTY FILE (measured: clean exits 0 with 0 bytes, errors exit 2 with the errors), so the
+#    ratchet counted absence as zero errors, printed "DECREASED (good!)" and told the operator to
+#    run `generate` — which wrote baseline 0 and ended the ratchet. The status is now captured and
+#    passed, and ci-tsc-ratchet.php REFUSES without it.
+#
+#    CAPTURING $? IS SAFE HERE because this script runs under `set -uo pipefail` and NOT `set -e`
+#    (line 56), and carries no ERR trap — a non-zero tsc was never going to abort the run, so the
+#    `|| true` bought nothing and cost the evidence. The assignment is on its own line immediately
+#    after the redirect, with nothing in between that could overwrite $?.
+pnpm run types:check >/tmp/quality-tsc.txt 2>&1
+tsc_exit=$?
+check "tsc-ratchet" php bin/ci-tsc-ratchet.php /tmp/quality-tsc.txt "--tsc-exit=$tsc_exit"
 
 # 5. Frontend build. The tsc ratchet CANNOT stand in for this: a syntax error that
 #    stops a file parsing is not a TYPE error, so the ratchet counts it as zero and

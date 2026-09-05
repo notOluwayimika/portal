@@ -310,6 +310,20 @@ const guardianNavGroups: NavGroup[] = [
                 href: '/parent/wards',
                 icon: Users,
             },
+            /*
+                FEES — and its absence was the whole reason the pay screen was invisible.
+                `parent/finance` was registered, gated on `parent_portal.access`, backed by a
+                controller withholding unreleased bills on both keys, covered by tests, and
+                reachable only by typing the URL. Every arm green, feature unreachable.
+
+                `lib/guardian-nav.test.ts` now asserts this entry exists, because the gap can
+                reopen with one edit to this array and would look exactly as green as it did.
+            */
+            {
+                title: 'Fees',
+                href: '/parent/finance',
+                icon: Wallet,
+            },
         ],
     },
 ];

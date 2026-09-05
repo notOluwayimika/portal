@@ -28,32 +28,51 @@ interface EditPivotModalProps {
     onSaved: () => void;
 }
 
-export function EditPivotModal({
-    isOpen,
+/*
+ * THE SEEDING HAPPENS AT MOUNT, NOT IN AN EFFECT — CAUSE 1 of the two that
+ * `resources/js/pages/admin/internal-audit/review-queue.tsx` records for
+ * `react-hooks/set-state-in-effect`.
+ *
+ * This component carried an effect that ran four setStates SYNCHRONOUSLY in its body to copy the
+ * `guardian` prop into state whenever the modal opened. That is the docblock's first cause exactly,
+ * and its remedy there was to stop synchronising and let the FIRST RENDER ALREADY BE RIGHT — the
+ * loading flag moved into `useState(true)`.
+ *
+ * The same remedy here is a split: this wrapper holds NO hooks, so it may return early, and the
+ * body below is mounted only while the dialog is open. Its `useState` initialisers do the seeding,
+ * so the first render already has the guardian's values and there is nothing to synchronise.
+ *
+ * `key={guardian.id}` PRESERVES THE ONE BEHAVIOUR THE OLD DEP LIST HAD: the effect listed
+ * `[isOpen, guardian]`, so a guardian swapped while the modal stayed open re-seeded the form. The
+ * key reproduces that by remounting on the same event. Without it the split would be a silent
+ * behaviour change rather than a refactor.
+ */
+export function EditPivotModal(props: EditPivotModalProps) {
+    if (!props.isOpen || !props.guardian) {
+        return null;
+    }
+
+    return <EditPivotModalBody key={props.guardian.id} {...props} />;
+}
+
+function EditPivotModalBody({
     onClose,
     studentUuid,
     guardian,
     onSaved,
 }: EditPivotModalProps) {
-    const [relationship, setRelationship] = useState('');
-    const [isPrimary, setIsPrimary] = useState(false);
-    const [canLogin, setCanLogin] = useState(false);
+    const [relationship, setRelationship] = useState(
+        guardian?.relationship ?? '',
+    );
+    const [isPrimary, setIsPrimary] = useState(guardian?.is_primary ?? false);
+    const [canLogin, setCanLogin] = useState(guardian?.can_login ?? false);
     const [relationships, setRelationships] = useState<Option[]>([]);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    // Seed form with current guardian values when opened
+    // MOUNT-ONLY, and it is the same number of fetches as before: the old effect was keyed on
+    // `[isOpen, guardian]` and this body mounts on exactly those transitions.
     useEffect(() => {
-        if (!isOpen || !guardian) {
-            return;
-        }
-
-        setRelationship(guardian.relationship);
-        setIsPrimary(guardian.is_primary);
-        setCanLogin(guardian.can_login);
-        setError(null);
-
-        // Fetch relationship options
         axios
             .get('/api/guardians/resources')
             .then((res) => {
@@ -62,10 +81,11 @@ export function EditPivotModal({
                 setRelationships(data?.relationships ?? []);
             })
             .catch(() => {});
-    }, [isOpen, guardian]);
+    }, []);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+
         if (!guardian) {
             return;
         }
@@ -106,7 +126,8 @@ export function EditPivotModal({
 
     return (
         <Modal
-            isOpen={isOpen}
+            // Always true here: this body is only mounted while the dialog is open.
+            isOpen
             onClose={onClose}
             title={`Edit relationship — ${guardian?.full_name ?? ''}`}
             size="md"
@@ -140,7 +161,7 @@ export function EditPivotModal({
                     />
                     <div>
                         <p className="font-medium">Primary Guardian</p>
-                        <p className="text-muted-foreground text-xs">
+                        <p className="text-xs text-muted-foreground">
                             Turning this on will remove primary status from the
                             current primary guardian.
                         </p>
@@ -155,15 +176,13 @@ export function EditPivotModal({
                     />
                     <div>
                         <p className="font-medium">Can Log In</p>
-                        <p className="text-muted-foreground text-xs">
+                        <p className="text-xs text-muted-foreground">
                             Allows this guardian to log in to the parent portal.
                         </p>
                     </div>
                 </label>
 
-                {error && (
-                    <p className="text-destructive text-xs">{error}</p>
-                )}
+                {error && <p className="text-xs text-destructive">{error}</p>}
 
                 <div className="flex items-center justify-end gap-2 border-t pt-3">
                     <Button

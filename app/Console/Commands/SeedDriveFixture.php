@@ -249,6 +249,30 @@ class SeedDriveFixture extends Command
     {
         $this->newLine();
         $this->info('Drive fixture seeded. Sign in at APP_URL with any user below (password: '.DriveCastSeeder::PASSWORD.'):');
+        /*
+         * THE PAYER'S THREE WARDS — the only states in this fixture that exist for a PARENT-facing
+         * screen rather than a staff one.
+         *
+         * BILLED BY THE SCHOOL'S BURSAR, RELEASED BY THE AUDITOR, and those must be two accounts:
+         * grant-time segregation of duties refuses both sides of a Finance pair to one user, so a
+         * single-actor version of this block could not be written even if it were wanted.
+         *
+         * THE `credit` WARD IS THE ONE MOST PARENTS WILL SEE ON RESUMPTION. Its bill stays UNRELEASED
+         * while an over-payment banks money on the account, so the screen shows available credit and
+         * "nothing outstanding" together — two numbers whose relationship the copy has to explain.
+         * That combination is unreachable from every other state this fixture stages.
+         */
+        ActiveSchool::runFor($cast->schoolAId, function () use ($cast, $states) {
+            $states->releasedInvoice($cast->parentWards['released'], 24_750_000, $cast->auditor);
+
+            // WITHHELD: raised and never released. Renders identically to a ward with nothing owed,
+            // which is the withholding working rather than the screen failing.
+            $states->plainInvoice($cast->parentWards['withheld'], 18_000_000);
+
+            // CREDIT WITH NOTHING RELEASED: money on the account, no bill the payer may see.
+            $states->unallocatedRemainder($cast->parentWards['credit'], $cast->schoolAId, false);
+        });
+
         $this->alignedTable(
             ['Role in the drive', 'Email'],
             [
@@ -506,11 +530,28 @@ class SeedDriveFixture extends Command
         // reports "one guardian row after two submissions" can be checked against where it
         // started rather than asserted.
         $this->info('Authoring slot per school — the fee-schedules screen selects a term, a class level and an account; the discount-policies screen amends and retires a policy; the receipt screen (U11) renders ONE payment and refuses for a migrated one; the guardians screen links a new guardian to students by admission number; the Scholarships tab classifies an UNCONFIGURED scholarship:');
+        /*
+         * `Released bills` — THE PARENT FEES SCREEN'S DENOMINATOR, and the sixth column added here
+         * for the reason the five before it were.
+         *
+         * Every other column in these tables answers a question about a STAFF screen. The payer
+         * screen reads none of them: it asks whether Internal Audit has RELEASED anything, and
+         * `GuardianFinanceController::wards` withholds unreleased bills on BOTH keys. **Zero here and
+         * every ward renders "Nothing outstanding"** — which is the page working correctly and a
+         * drive that proves nothing, indistinguishable at a glance from a broken feature.
+         *
+         * IT IS NOT `Awaiting review` INVERTED. That column counts the queue's INPUT; this counts its
+         * OUTPUT, and a fixture can be healthy on one and empty on the other — which is exactly the
+         * state this fixture was in before the payer seat existed. Counted through the Finance side's
+         * own scoped reader, like its siblings, rather than from the seeder's variables.
+         */
+        $releasedBills = fn (int $schoolId): int => ActiveSchool::runFor($schoolId, fn () => $states->releasedInvoiceCount($schoolId));
+
         $this->alignedTable(
-            ['School', 'Academic sessions', 'Terms', 'Class levels', 'Bank accounts', 'Discount policies', 'Payments (portal)', 'Payments (migrated)', 'Payments w/ remainder', 'Open invoices', 'Students', 'Guardians', 'Teachers', 'Scholarships', 'Scholarships (unconfigured)'],
+            ['School', 'Academic sessions', 'Terms', 'Class levels', 'Bank accounts', 'Discount policies', 'Payments (portal)', 'Payments (migrated)', 'Payments w/ remainder', 'Open invoices', 'Students', 'Guardians', 'Teachers', 'Released bills', 'Scholarships', 'Scholarships (unconfigured)'],
             [
-                ['A (school#'.$cast->schoolAId.')', $count('academic_sessions', $cast->schoolAId), $count('terms', $cast->schoolAId), $count('class_levels', $cast->schoolAId), $accounts($cast->schoolAId), $policies($cast->schoolAId), $payments($cast->schoolAId, 'portal'), $payments($cast->schoolAId, 'migrated'), $remainders($cast->schoolAId), $openInvoices($cast->schoolAId), $count('students', $cast->schoolAId), $count('guardians', $cast->schoolAId), $count('teachers', $cast->schoolAId), $scholarships($cast->schoolAId), $unconfiguredScholarships($cast->schoolAId)],
-                ['B (school#'.$cast->schoolBId.')', $count('academic_sessions', $cast->schoolBId), $count('terms', $cast->schoolBId), $count('class_levels', $cast->schoolBId), $accounts($cast->schoolBId), $policies($cast->schoolBId), $payments($cast->schoolBId, 'portal'), $payments($cast->schoolBId, 'migrated'), $remainders($cast->schoolBId), $openInvoices($cast->schoolBId), $count('students', $cast->schoolBId), $count('guardians', $cast->schoolBId), $count('teachers', $cast->schoolBId), $scholarships($cast->schoolBId), $unconfiguredScholarships($cast->schoolBId)],
+                ['A (school#'.$cast->schoolAId.')', $count('academic_sessions', $cast->schoolAId), $count('terms', $cast->schoolAId), $count('class_levels', $cast->schoolAId), $accounts($cast->schoolAId), $policies($cast->schoolAId), $payments($cast->schoolAId, 'portal'), $payments($cast->schoolAId, 'migrated'), $remainders($cast->schoolAId), $openInvoices($cast->schoolAId), $count('students', $cast->schoolAId), $count('guardians', $cast->schoolAId), $count('teachers', $cast->schoolAId), $releasedBills($cast->schoolAId), $scholarships($cast->schoolAId), $unconfiguredScholarships($cast->schoolAId)],
+                ['B (school#'.$cast->schoolBId.')', $count('academic_sessions', $cast->schoolBId), $count('terms', $cast->schoolBId), $count('class_levels', $cast->schoolBId), $accounts($cast->schoolBId), $policies($cast->schoolBId), $payments($cast->schoolBId, 'portal'), $payments($cast->schoolBId, 'migrated'), $remainders($cast->schoolBId), $openInvoices($cast->schoolBId), $count('students', $cast->schoolBId), $count('guardians', $cast->schoolBId), $count('teachers', $cast->schoolBId), $releasedBills($cast->schoolBId), $scholarships($cast->schoolBId), $unconfiguredScholarships($cast->schoolBId)],
             ],
         );
 

@@ -60,8 +60,8 @@ describe('splitInvoiceLines', () => {
         const { charges, reductions } = splitInvoiceLines(adaBill);
 
         expect(charges.length + reductions.length).toBe(adaBill.length);
-        expect([...charges, ...reductions].map((l) => l.description).sort()).toEqual(
-            adaBill.map((l) => l.description).sort(),
-        );
+        expect(
+            [...charges, ...reductions].map((l) => l.description).sort(),
+        ).toEqual(adaBill.map((l) => l.description).sort());
     });
 });

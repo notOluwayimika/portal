@@ -42,12 +42,7 @@ export function InvoiceBreakdown({ invoice }: { invoice: FinanceWardInvoice }) {
         return null;
     }
 
-    const charges = invoice.lines.filter(
-        (line) => line.amount.amount_minor >= 0,
-    );
-    const reductions = invoice.lines.filter(
-        (line) => line.amount.amount_minor < 0,
-    );
+    const { charges, reductions } = splitInvoiceLines(invoice.lines);
 
     return (
         <details className="group mt-2">

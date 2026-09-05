@@ -22,7 +22,18 @@ use Illuminate\Foundation\Http\FormRequest;
  * refusal is a BusinessRuleException from the action, so an unconfigured minimum fails loudly
  * rather than being silently absent from a `min:` rule.
  */
-final class InitiateGatewayPaymentRequest extends FormRequest
+/*
+ * NOT `final`, and deliberately: {@see PreviewGatewayFeeRequest} extends this class so the fee
+ * preview INHERITS the uuid-within-SchoolScope resolution and `mayPay()` rather than restating them.
+ * A preview that resolved the id itself would answer a figure for any uuid handed to it, and a
+ * second copy of the rule is a second thing to keep in step.
+ *
+ * It was `final` until 2026-09-04. Extending a final class is a LINK-time fatal, so `php -l` passes
+ * and Pest exits 2 with NO output, no exception and no stack trace — the same silent shape a generic
+ * private helper on a framework subclass produces. Bisecting against another test file is what found
+ * it; nothing in the failure named the cause.
+ */
+class InitiateGatewayPaymentRequest extends FormRequest
 {
     public function authorize(GuardianPaymentAuthorisation $authorisation): bool
     {

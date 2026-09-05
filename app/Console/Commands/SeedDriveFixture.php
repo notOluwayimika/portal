@@ -10,6 +10,7 @@ use Database\Seeders\DriveCastSeeder;
 use Database\Seeders\RbacSeeder;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
+use RuntimeException;
 
 /**
  * Stands up the Finance visual-drive fixture (docs/finance/drive-environment.md): every state a
@@ -199,11 +200,44 @@ class SeedDriveFixture extends Command
         return self::SUCCESS;
     }
 
+    /**
+     * Render a count table, REFUSING one whose header and rows disagree.
+     *
+     * The drive skill treats these tables as a PRECONDITION INSTRUMENT — "zero in any column means
+     * the screen cannot author anything" — so a misaligned one is worse than a missing one: every
+     * value after the mismatch is printed under the wrong heading and reads as a real measurement.
+     * It has happened: a `Teachers` column added on 2026-09-05 was inserted into the header and not
+     * into the rows, so the table reported 3 teachers where there were 31, with the shift invisible
+     * except as one empty cell at the end of the line.
+     *
+     * A person noticing that is not a control. This is one line of arithmetic the table can do about
+     * itself, and it throws rather than printing, because a fixture report nobody can trust is not
+     * worth emitting.
+     *
+     * @param  list<string>  $headers
+     * @param  list<list<int|string>>  $rows
+     */
+    private function alignedTable(array $headers, array $rows): void
+    {
+        foreach ($rows as $index => $row) {
+            if (count($row) !== count($headers)) {
+                throw new RuntimeException(sprintf(
+                    'Count table row %d has %d values against %d headers. Every value after the '
+                    .'mismatch would print under the wrong heading, and this table is read as a '
+                    .'precondition for driving a screen. Add the value you added the column for.',
+                    $index, count($row), count($headers),
+                ));
+            }
+        }
+
+        $this->table($headers, $rows);
+    }
+
     private function report(DriveCastSeeder $cast, DriveFinanceStates $states): void
     {
         $this->newLine();
         $this->info('Drive fixture seeded. Sign in at APP_URL with any user below (password: '.DriveCastSeeder::PASSWORD.'):');
-        $this->table(
+        $this->alignedTable(
             ['Role in the drive', 'Email'],
             [
                 ['Maker (accounts_officer)', 'maker@drive.test'],
@@ -412,7 +446,7 @@ class SeedDriveFixture extends Command
         };
 
         $this->info('Authoring slot per school — the fee-schedules screen selects a term, a class level and an account; the discount-policies screen amends and retires a policy; the receipt screen (U11) renders ONE payment and refuses for a migrated one; the bulk-run screen (U6) prices a COHORT from an ACTIVE schedule and reports the unplaceable; the decisions surface (U13/U14) reads back what a checker has already settled:');
-        $this->table(
+        $this->alignedTable(
             ['School', 'Academic sessions', 'Terms', 'Class levels', 'Bank accounts', 'Discount policies', 'Payments (portal)', 'Payments (migrated)', 'Payments w/ remainder', 'Open invoices', 'Active schedules', 'Cohort at slot', 'Awarded in cohort', 'Sponsored in cohort', 'Unplaceable', 'Decided credit notes', 'Decided voids', 'Awaiting review', 'Returned to Finance'],
             [
                 ['A (school#'.$cast->schoolAId.')', $count('academic_sessions', $cast->schoolAId), $count('terms', $cast->schoolAId), $count('class_levels', $cast->schoolAId), $accounts($cast->schoolAId), $policies($cast->schoolAId), $payments($cast->schoolAId, 'portal'), $payments($cast->schoolAId, 'migrated'), $remainders($cast->schoolAId), $openInvoices($cast->schoolAId), $schedules($cast->schoolAId), $cohort($cast->schoolAId), $awardedInCohort($cast->schoolAId), $sponsoredInCohort($cast->schoolAId), $unplaceable($cast->schoolAId), $decidedNotes($cast->schoolAId), $decidedVoids($cast->schoolAId), $awaitingReview($cast->schoolAId), $returnedToFinance($cast->schoolAId)],
@@ -444,7 +478,7 @@ class SeedDriveFixture extends Command
         // reports "one guardian row after two submissions" can be checked against where it
         // started rather than asserted.
         $this->info('Authoring slot per school — the fee-schedules screen selects a term, a class level and an account; the discount-policies screen amends and retires a policy; the receipt screen (U11) renders ONE payment and refuses for a migrated one; the guardians screen links a new guardian to students by admission number; the Scholarships tab classifies an UNCONFIGURED scholarship:');
-        $this->table(
+        $this->alignedTable(
             ['School', 'Academic sessions', 'Terms', 'Class levels', 'Bank accounts', 'Discount policies', 'Payments (portal)', 'Payments (migrated)', 'Payments w/ remainder', 'Open invoices', 'Students', 'Guardians', 'Teachers', 'Scholarships', 'Scholarships (unconfigured)'],
             [
                 ['A (school#'.$cast->schoolAId.')', $count('academic_sessions', $cast->schoolAId), $count('terms', $cast->schoolAId), $count('class_levels', $cast->schoolAId), $accounts($cast->schoolAId), $policies($cast->schoolAId), $payments($cast->schoolAId, 'portal'), $payments($cast->schoolAId, 'migrated'), $remainders($cast->schoolAId), $openInvoices($cast->schoolAId), $count('students', $cast->schoolAId), $count('guardians', $cast->schoolAId), $count('teachers', $cast->schoolAId), $scholarships($cast->schoolAId), $unconfiguredScholarships($cast->schoolAId)],
@@ -461,7 +495,7 @@ class SeedDriveFixture extends Command
          * and no invoice is involved in putting a named child on an approved figure.
          */
         $this->info('Authoring slot per school — the BSS discount-award import (/finance/discount-award-imports) resolves each row of a sheet to an ACTIVE percentage policy on a (percentage, base) PAIR, and asks the student\'s SCHOLARSHIP whether a discount may be awarded at all:');
-        $this->table(
+        $this->alignedTable(
             ['School', 'Award pairs', 'Discount policies', 'Students', 'On a discount scholarship', 'On another scholarship', 'Discount awards'],
             [
                 ['A (school#'.$cast->schoolAId.')', $awardPairs($cast->schoolAId), $policies($cast->schoolAId), $count('students', $cast->schoolAId), $holders($cast->schoolAId, true), $holders($cast->schoolAId, false), $awards($cast->schoolAId)],

@@ -1281,6 +1281,14 @@
             "super_admin"
         ]
     },
+    "GET /api/v1/finance/invoices/returned": {
+        "auth": true,
+        "roles": [
+            "accounts_officer",
+            "admin",
+            "super_admin"
+        ]
+    },
     "GET /api/v1/finance/opening-balance-batches": {
         "auth": true,
         "roles": [
@@ -1445,6 +1453,14 @@
         "roles": [
             "accounts_officer",
             "accounts_supervisor",
+            "super_admin"
+        ]
+    },
+    "GET /finance/returned-bills": {
+        "auth": true,
+        "roles": [
+            "accounts_officer",
+            "admin",
             "super_admin"
         ]
     },

@@ -328,6 +328,34 @@ Route::middleware(['auth', 'tenant', 'permission:finance.access'])->group(functi
         ->name('admin.finance.bulk-invoice-run');
 
     /*
+     * FINANCE'S RETURNED-BILLS QUEUE — the reader for a write path Phase A shipped without one.
+     *
+     * Until this page, the ONLY place a returned bill was visible anywhere in the system was
+     * `counts.returned_to_finance` on the AUDITOR's own queue, so the state was visible only to
+     * the person who created it.
+     *
+     * GATED ON `finance.invoice.generate` IN ADDITION to the group's `finance.access`, and the nav
+     * entry keys on the same ability so a menu item can never render for someone the route would
+     * refuse — the rule the bank-accounts route above states and the reason it states it.
+     *
+     * WHY THE MAKER'S ABILITY, AND WHY NO NEW ONE IS MINTED. The seat that RAISES a bill is the
+     * seat that CORRECTS it, so `finance.invoice.generate` already names exactly the right people:
+     * `admin` (RbacSeeder:248) and `accounts_officer` (RbacSeeder:407). A `finance.invoice.correct`
+     * would be a grant nobody holds, needing a seeder change and a convergence migration, to gate a
+     * read the maker seat already justifies.
+     *
+     * EXPLICITLY NOT `finance.invoice.reject`: that is the AUDITOR's ability, and gating Finance's
+     * own screen on it would hand the correction desk to the auditor and lock the bursar out.
+     *
+     * THE PAGE SHELL ONLY. Every row and both numbers come from
+     * GET /api/v1/finance/invoices/returned, which carries the same explicit gate, so the page and
+     * its feed cannot disagree about who may see this.
+     */
+    Route::get('/finance/returned-bills', fn () => Inertia::render('admin/finance/returned-bills'))
+        ->middleware('permission:finance.invoice.generate')
+        ->name('admin.finance.returned-bills');
+
+    /*
      * BULK MANUAL INVOICING — the bursar picks their OWN list of students, types the lines every one
      * of them is to be charged, and raises one supplementary invoice each.
      *

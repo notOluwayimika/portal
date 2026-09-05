@@ -15,6 +15,7 @@ use App\Finance\Http\Controllers\ManualInvoiceRunStudentController;
 use App\Finance\Http\Controllers\OpeningBalanceBatchController;
 use App\Finance\Http\Controllers\PaymentAllocationController;
 use App\Finance\Http\Controllers\PaymentController;
+use App\Finance\Http\Controllers\ReturnedInvoiceQueueController;
 use App\Finance\Http\Controllers\VoidRequestController;
 use Illuminate\Support\Facades\Route;
 
@@ -464,4 +465,32 @@ Route::post('/v1/finance/manual-invoice-runs', [ManualInvoiceRunController::clas
 Route::get('/v1/finance/manual-invoice-runs/students', [ManualInvoiceRunStudentController::class, 'index'])
     ->middleware('permission:finance.invoice.generate');
 Route::get('/v1/finance/manual-invoice-runs/{run:uuid}', [ManualInvoiceRunController::class, 'show'])
+    ->middleware('permission:finance.invoice.generate');
+
+/*
+ * FINANCE'S RETURNED-BILLS QUEUE — the reader for a write path that shipped without one.
+ *
+ * ITS OWN GATE, AND THE GROUP'S IS NOT ENOUGH. api.php requires this file inside a group gated on
+ * `finance.access`, which every finance-area seat holds — `principal`, `executive_director`,
+ * `accounts_supervisor` and `finance_lead` among them. This is a CORRECTION DESK, so it declares
+ * `permission:finance.invoice.generate` and therefore requires BOTH: the group's `finance.access`
+ * and the maker ability. Measured rather than assumed — the two seats that hold generate are
+ * `admin` (RbacSeeder:248) and `accounts_officer` (RbacSeeder:407), and both hold finance.access.
+ *
+ * THE ABSENCE OF A NEW PERMISSION IS A DECISION, NOT AN OVERSIGHT. The seat that raises a bill is
+ * the seat that corrects it, so `finance.invoice.generate` already names the right people. A
+ * `finance.invoice.correct` would be a grant nobody holds, needing a seeder change and a
+ * convergence migration, to gate a read the maker seat already justifies.
+ *
+ * AND EXPLICITLY NOT `finance.invoice.reject`. That is the AUDITOR's ability — `internal_auditor`
+ * is the only role holding it — and gating Finance's own screen on it would hand the correction
+ * desk to the auditor and lock the bursar out. The same defect as a route inheriting the wrong
+ * verb's permission from its group, which routes/endpoints/internal-audit.php records at length.
+ *
+ * NO ORDERING HAZARD. There is no `GET /v1/finance/invoices/{invoice:uuid}` anywhere in this
+ * repository — the invoice detail is a WEB route, routes/web.php:490 (InvoiceDetailController) —
+ * so the literal `returned` cannot be swallowed by a wildcard. Checked rather than assumed,
+ * because this file records two separate occasions where it was not.
+ */
+Route::get('/v1/finance/invoices/returned', [ReturnedInvoiceQueueController::class, 'index'])
     ->middleware('permission:finance.invoice.generate');

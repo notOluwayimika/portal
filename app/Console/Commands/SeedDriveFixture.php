@@ -182,20 +182,29 @@ class SeedDriveFixture extends Command
         ActiveSchool::runFor($cast->schoolBId, fn () => $states->plainInvoice($e['bola'], 250000));
 
         /*
-         * ONE BILL OUT WITH FINANCE — the review queue's second stat card, which is the ONLY surface
-         * a returned bill has anywhere in the system until Phase B builds Finance's own queue.
+         * THREE BILLS OUT WITH FINANCE, AT THREE AGES — the review queue's second stat card, and
+         * now Finance's own returned-bills queue, which is the reader Phase B adds for them.
          *
-         * Without it that card renders a bare `0` on a fresh fixture, and a `0` is exactly what a
-         * card wired to the wrong number looks like — the drive would prove nothing about it. Every
-         * other invoice this fixture stages is unreleased and NOT returned, so the awaiting column
-         * is populated either way; this is the only state that separates the two cards.
+         * IT WAS ONE UNTIL PHASE B, and one is no longer enough. That card only needed a non-zero:
+         * without it, it renders a bare `0` on a fresh fixture, and a `0` is exactly what a card
+         * wired to the wrong number looks like. Finance's queue asks two harder questions of the
+         * fixture, and a single row answers neither — "oldest returned first" is satisfied by every
+         * possible ordering of one row, and the age card reads the same whatever it is wired to
+         * when every bill was returned in the same second.
+         *
+         * THE AGES ARE 9, 3 AND 0 DAYS. Nine is past the screen's stalled threshold and zero is
+         * today, so BOTH branches of the age card are reachable on one fixture; three sits between
+         * them so the ordering has a middle element to get wrong.
          *
          * AS THE AUDITOR, because ReturnInvoice asserts `finance.invoice.reject` against the actor
          * in the active school and `internal_auditor` is the only role holding it.
          */
-        ActiveSchool::runFor($cast->schoolAId, fn () => $states->returnedToFinance($cast->auditor));
+        $returned = ActiveSchool::runFor(
+            $cast->schoolAId,
+            fn () => $states->returnedToFinanceAged($cast->auditor, [9, 3, 0]),
+        );
 
-        $this->report($cast, $states);
+        $this->report($cast, $states, $returned);
 
         return self::SUCCESS;
     }
@@ -233,7 +242,10 @@ class SeedDriveFixture extends Command
         $this->table($headers, $rows);
     }
 
-    private function report(DriveCastSeeder $cast, DriveFinanceStates $states): void
+    /**
+     * @param  list<array{number: int, days: int}>  $returned  the bills out with Finance, oldest first
+     */
+    private function report(DriveCastSeeder $cast, DriveFinanceStates $states, array $returned = []): void
     {
         $this->newLine();
         $this->info('Drive fixture seeded. Sign in at APP_URL with any user below (password: '.DriveCastSeeder::PASSWORD.'):');
@@ -455,6 +467,22 @@ class SeedDriveFixture extends Command
         );
 
         $this->info('Bulk invoice runs: /finance/bulk-invoice-runs — the cohort above sits at (term, JSS 1); JSS 2 has an empty one on purpose.');
+
+        // THE BILLS OUT WITH FINANCE, BY NUMBER AND AGE — printed for the reason the admission
+        // numbers are: they are minted by the run and are therefore unknowable from the seeder
+        // source, and Finance's queue (/finance/returned-bills) is asserted BY ORDER, so a drive
+        // that cannot say which bill should be at the top cannot check the sort. The ages are what
+        // the age card reports; the oldest one here is the number that card must show.
+        if ($returned !== []) {
+            $this->info(' Returned to Finance (/finance/returned-bills), oldest first: '.implode(
+                ' · ',
+                array_map(
+                    fn (array $bill): string => '#'.$bill['number'].' returned '
+                        .($bill['days'] === 0 ? 'today' : $bill['days'].' day'.($bill['days'] === 1 ? '' : 's').' ago'),
+                    $returned,
+                ),
+            ));
+        }
 
         // THE MANDATORY LINES OF THE PRICE LIST, printed for the reason the admission numbers and the
         // award pairs are: they are the INPUTS to every total a money drive checks by hand, and an

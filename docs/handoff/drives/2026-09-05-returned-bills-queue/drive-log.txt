@@ -1,0 +1,57 @@
+signed in as maker@drive.test; landed on http://localhost:8001/login
+
+════ SEAT maker · THEME light ════
+  title           : Returned to Finance - Laravel
+  h1              : Returned to Finance
+  stat cards      : ["Waiting to be corrected3Returned by Internal Audit, still unreleased","Oldest has waited9 daysLonger than a week — this queue is not being worked"]
+  rows rendered   : 3
+    row 1: ["3","Sam Settled","₦3,000.00","27/08/2026","Auditor Drive","The tuition line is charged at last term's rate."]
+    row 2: ["2","Paula Part","₦3,000.00","02/09/2026","Auditor Drive","The tuition line is charged at last term's rate."]
+    row 3: ["1","Ursula Unpaid","₦3,000.00","05/09/2026","Auditor Drive","The tuition line is charged at last term's rate."]
+  action controls in the table (must be []): []
+  uuid on the page       : true
+  "user#" on the page    : false
+  sidebar /finance links : ["/finance","/finance/decisions","/finance/opening-balances/import","/finance/bulk-invoice-runs","/finance/manual-invoice-runs","/finance/returned-bills","/finance/bank-accounts","/finance/fee-schedules","/finance/discount-policies","/finance/discount-award-imports"]
+
+════ SEAT maker · THEME dark ════
+  title           : Returned to Finance - Laravel
+  h1              : Returned to Finance
+  stat cards      : ["Waiting to be corrected3Returned by Internal Audit, still unreleased","Oldest has waited9 daysLonger than a week — this queue is not being worked"]
+  rows rendered   : 3
+    row 1: ["3","Sam Settled","₦3,000.00","27/08/2026","Auditor Drive","The tuition line is charged at last term's rate."]
+    row 2: ["2","Paula Part","₦3,000.00","02/09/2026","Auditor Drive","The tuition line is charged at last term's rate."]
+    row 3: ["1","Ursula Unpaid","₦3,000.00","05/09/2026","Auditor Drive","The tuition line is charged at last term's rate."]
+  action controls in the table (must be []): []
+  uuid on the page       : true
+  "user#" on the page    : false
+  sidebar /finance links : ["/finance","/finance/decisions","/finance/opening-balances/import","/finance/bulk-invoice-runs","/finance/manual-invoice-runs","/finance/returned-bills","/finance/bank-accounts","/finance/fee-schedules","/finance/discount-policies","/finance/discount-award-imports"]
+
+════ SEAT school-b (isolation + EMPTY) · THEME light ════
+  stat cards      : ["Waiting to be corrected0Returned by Internal Audit, still unreleased","Oldest has waited—How long the oldest bill has been waiting"]
+  rows rendered   : 0
+  empty heading   : "Nothing has been returned"
+  failed heading  : null  (must be null — empty is not failed)
+  School A's reason text present? false
+
+════ SEAT school-b (isolation + EMPTY) · THEME dark ════
+  stat cards      : ["Waiting to be corrected0Returned by Internal Audit, still unreleased","Oldest has waited—How long the oldest bill has been waiting"]
+  rows rendered   : 0
+  empty heading   : "Nothing has been returned"
+  failed heading  : null  (must be null — empty is not failed)
+  School A's reason text present? false
+
+════ SEAT maker · the FEED ABORTED ════
+  stat cards      : ["Waiting to be corrected—Returned by Internal Audit, still unreleased","Oldest has waited—How long the oldest bill has been waiting"]
+  failed heading  : "Could not load the queue"
+  empty heading   : null  (must be null)
+
+════ SEAT auditor (internal_auditor) ════
+  GET /finance/returned-bills -> HTTP 403
+  auditor's own queue title : Invoice review queue - Laravel
+  /finance links in the auditor's sidebar (must be []): []
+
+CONSOLE ERRORS (4):
+  [maker@drive.test] Failed to load resource: the server responded with a status of 403 (Forbidden)
+  [school-b@drive.test] Failed to load resource: the server responded with a status of 403 (Forbidden)
+  [maker@drive.test] Failed to load resource: net::ERR_FAILED
+  [auditor@drive.test] Failed to load resource: the server responded with a status of 403 (Forbidden)

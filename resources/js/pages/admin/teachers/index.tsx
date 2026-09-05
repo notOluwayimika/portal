@@ -13,7 +13,7 @@ import {
     UserPlus,
     X,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'react-toastify';
 import { Pagination } from '@/components/pagination';
 import { ImportTeacherForm } from '@/components/teachers/import-teacher-form';
@@ -72,29 +72,79 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
     const [teacherFormProcessing, setTeacherFormProcessing] = useState(false);
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
     const [isSubjectsModalOpen, setIsSubjectsModalOpen] = useState(false);
-    const [managingSchoolsFor, setManagingSchoolsFor] = useState<Teacher | null>(null);
+    const [managingSchoolsFor, setManagingSchoolsFor] =
+        useState<Teacher | null>(null);
     const [currentTeacher, setCurrentTeacher] = useState<Teacher | null>(null);
     const [curricula, setCurricula] = useState<CurriculumOption[]>([]);
     const [exporting, setExporting] = useState(false);
 
+    /*
+     * A PROMISE CHAIN WITH NO LEADING setState — CAUSE 1 AND CAUSE 2, the two that
+     * `resources/js/pages/admin/internal-audit/review-queue.tsx` records for
+     * `react-hooks/set-state-in-effect`. This function had both, exactly as that page did.
+     *
+     * CAUSE 1 was `setLoading(true)` as the first statement — the docblock names that one in as
+     * many words: "this opened with `setLoading(true)`, which runs SYNCHRONOUSLY in the effect
+     * body". It is gone from here. CAUSE 2 was the `catch`/`finally` of a `try { await … }`: if the
+     * awaited expression throws before it yields a promise, control arrives in the same tick, so
+     * `setLoading(false)` was synchronously reachable too. A promise continuation is always
+     * scheduled, so every setState below is unreachable synchronously by construction.
+     *
+     * `useCallback` KEYED ON THE THREE FETCH INPUTS is what lets the effect depend on the function
+     * itself and satisfy `exhaustive-deps` HONESTLY. Naming `fetchTeachers` in the dep list while it
+     * was redefined every render would have fetched on EVERY RENDER; keyed this way its identity
+     * changes exactly when `search`, `page` or `limit` does — which is precisely when the old dep
+     * list re-ran. Same requests, same order.
+     */
+    const fetchTeachers = useCallback(
+        () =>
+            axios
+                .get('/api/teachers', {
+                    params: { search, page, per_page: limit },
+                })
+                .then((res) => {
+                    setTeachers(res.data.data || []);
 
+                    if (res.data.pagination) {
+                        setPagination(res.data.pagination);
+                    }
+                })
+                .catch(() => {
+                    toast.error('Failed to fetch teachers');
+                })
+                .finally(() => setLoading(false)),
+        [search, page, limit],
+    );
 
-    const fetchTeachers = async () => {
-        try {
-            setLoading(true);
-            const res = await axios.get('/api/teachers', {
-                params: { search, page, per_page: limit },
-            });
-            setTeachers(res.data.data || []);
+    /*
+     * WHERE `setLoading(true)` WENT, AND WHY IT IS NOT ONLY IN THE FOUR DEP HANDLERS.
+     *
+     * Moving it out of the fetch means every caller must now raise it, and there are SEVEN, not
+     * four: the three dep-changing controls (search input, its clear button, and the paginator's
+     * page and limit) go through `startLoading` wrappers below, but SIX further call sites reload
+     * after a mutation — delete, status change, create/update, import, and the manage-schools
+     * dialog. Had `setLoading(true)` gone only to the dep handlers, those six would have refetched
+     * with no spinner: the screen would silently stop showing that it is working, which is a defect
+     * no gate here can see. `reload()` is what they call instead.
+     */
+    const reload = () => {
+        setLoading(true);
+        void fetchTeachers();
+    };
 
-            if (res.data.pagination) {
-                setPagination(res.data.pagination);
-            }
-        } catch {
-            toast.error('Failed to fetch teachers');
-        } finally {
-            setLoading(false);
-        }
+    const changeSearch = (value: string) => {
+        setLoading(true);
+        setSearch(value);
+    };
+
+    const changePage = (value: number) => {
+        setLoading(true);
+        setPage(value);
+    };
+
+    const changeLimit = (value: number) => {
+        setLoading(true);
+        setLimit(value);
     };
 
     useEffect(() => {
@@ -107,8 +157,8 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
     }, []);
 
     useEffect(() => {
-        fetchTeachers();
-    }, [search, page, limit]);
+        void fetchTeachers();
+    }, [fetchTeachers]);
 
     const { confirmAndExecute } = useApiSweetAlertConfirmation();
 
@@ -126,7 +176,7 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
 
         if (result !== false) {
             toast.success('Teacher deleted successfully');
-            fetchTeachers();
+            reload();
         }
     };
 
@@ -151,7 +201,7 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
                 status: newStatus,
             });
             toast.success(`Teacher status updated to ${newStatus}`);
-            fetchTeachers();
+            reload();
         } catch {
             toast.error('Failed to update teacher status');
         }
@@ -164,7 +214,7 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
                 ? 'Teacher updated successfully'
                 : 'Teacher created successfully',
         );
-        fetchTeachers();
+        reload();
     };
 
     const handleExport = async () => {
@@ -209,9 +259,8 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
         <>
             <Head title="Teachers" />
 
-            <div className="min-h-screen bg-[#f5f7fb] py-5 px-4 sm:px-6 lg:px-8 pb-24 dark:bg-background">
+            <div className="min-h-screen bg-[#f5f7fb] px-4 py-5 pb-24 sm:px-6 lg:px-8 dark:bg-background">
                 <div className="mx-auto max-w-7xl space-y-5">
-
                     {/* ── Hero Card ─────────────────────────────────────────────── */}
                     <div className="relative overflow-hidden rounded-2xl border border-white bg-white px-6 py-4 shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:border-white/5 dark:bg-card">
                         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -276,21 +325,29 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
                                         placeholder="Search by name or staff number…"
                                         className="h-9 rounded-lg border-slate-200 bg-white pl-9 text-sm focus-visible:ring-2 focus-visible:ring-indigo-100 dark:border-slate-700 dark:bg-slate-900"
                                         value={search}
-                                        onChange={(e) => setSearch(e.target.value)}
+                                        onChange={(e) =>
+                                            changeSearch(e.target.value)
+                                        }
                                     />
                                 </div>
 
                                 <div className="flex items-center gap-2 sm:ml-auto">
                                     <span className="hidden text-xs font-medium text-slate-500 sm:inline">
-                                        Showing <span className="font-bold text-slate-700 dark:text-slate-200">{teachers.length}</span> of{' '}
-                                        <span className="font-bold text-slate-700 dark:text-slate-200">{pagination.total}</span>
+                                        Showing{' '}
+                                        <span className="font-bold text-slate-700 dark:text-slate-200">
+                                            {teachers.length}
+                                        </span>{' '}
+                                        of{' '}
+                                        <span className="font-bold text-slate-700 dark:text-slate-200">
+                                            {pagination.total}
+                                        </span>
                                     </span>
                                     {search && (
                                         <Button
                                             type="button"
                                             size="sm"
                                             variant="ghost"
-                                            onClick={() => setSearch('')}
+                                            onClick={() => changeSearch('')}
                                             className="rounded-lg text-slate-500 hover:bg-slate-50 hover:text-slate-700"
                                         >
                                             <X className="mr-1 h-3.5 w-3.5" />
@@ -302,7 +359,7 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
                         </div>
 
                         {/* Table */}
-                        <div className="overflow-x-auto custom-scrollbar">
+                        <div className="custom-scrollbar overflow-x-auto">
                             <table className="w-full text-xs">
                                 <thead>
                                     <tr className="border-b border-slate-100 bg-slate-50/50 dark:border-slate-800 dark:bg-slate-900/30">
@@ -334,13 +391,19 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
                                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                                     {loading ? (
                                         <tr>
-                                            <td colSpan={multiSchool ? 7 : 6} className="py-10 text-center">
+                                            <td
+                                                colSpan={multiSchool ? 7 : 6}
+                                                className="py-10 text-center"
+                                            >
                                                 <Spinner className="mx-auto" />
                                             </td>
                                         </tr>
                                     ) : (teachers?.length ?? 0) === 0 ? (
                                         <tr>
-                                            <td colSpan={multiSchool ? 7 : 6} className="py-10 text-center text-xs text-muted-foreground">
+                                            <td
+                                                colSpan={multiSchool ? 7 : 6}
+                                                className="py-10 text-center text-xs text-muted-foreground"
+                                            >
                                                 No teachers found.
                                             </td>
                                         </tr>
@@ -354,41 +417,58 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
                                                     <div className="flex items-center gap-2.5">
                                                         <Avatar className="size-7 shrink-0 overflow-hidden rounded-full">
                                                             <AvatarImage
-                                                                src={teacher?.photo ?? undefined}
-                                                                alt={teacher.full_name}
+                                                                src={
+                                                                    teacher?.photo ??
+                                                                    undefined
+                                                                }
+                                                                alt={
+                                                                    teacher.full_name
+                                                                }
                                                             />
                                                             <AvatarFallback className="rounded-full bg-neutral-200 text-[10px] text-black dark:bg-neutral-700 dark:text-white">
-                                                                {getInitials(teacher.full_name)}
+                                                                {getInitials(
+                                                                    teacher.full_name,
+                                                                )}
                                                             </AvatarFallback>
                                                         </Avatar>
                                                         <Link
                                                             href={`/setup/teacher/${teacher.id}`}
-                                                            className="hover:text-primary hover:underline transition-colors"
+                                                            className="transition-colors hover:text-primary hover:underline"
                                                         >
                                                             {teacher.full_name}
                                                         </Link>
                                                     </div>
                                                 </td>
                                                 <td className="px-3 py-2.5 text-muted-foreground">
-                                                    {teacher.staff_number || '—'}
+                                                    {teacher.staff_number ||
+                                                        '—'}
                                                 </td>
                                                 <td className="px-3 py-2.5 text-muted-foreground">
-                                                    {teacher.qualification || '—'}
+                                                    {teacher.qualification ||
+                                                        '—'}
                                                 </td>
                                                 <td className="px-3 py-2.5 text-muted-foreground">
-                                                    {formatDate(teacher.hire_date) || '—'}
+                                                    {formatDate(
+                                                        teacher.hire_date,
+                                                    ) || '—'}
                                                 </td>
                                                 <td className="px-3 py-2.5">
                                                     <Select
                                                         value={teacher.status}
                                                         onChange={(val) =>
-                                                            val && handleStatusChange(teacher, String(val))
+                                                            val &&
+                                                            handleStatusChange(
+                                                                teacher,
+                                                                String(val),
+                                                            )
                                                         }
                                                         options={
-                                                            teacher_statuses?.map((s) => ({
-                                                                label: s.name,
-                                                                value: s.value,
-                                                            })) || []
+                                                            teacher_statuses?.map(
+                                                                (s) => ({
+                                                                    label: s.name,
+                                                                    value: s.value,
+                                                                }),
+                                                            ) || []
                                                         }
                                                         buttonClass={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold capitalize border-none hover:bg-opacity-80 transition-colors ${statusBadgeClass(teacher.status)}`}
                                                     />
@@ -396,16 +476,23 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
                                                 {multiSchool && (
                                                     <td className="px-3 py-2.5">
                                                         <div className="flex flex-wrap gap-1">
-                                                            {(teacher.schools ?? []).map((school) => (
+                                                            {(
+                                                                teacher.schools ??
+                                                                []
+                                                            ).map((school) => (
                                                                 <span
-                                                                    key={school.uuid}
+                                                                    key={
+                                                                        school.uuid
+                                                                    }
                                                                     className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${
                                                                         school.is_home
                                                                             ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400'
                                                                             : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
                                                                     }`}
                                                                 >
-                                                                    {school.name}
+                                                                    {
+                                                                        school.name
+                                                                    }
                                                                 </span>
                                                             ))}
                                                         </div>
@@ -418,7 +505,11 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
                                                             size="icon"
                                                             className="h-7 w-7"
                                                             title="Assigned Subjects"
-                                                            onClick={() => handleOpenSubjects(teacher)}
+                                                            onClick={() =>
+                                                                handleOpenSubjects(
+                                                                    teacher,
+                                                                )
+                                                            }
                                                         >
                                                             <BookOpen className="h-3.5 w-3.5" />
                                                         </Button>
@@ -432,8 +523,14 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
                                                                         ? 'Manage school access'
                                                                         : 'Teacher has no login account'
                                                                 }
-                                                                disabled={!teacher.has_user}
-                                                                onClick={() => setManagingSchoolsFor(teacher)}
+                                                                disabled={
+                                                                    !teacher.has_user
+                                                                }
+                                                                onClick={() =>
+                                                                    setManagingSchoolsFor(
+                                                                        teacher,
+                                                                    )
+                                                                }
                                                             >
                                                                 <Building2 className="h-3.5 w-3.5" />
                                                             </Button>
@@ -442,7 +539,11 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
                                                             variant="ghost"
                                                             size="icon"
                                                             className="h-7 w-7"
-                                                            onClick={() => handleEdit(teacher)}
+                                                            onClick={() =>
+                                                                handleEdit(
+                                                                    teacher,
+                                                                )
+                                                            }
                                                         >
                                                             <Edit className="h-3.5 w-3.5" />
                                                         </Button>
@@ -450,7 +551,11 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
                                                             variant="ghost"
                                                             size="icon"
                                                             className="h-7 w-7 text-destructive hover:bg-destructive/10"
-                                                            onClick={() => handleDelete(teacher)}
+                                                            onClick={() =>
+                                                                handleDelete(
+                                                                    teacher,
+                                                                )
+                                                            }
                                                         >
                                                             <Trash2 className="h-3.5 w-3.5" />
                                                         </Button>
@@ -466,8 +571,8 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
                         <div className="border-t border-slate-50 bg-slate-50/30 px-5 py-3 dark:border-slate-800 dark:bg-slate-900/30">
                             <Pagination
                                 meta={pagination}
-                                setPage={setPage}
-                                setLimit={setLimit}
+                                setPage={changePage}
+                                setLimit={changeLimit}
                             />
                         </div>
                     </div>
@@ -481,12 +586,27 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
                 size="lg"
                 footer={
                     <div className="flex justify-end gap-3">
-                        <Button type="button" variant="outline" onClick={() => setIsFormModalOpen(false)} disabled={teacherFormProcessing}>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setIsFormModalOpen(false)}
+                            disabled={teacherFormProcessing}
+                        >
                             Cancel
                         </Button>
-                        <Button type="submit" form="teacher-form" disabled={teacherFormProcessing}>
-                            {teacherFormProcessing ? <Spinner className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                            {currentTeacher ? 'Update Teacher' : 'Create Teacher'}
+                        <Button
+                            type="submit"
+                            form="teacher-form"
+                            disabled={teacherFormProcessing}
+                        >
+                            {teacherFormProcessing ? (
+                                <Spinner className="mr-2 h-4 w-4 animate-spin" />
+                            ) : (
+                                <Save className="mr-2 h-4 w-4" />
+                            )}
+                            {currentTeacher
+                                ? 'Update Teacher'
+                                : 'Create Teacher'}
                         </Button>
                     </div>
                 }
@@ -508,7 +628,7 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
                 <ImportTeacherForm
                     onSuccess={() => {
                         setIsImportModalOpen(false);
-                        fetchTeachers();
+                        reload();
                     }}
                     onCancel={() => setIsImportModalOpen(false)}
                 />
@@ -541,7 +661,7 @@ export default function TeacherList({ teacher_statuses }: TeacherListProps) {
                     onClose={() => setManagingSchoolsFor(null)}
                     onSuccess={() => {
                         setManagingSchoolsFor(null);
-                        fetchTeachers();
+                        reload();
                     }}
                 />
             )}

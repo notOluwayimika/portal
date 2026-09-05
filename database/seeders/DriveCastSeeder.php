@@ -3,11 +3,13 @@
 namespace Database\Seeders;
 
 use App\Enums\ScholarshipKind;
+use App\Enums\TeacherAssignmentRoleEnum;
 use App\Enums\TermStatusEnum;
 use App\Models\AcademicSession;
 use App\Models\Arm;
 use App\Models\ClassLevel;
 use App\Models\ClassLevelArm;
+use App\Models\ClassLevelArmTeacher;
 use App\Models\Curriculum;
 use App\Models\Permission;
 use App\Models\Role;
@@ -15,6 +17,7 @@ use App\Models\Scholarship;
 use App\Models\School;
 use App\Models\Student;
 use App\Models\StudentCurriculum;
+use App\Models\Teacher;
 use App\Models\Term;
 use App\Models\User;
 use Illuminate\Database\Seeder;
@@ -495,6 +498,69 @@ class DriveCastSeeder extends Seeder
         $super->flushSchoolAccessCache();
 
         $this->schoolBMaker = $this->driveUser('school-b@drive.test', $schoolB, 'accounts_officer');
+
+        // ── ONE TEACHER AND ONE ASSIGNMENT, ADDED FOR THE ConfirmDialog DRIVE ──────────────────
+        //
+        // THE FIXTURE SEEDS NO TEACHERS AT ALL — `DriveCastSeeder` and `SeedDriveFixture` between
+        // them contained the word zero times, the same shape as the scholarships gap this file
+        // already records. So `/setup/teacher-assignments` opened onto an empty table, its Remove
+        // button never rendered, and the shared `ConfirmDialog` could not be opened by any drive.
+        // A screen you could not open is not a screen you proved.
+        //
+        // WRITTEN DIRECTLY, AND THE ARGUMENT IS THE WEAKER FORM THIS FILE ALREADY DOCUMENTS for the
+        // two CLASSIFIED scholarship rows: the sanctioned writer is a CONTROLLER rather than an
+        // Action (`TeacherAssignmentController::store`), and the row it creates is
+        // `ClassLevelArmTeacher::create(['class_level_arm_id','teacher_id','role','gender',
+        // 'assigned_by'])` — so this write is byte-identical to the endpoint's rather than a
+        // shortcut past it. The moment an Action exists, this moves to it.
+        $teacherUser = $this->driveUser('teacher@drive.test', $schoolA, null);
+        $teacher = Teacher::firstOrCreate(
+            ['school_id' => $schoolA->id, 'user_id' => $teacherUser->id],
+            [
+                'staff_number' => 'DRIVE-T-001',
+                'first_name' => 'Drive',
+                'last_name' => 'Teacher',
+                'gender' => 'female',
+                'status' => 'active',
+            ],
+        );
+
+        // THIRTY MORE, AND THE NUMBER IS THE POINT RATHER THAN PADDING. The teachers screen
+        // paginates at 25 by default, so a fixture with one teacher has ONE page: its `Next` button
+        // renders DISABLED and the page control cannot be exercised at all. A drive that clicked it
+        // would report "no spinner" and be measuring a disabled button rather than the code under
+        // test. Thirty-one rows is the smallest count that puts a second page on screen.
+        //
+        // They carry no user account: this screen lists teachers and changes their status, and
+        // neither read needs one. `teacher@drive.test` above is the one that does, because it is
+        // the row the assignment — and therefore the ConfirmDialog — hangs off.
+        foreach (range(2, 31) as $n) {
+            Teacher::firstOrCreate(
+                ['school_id' => $schoolA->id, 'staff_number' => sprintf('DRIVE-T-%03d', $n)],
+                [
+                    'first_name' => 'Drive',
+                    'last_name' => 'Teacher '.$n,
+                    'gender' => $n % 2 === 0 ? 'female' : 'male',
+                    'status' => 'active',
+                ],
+            );
+        }
+
+        // The arm the academic slot already seeds on JSS 1 — see seedAcademicSlot(). JSS 2 is left
+        // unarmed on purpose, so this assignment can only land on the one that exists.
+        $arm = ClassLevelArm::query()
+            ->whereIn('class_level_id', ClassLevel::where('school_id', $schoolA->id)->pluck('id'))
+            ->first();
+
+        if ($arm !== null) {
+            ClassLevelArmTeacher::firstOrCreate(
+                [
+                    'class_level_arm_id' => $arm->id,
+                    'role' => TeacherAssignmentRoleEnum::FORM_TEACHER->value,
+                ],
+                ['teacher_id' => $teacher->id, 'gender' => null, 'assigned_by' => $this->adminA?->id],
+            );
+        }
 
         // ── TWO INTERNAL-AUDIT SEATS, ADDED FOR THE REVIEW-QUEUE DRIVE ──────────────────────────
         //

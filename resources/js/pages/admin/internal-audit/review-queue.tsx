@@ -154,6 +154,16 @@ export default function InternalAuditReviewQueue() {
      * arrives synchronously. Measured with probes — a function differing only in having a
      * state-setting catch reproduced the error. A promise continuation is always scheduled, so
      * every setState here is unreachable synchronously by construction rather than by inspection.
+     *
+     * AND CAUSE 1 HAS A SECOND REMEDY, for the shape neither of the above fits. When the effect
+     * exists to SEED state from props there is no handler to move the setState into and no promise
+     * to chain — the write is not caused by an event and is not the tail of a request. The remedy
+     * is to make the state INITIALISE rather than update: split the wrapper from the body so the
+     * body's `useState` initialisers run with the props already in hand, and put the identity on
+     * the wrapper as `key={…}`. The key is what keeps it a refactor rather than a silent behaviour
+     * change — it reproduces the old effect's re-seed by remounting when that identity changes,
+     * which is exactly what the old dependency array did. Landed in
+     * `resources/js/components/students/edit-pivot-modal.tsx`.
      */
     const load = useCallback(
         () =>

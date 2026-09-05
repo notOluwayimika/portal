@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useState } from 'react'
 import Modal from './Modal'
 
 interface ConfirmDialogProps {
@@ -26,18 +26,42 @@ export default function ConfirmDialog({
 }: ConfirmDialogProps) {
     const [inputValue, setInputValue] = useState('')
 
-    useEffect(() => {
-        if (!isOpen) {
-            setInputValue('')
-        }
-    }, [isOpen])
+    /*
+     * THE RESET LIVES IN THE EVENT HANDLERS, NOT IN AN EFFECT — CAUSE 1 of the two that
+     * `resources/js/pages/admin/internal-audit/review-queue.tsx` records for
+     * `react-hooks/set-state-in-effect`, not a third pattern.
+     *
+     * This file carried `useEffect(() => { if (!isOpen) setInputValue('') }, [isOpen])`, which is
+     * that docblock's first cause exactly: a setState that "runs SYNCHRONOUSLY in the effect body".
+     * The same page states the remedy in as many words at its `refresh` handler — "An EVENT
+     * HANDLER, not an effect — here the transition ... is real, and a synchronous setState is
+     * correct."
+     *
+     * Closing and confirming ARE those events, and every path out of this dialog goes through one:
+     * `Modal` calls `onClose` for the backdrop, the close icon and Escape, and Cancel calls it
+     * directly. The reset now happens where the cause is, and no effect observes a prop to infer
+     * what already happened.
+     *
+     * NO BEHAVIOUR CHANGES TODAY, stated rather than implied: `requiresTyping` and `expectedText`
+     * are passed by NOBODY — measured across resources/js — so `canConfirm` is always true and
+     * `inputValue` is never rendered.
+     */
+    const close = () => {
+        setInputValue('')
+        onClose()
+    }
+
+    const confirm = () => {
+        setInputValue('')
+        onConfirm()
+    }
 
     const canConfirm = requiresTyping ? inputValue === expectedText : true
 
     return (
         <Modal
             isOpen={isOpen}
-            onClose={onClose}
+            onClose={close}
             title={title}
             size="sm"
             footer={
@@ -45,14 +69,14 @@ export default function ConfirmDialog({
                     <button
                         type="button"
                         className="border border-gray-300 bg-white text-gray-600 rounded-lg px-4 py-2 text-sm hover:bg-gray-50"
-                        onClick={onClose}
+                        onClick={close}
                     >
                         Cancel
                     </button>
                     <button
                         type="button"
                         className={`rounded-lg px-4 py-2 text-sm ${dangerous ? 'bg-red-50 text-red-700 border border-red-200 hover:bg-red-100' : 'bg-[#185FA5] text-white hover:bg-[#0f4a82]'} ${!canConfirm ? 'opacity-50 cursor-not-allowed' : ''}`}
-                        onClick={onConfirm}
+                        onClick={confirm}
                         disabled={!canConfirm}
                     >
                         {confirmLabel}

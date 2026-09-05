@@ -109,6 +109,33 @@ one level up, to the premise rather than to the result.
   correct in both shells, so the guard covers the empty case and the shell
   difference at once. Fix the class, not the instance.
 
+  **AN INSTRUMENT THAT EXAMINED NOTHING MUST NOT REPORT SUCCESS — and the paragraph above
+  predicted its own sequel.** It ends by warning that a tool tolerating a joined path "would
+  fail SILENTLY, reporting success having formatted nothing". Prettier does exactly that, and
+  it was measured doing it (2026-09-05) inside the commit written to close this class. Four
+  shapes, all measured on this repository:
+
+  | shape | instance |
+  | --- | --- |
+  | **handed no input** | `bin/ci-tsc-ratchet.php` counted an empty output file as zero type errors, printed `DECREASED (good!)`, and told the operator to run `generate` — which wrote `baseline 0` and ended the ratchet. A tsc CRASH message produced the byte-identical verdict. |
+  | **handed an empty list** | `pint "${files[@]}"` with no elements lints the WHOLE PROJECT — the entry one line above this. |
+  | **unable to run** | `eslint --format unix`: the formatter was removed in ESLint 9, so the command errors out having linted nothing, and a findings count read off its output is 0. |
+  | **unable to match** | `prettier` handed N paths as ONE argument matches nothing, then prints `All matched files use Prettier code style!`. The `[error] No files matching the pattern were found` sits ABOVE it and is the only tell. |
+
+  Note what the four have in common and where they differ. All four answer a question they were
+  given nothing to answer. But the first fails on ABSENT INPUT, the second on an EMPTY SELECTION —
+  and those are opposite behaviours from the same cause, because a tool handed nothing either does
+  nothing or does everything, and both are wrong answers to "check these files". The last two are
+  not about arguments at all: the TOOL ITSELF did not run, and the caller read its silence as a
+  clean result.
+
+  **Before believing any gate's green, ask what it examined, and require it to say. The count of
+  things examined is part of the RESULT, not diagnostics** — the same discipline as the three
+  numbers a gate reports two entries down, applied to the input rather than to coverage. This is
+  cheap to check and it is checked from OUTSIDE the tool: a positive control (plant one violation,
+  confirm it is reported) distinguishes "nothing wrong" from "nothing looked at" in one run, and
+  it is what caught the eslint and prettier instances above.
+
   And read `git diff --stat` against your own model of the change before
   pushing — no gate objects to a commit full of correct formatting, and none
   should.

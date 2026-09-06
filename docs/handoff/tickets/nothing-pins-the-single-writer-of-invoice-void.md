@@ -1,8 +1,43 @@
 # Nothing pins the single writer of `InvoiceStatus::Void`
 
-**Status:** open · **Opened:** 2026-09-05 · **Found by:** the void-approval investigation of
-2026-09-05 · **Severity:** fix, and it is a **precondition** of the correction mechanism now being
-designed — see "Why this is urgent rather than tidy"
+**Status:** THE PIN EXISTS; the ticket stays open for the second producer · **Opened:** 2026-09-05 ·
+**Pinned:** 2026-09-06 on `feat/pin-the-single-writer-of-invoice-void` · **Found by:** the
+void-approval investigation of 2026-09-05 · **Severity:** fix, and it is a **precondition** of the
+correction mechanism now being designed — see "Why this is urgent rather than tidy"
+
+> **2026-09-06 — the precondition is met.** `tests/Arch/InvoiceVoidHasOneWriterTest.php` pins the
+> producers of `InvoiceStatus::Void` to `voidWriterPermittedFiles()`, which holds one entry:
+> `App\Finance\Actions\ApproveVoidRequest`. The literal claim this ticket opened with — *no arch
+> test, no lint, no database constraint* — is now false in its first clause and unchanged in the
+> other two.
+>
+> **The rest of this ticket stands, and it is not decoration.** The four request-table guards are
+> still blind to a bypass; I4 is still detective-only and still sees only the money limb; there is
+> still no database constraint. The arch test makes a second producer VISIBLE at authorship time,
+> which is what the ticket asked for — it does not make one impossible.
+>
+> **What is left, and it is the whole reason this stays open:** the correction mechanism adds the
+> second legitimate producer. Whoever writes it adds one line to `voidWriterPermittedFiles()` with
+> the reason beside it, and that line is the reviewed artifact this ticket exists to force.
+>
+> Two figures in the table below were measured on `ca8dbc45` and have moved: `ReturnInvoice.php`'s
+> guard is now `:175` (not `:174`) and `ApproveInvoice.php`'s is `:156` (not `:155`); the denominator
+> is **634** `.php` files under `app/`, not 632. The counts — 6 occurrences, 1 of them a write — are
+> unchanged. `Invoice.php:217` is more precisely an ARGUMENT (`->value` passed into `where()`) than a
+> comparison. Re-derived on `064de707`; see
+> `docs/handoff/reports/feat-pin-the-single-writer-of-invoice-void.md`.
+>
+> The report also records what the pin deliberately does NOT judge, so a reader of this ticket does
+> not come away believing the hole is fully shut — four rows are stated OPEN, including an import
+> alias, a call made through a variable, and the string marker laundered through a variable.
+>
+> **AND THE FIRST VERSION OF THE PIN WAS DEFEATED BEFORE IT MERGED.** A cold review beat it with
+> three spellings of a direct void write — `setAttribute('status', InvoiceStatus::Void)`,
+> `setAttribute('status', 'void')` and `data_set($i, 'status', InvoiceStatus::Void)` — each of which
+> reported a clean run with `unrecognised` zero. All three were reproduced on the tree before the
+> fix. The cause was ORDERING: a `,` meant "an argument, therefore benign", decided before anything
+> asked what it was an argument to. The shipped pin inverts that default — benign must be positively
+> earned, and a call in neither the mutator nor the reader list lands in a bucket asserted ZERO.
 
 ## What is true
 
@@ -120,3 +155,15 @@ The bite-proof it needs is the one that distinguishes it from a vacuous green: p
 `status => InvoiceStatus::Void` write in a second file, watch it red, restore. And the inverse, which
 is the arm that actually earns the tokeniser: put the same text in a **comment** and confirm it does
 **not** red.
+
+**DONE, 2026-09-06 — and with a third bite-proof this ticket did not ask for.** Both of the above
+were run and behaved as specified. The third: delete `ApproveVoidRequest`'s write entirely and
+confirm the test reds on ZERO producers too, because a permitted list satisfied by nothing is a
+vacuous green in the other direction. The shipped assertion is SET EQUALITY against the permitted
+list rather than containment, so the empty set cannot satisfy it and a permitted entry that no longer
+produces anything cannot rot in the list unnoticed.
+
+The shipped rule is also **wider than this section asks for**, deliberately and with the widening
+declared in the file's docblock: it judges every position where the value is PRODUCED INTO A SLOT
+(`=>`, `=`, `return`), not only an ORM write, which closes the launder-through-a-variable hole; and a
+second marker catches the backing value spelled as the string `'void'` under a `status` key.

@@ -113,7 +113,7 @@ enum Permission: string
     // migrations — alongside 22 GET routes in the same flat group. So a role granted it to "see the
     // admin area" can create and edit students and reset a guardian's password.
     //
-    // This is the hazard web.php:1039-1043 already ruled on for the audit seat ("granting a whole
+    // This is the hazard routes/web.php already ruled on for the audit seat ("granting a whole
     // AREA to solve one page means everything later placed in that area inherits it silently",
     // docs/handoff/tickets/audit-seat-has-the-ability-and-no-way-to-reach-it.md). The same ruling
     // applies here, so the resolution is the same shape: a SECOND, read-only door.

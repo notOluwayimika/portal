@@ -1,5 +1,6 @@
 <?php
 
+use App\Exceptions\DutySeparationViolationException;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\Scopes\SchoolScope;
@@ -9,6 +10,7 @@ use Database\Seeders\DatabaseSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Spatie\Permission\PermissionRegistrar;
 
 uses(RefreshDatabase::class);
 
@@ -52,7 +54,7 @@ function pds_post(User $actor, array $payload)
 function pds_pair(): array
 {
     $pairs = DutySeparation::enforcedPairs();
-    expect($pairs)->not->toBeEmpty('no enforced pairs would make every arm here vacuous');
+    expect(count($pairs))->toBeGreaterThan(0, 'no enforced pairs would make every arm here vacuous');
 
     // finance.credit-note.approve ↔ finance.credit-note.submit: executive_director holds the
     // checker, accounts_officer and finance_lead the maker.
@@ -185,7 +187,7 @@ it('refuses a pair split across two throwaway roles, proving the conflict is rea
     $makerRole->givePermissionTo($pair['maker']);
     $checkerRole->givePermissionTo($pair['checker']);
 
-    app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
+    app(PermissionRegistrar::class)->forgetCachedPermissions();
 
     // Neither name appears in any guard — assert that, rather than trusting it, since the whole
     // claim is that the refusal cannot be coming from a name.
@@ -205,7 +207,7 @@ it('refuses a pair split across two throwaway roles, proving the conflict is rea
         'sandbox@example.test',
         (int) $school->id,
         ['sandbox_maker', 'sandbox_checker'],
-    ))->toThrow(\App\Exceptions\DutySeparationViolationException::class, $pair['checker']);
+    ))->toThrow(DutySeparationViolationException::class, $pair['checker']);
 
     // Each side ALONE is fine — the known-negative. Without it, a guard that refused every role set
     // would satisfy the arm above and look like strictness.
@@ -219,7 +221,7 @@ it('refuses a pair split across two throwaway roles, proving the conflict is rea
  * ─── THE ARM THAT DISTINGUISHES LAYER 3 FROM LAYER 2, AND WHY IT HAD TO BE WRITTEN ───────────────
  *
  * Every refusal arm above passes with `ProvisionUserRequest`'s duty-separation check DELETED.
- * Measured, not suspected: removing the call left this file 12/12 green. `bootstrap/app.php:145`
+ * Measured, not suspected: removing the call left this file 12/12 green. `bootstrap/app.php:145 (DutySeparationViolationException)`
  * renders `DutySeparationViolationException` as a redirect-back-with-errors keyed on `roles` —
  * byte-identical in shape to the request's own refusal — and the controller's `DB::transaction`
  * rolls back the loop's writes, so "it was refused" and "nothing was written" are BOTH satisfied by
@@ -284,7 +286,7 @@ it('still refuses at the assignRole layer when the request is bypassed entirely'
     $pair = pds_pair();
 
     expect(fn () => $user->grantSchoolAccess($school, 'accounts_officer'))
-        ->toThrow(\App\Exceptions\DutySeparationViolationException::class, $pair['maker']);
+        ->toThrow(DutySeparationViolationException::class, $pair['maker']);
 
     $aoId = Role::where('name', 'accounts_officer')->whereNull('school_id')->value('id');
 

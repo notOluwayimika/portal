@@ -89,7 +89,7 @@ it('unlocks no write route beyond the reviewed exceptions, and says what it exam
     $this->seed(DatabaseSeeder::class);
 
     $held = av_heldAbilities();
-    expect($held)->not->toBeEmpty('an empty grant set would make every arm below vacuous');
+    expect(count($held))->toBeGreaterThan(0, 'an empty grant set would make every arm below vacuous');
 
     $examined = 0;
     $excluded = 0;

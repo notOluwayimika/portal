@@ -2,6 +2,8 @@
 
 namespace App\Support;
 
+use App\Enums\Permission;
+
 /**
  * Which abilities are READ-ONLY — the convention `admin_viewer` is derived through.
  *
@@ -39,7 +41,7 @@ namespace App\Support;
  *
  * So an area gate never earns read-only status BY NAME. It earns it by somebody coining an explicit
  * read-only door and widening exactly the GET routes onto it — which is what
- * {@see \App\Enums\Permission::ADMIN_AREA_VIEW} is, and why it is the one member of `admin_viewer`
+ * {@see Permission::ADMIN_AREA_VIEW} is, and why it is the one member of `admin_viewer`
  * that cannot be derived from `admin` (admin does not hold it; the OR-gate means it does not need
  * to).
  *

@@ -34,57 +34,135 @@ use Inertia\Inertia;
  */
 class AdminController extends Controller
 {
-    public function index()
+    /**
+     * Per-page sizes the screen offers. A CLOSED LIST, not a free integer: `per_page` arrives from
+     * the query string, so an unbounded value is an unauthenticated-shaped way to ask the database
+     * for every row and every seat join behind it. The neighbouring JSON controllers cap at 200
+     * (GuardianController:778, CurriculumController:425); this keeps the same ceiling and offers
+     * only the sizes the control can actually produce.
+     *
+     * @var list<int>
+     */
+    public const PER_PAGE_OPTIONS = [10, 25, 50, 100, 200];
+
+    public function index(Request $request)
     {
         $assignable = ProvisionUserRequest::assignableRoles();
 
+        $filters = $request->validate([
+            'q' => ['nullable', 'string', 'max:255'],
+            'role' => ['nullable', 'string', 'in:'.implode(',', $assignable)],
+            'school' => ['nullable', 'uuid', 'exists:schools,uuid'],
+            'per_page' => ['nullable', 'integer', 'in:'.implode(',', self::PER_PAGE_OPTIONS)],
+        ]);
+
         $roleIds = Role::whereIn('name', $assignable)->pluck('id');
 
-        // Provisioned users are those holding any assignable role in any school's team. Read
+        // WHICH seats the ROLE and SCHOOL filters select. Narrowing this one query is what makes
+        // both filters work: the page's population IS "holders of an assignable role", so filtering
+        // the holder query filters the page, and no post-hoc collection filtering is needed (which
+        // would page over the wrong set — the classic filter-after-paginate bug).
+        $seatQuery = DB::table('model_has_roles')
+            ->where('model_type', User::class)
+            ->whereIn('role_id', $roleIds);
+
+        if (($filters['role'] ?? null) !== null) {
+            $seatQuery->whereIn('role_id', Role::where('name', $filters['role'])->pluck('id'));
+        }
+
+        if (($filters['school'] ?? null) !== null) {
+            // The seat's TEAM, not the school_user pivot. A person can have pivot access to a school
+            // they hold no seat in, and this screen is about seats — filtering on the pivot would
+            // list people the chosen school has not actually seated.
+            $seatQuery->where('school_id', School::where('uuid', $filters['school'])->value('id'));
+        }
+
+        // Provisioned users are those holding an assignable role in some school's team. Read
         // unscoped: this page is the cross-school view, and a super_admin's passage through
         // authorization never crosses the isolation boundary on its own (ADR 0036) — the unscoped
         // read is what makes the cross-school listing explicit rather than incidental.
-        $userIds = DB::table('model_has_roles')
-            ->whereIn('role_id', $roleIds)
-            ->where('model_type', User::class)
-            ->pluck('model_id')
-            ->unique();
+        $userIds = $seatQuery->pluck('model_id')->unique();
+
+        $term = trim((string) ($filters['q'] ?? ''));
 
         $users = User::withoutGlobalScope(SchoolScope::class)
             ->whereIn('id', $userIds)
+            ->when($term !== '', function ($query) use ($term) {
+                $like = '%'.addcslashes($term, '%_\\').'%';
+
+                // addcslashes on the WILDCARDS, so a search for "a_b" looks for that literal rather
+                // than matching any character where the underscore is. Without it a user typing `%`
+                // matches every row, which reads as a broken filter rather than as a wildcard.
+                $query->where(function ($q) use ($like) {
+                    $q->where('first_name', 'like', $like)
+                        ->orWhere('last_name', 'like', $like)
+                        ->orWhere('email', 'like', $like)
+                        // Full name, so "Ada Lovelace" finds a row neither column matches alone.
+                        ->orWhereRaw("CONCAT(first_name, ' ', last_name) LIKE ?", [$like]);
+                });
+            })
             ->with('schools')
             ->orderBy('first_name')
-            ->get();
+            ->orderBy('last_name')
+            // ORDER BY id LAST — first_name is not unique, and MySQL gives no stable order among
+            // ties, so without a tiebreaker a row can appear on two pages or on none.
+            ->orderBy('id')
+            ->paginate($filters['per_page'] ?? 25)
+            ->withQueryString();
 
         // role name + school id per user, so the screen can say WHICH seat in WHICH school rather
         // than a flat role list that loses the team dimension the whole model turns on.
+        //
+        // Scoped to the CURRENT PAGE's users, not to every match: this is the join that grows with
+        // the result set, and it is the reason the page needed pagination at all.
+        $pageUserIds = collect($users->items())->pluck('id');
+
         $roleNames = Role::whereIn('id', $roleIds)->pluck('name', 'id');
         $seats = DB::table('model_has_roles')
             ->whereIn('role_id', $roleIds)
             ->where('model_type', User::class)
-            ->whereIn('model_id', $userIds)
+            ->whereIn('model_id', $pageUserIds)
             ->get(['model_id', 'role_id', 'school_id'])
             ->groupBy('model_id');
 
         $schoolNames = School::pluck('name', 'id');
 
         return Inertia::render('super-admin/admins/index', [
-            'admins' => $users->map(fn ($u) => [
+            'admins' => collect($users->items())->map(fn ($u) => [
                 'uuid' => $u->uuid,
                 'name' => $u->full_name,
                 'email' => $u->email,
                 'disabled' => $u->isDisabled(),
-                'schools' => $u->schools->map(fn ($s) => ['uuid' => $s->uuid, 'name' => $s->name])->values(),
+                'schools' => $u->schools->map(fn ($s) => ['uuid' => $s->uuid, 'name' => $s->name])->values()->all(),
+                // Every seat this person holds — NOT narrowed by the role/school filter. The filter
+                // decides WHO is listed; hiding their other seats would make the row a lie about
+                // the person, and this screen exists to show what somebody actually holds.
                 'seats' => collect($seats[$u->id] ?? [])
                     ->map(fn ($r) => [
                         'role' => $roleNames[$r->role_id] ?? null,
                         'school' => $r->school_id === null ? null : ($schoolNames[$r->school_id] ?? null),
                     ])
                     ->filter(fn ($s) => $s['role'] !== null)
-                    ->values(),
-            ])->values(),
+                    ->values()
+                    ->all(),
+            ])->values()->all(),
+            'pagination' => [
+                'total' => $users->total(),
+                'per_page' => $users->perPage(),
+                'current_page' => $users->currentPage(),
+                'last_page' => $users->lastPage(),
+                'from' => $users->firstItem(),
+                'to' => $users->lastItem(),
+            ],
+            'filters' => [
+                'q' => $term === '' ? null : $term,
+                'role' => $filters['role'] ?? null,
+                'school' => $filters['school'] ?? null,
+                'per_page' => $users->perPage(),
+            ],
+            'per_page_options' => self::PER_PAGE_OPTIONS,
             'schools' => School::orderBy('name')->get()
-                ->map(fn ($s) => ['uuid' => $s->uuid, 'name' => $s->name])->values(),
+                ->map(fn ($s) => ['uuid' => $s->uuid, 'name' => $s->name])->values()->all(),
             'assignable_roles' => $assignable,
         ]);
     }
@@ -127,7 +205,7 @@ class AdminController extends Controller
                 //
                 // email_verified_at IS set, and without it the line above would be a lockout rather
                 // than an enrolment. `settings/security` — the page EnsureTwoFactorEnrolled sends
-                // them to — sits behind `verified` (routes/settings.php:15), and nothing on this
+                // them to — sits behind `verified` (routes/settings.php:18 (SecurityController)), and nothing on this
                 // path fires the Registered event, so no verification mail is ever sent: the
                 // account would bounce from the 2FA redirect to a verification notice it can never
                 // satisfy. Provisioning BY A SUPER ADMIN is the verification event here — an
@@ -155,12 +233,13 @@ class AdminController extends Controller
                 }
             }
 
-            // Keep the fallback pointing at a school they can actually reach. Only ever set when it
-            // is unset or stale — an existing staffer's primary school is theirs, not this flow's
-            // to move.
-            if ($user->school_id === null) {
-                $user->forceFill(['school_id' => $schools->first()->id])->save();
-            }
+            // NOTHING TOUCHES `users.school_id` ON THIS PATH, and the omission is deliberate twice
+            // over. A new account already took its primary school in the create above; an existing
+            // staffer's primary school is theirs, not this flow's to move. And reading the column
+            // to decide would be a NEW legacy-source consumer, which `bin/ci-runtime-zero-lint.php`
+            // and the boundary lint both forbid — the column is on its way out (Constitution 13,
+            // ADR 0042) and access is governed by the pivot and by model_has_roles. A first draft
+            // here did read it, and both gates said so.
 
             return $user;
         });

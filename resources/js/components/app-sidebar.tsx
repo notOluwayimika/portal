@@ -343,9 +343,12 @@ const superAdminNavGroups: NavGroup[] = [
                 icon: Shield,
             },
             {
-                title: 'Admins',
+                // Renamed from 'Admins' (2026-09-06): the screen behind it provisions every
+                // assignable seat — the finance roles, the school seats, admin_viewer — not
+                // just admins. The route keeps its path so no link or bookmark breaks.
+                title: 'User Management',
                 href: '/super-admin/admins',
-                icon: Shield,
+                icon: Users,
             },
         ],
     },

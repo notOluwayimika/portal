@@ -8,6 +8,7 @@ use App\Support\ReadOnlyAbility;
 use Database\Seeders\DatabaseSeeder;
 use Database\Seeders\RbacSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\Feature\Rbac\AdminViewerHoldsNoWriteGateTest;
 
 uses(RefreshDatabase::class);
 
@@ -22,7 +23,7 @@ uses(RefreshDatabase::class);
  *
  * The third kind — "does any ability this role holds unlock a non-GET ROUTE" — is the load-bearing
  * one and it is deliberately NOT here: it belongs against the live route table, and it lives in
- * {@see \Tests\Feature\Rbac\AdminViewerHoldsNoWriteGateTest}. That is the arm that caught
+ * {@see AdminViewerHoldsNoWriteGateTest}. That is the arm that caught
  * `admin_area.access` guarding 18 writes in the first place.
  */
 function av_role(): array
@@ -64,7 +65,7 @@ it('holds neither side of any maker-checker pair', function () {
     $held = av_role();
     $pairs = DutySeparation::pairs();
 
-    expect($pairs)->not->toBeEmpty('a vacuous pair list would make this arm pass by construction');
+    expect(count($pairs))->toBeGreaterThan(0, 'a vacuous pair list would make this arm pass by construction');
 
     foreach ($pairs as $pair) {
         expect($held)->not->toContain($pair['checker'])

@@ -1,11 +1,10 @@
 <?php
 
 use App\Http\Requests\ProvisionUserRequest;
-use App\Models\Permission;
 use App\Models\Role;
 use App\Models\School;
+use App\Models\Scopes\SchoolScope;
 use App\Models\User;
-use App\Support\DutySeparation;
 use Database\Seeders\DatabaseSeeder;
 use Database\Seeders\RbacSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -83,7 +82,7 @@ it('seats every assignable role in the granted school, and in that school only',
             ]))
             ->assertSessionHasNoErrors();
 
-        $user = User::withoutGlobalScope(\App\Models\Scopes\SchoolScope::class)
+        $user = User::withoutGlobalScope(SchoolScope::class)
             ->where('email', $email)->firstOrFail();
 
         expect(pu_holdsIn($user, $granted, $role))->toBeTrue("[{$role}] must be held in the granted school")
@@ -107,7 +106,7 @@ it('grants a cross-school seat in both schools and in no third', function () {
         ]))
         ->assertSessionHasNoErrors();
 
-    $user = User::withoutGlobalScope(\App\Models\Scopes\SchoolScope::class)->where('email', $email)->firstOrFail();
+    $user = User::withoutGlobalScope(SchoolScope::class)->where('email', $email)->firstOrFail();
 
     expect(pu_holdsIn($user, $a, 'internal_auditor'))->toBeTrue()
         ->and(pu_holdsIn($user, $b, 'internal_auditor'))->toBeTrue()
@@ -136,7 +135,7 @@ it('attaches to an EXISTING account rather than minting a duplicate', function (
         ]))
         ->assertSessionHasNoErrors();
 
-    expect(User::withoutGlobalScope(\App\Models\Scopes\SchoolScope::class)->where('email', $staffer->email)->count())
+    expect(User::withoutGlobalScope(SchoolScope::class)->where('email', $staffer->email)->count())
         ->toBe(1, 'the existing address must not produce a second account');
 
     $staffer = $staffer->fresh();
@@ -161,12 +160,15 @@ it('leaves a 2FA-required seat in the enrolment flow rather than locked out', fu
         'schools' => [$school->uuid],
     ]))->assertSessionHasNoErrors();
 
-    $seated = User::withoutGlobalScope(\App\Models\Scopes\SchoolScope::class)->where('email', $email)->firstOrFail();
+    $seated = User::withoutGlobalScope(SchoolScope::class)->where('email', $email)->firstOrFail();
 
-    expect($seated->two_factor_confirmed_at)->toBeNull('pre-confirming would satisfy 2FA with nobody enrolled')
-        ->and($seated->email_verified_at)->not->toBeNull(
-            'without this the 2FA redirect lands on `verified` and bounces to a verification notice '
-            .'no mail was ever sent for — a lockout wearing an enrolment redirect\'s clothes');
+    expect($seated->two_factor_confirmed_at)->toBeNull('pre-confirming would satisfy 2FA with nobody enrolled');
+
+    // Positive form, so the sentence survives: Pest discards a message passed to a NEGATED
+    // expectation (tests/Feature/Quality/PestNegatedExpectationMessagesTest).
+    expect($seated->email_verified_at !== null)->toBeTrue(
+        'without this the 2FA redirect lands on `verified` and bounces to a verification notice '
+        .'no mail was ever sent for — a lockout wearing an enrolment redirect\'s clothes');
 
     // WALK THE CHAIN, do not assert one hop. "Redirected to enrolment" is satisfied by a redirect
     // into a loop just as well as by a reachable page, and the loop is the failure mode.
@@ -197,7 +199,7 @@ it('refuses a non-super_admin actor', function () {
         ->post('/super-admin/admins', pu_payload(['roles' => ['teacher'], 'schools' => [$school->uuid]]))
         ->assertForbidden();
 
-    expect(User::withoutGlobalScope(\App\Models\Scopes\SchoolScope::class)->count())->toBe(2);
+    expect(User::withoutGlobalScope(SchoolScope::class)->count())->toBe(2);
 });
 
 it('cannot mint a super_admin through the flow', function () {
@@ -215,7 +217,7 @@ it('cannot mint a super_admin through the flow', function () {
         ]))
         ->assertSessionHasErrors('roles.0');
 
-    expect(User::withoutGlobalScope(\App\Models\Scopes\SchoolScope::class)->where('email', $email)->exists())
+    expect(User::withoutGlobalScope(SchoolScope::class)->where('email', $email)->exists())
         ->toBeFalse('a refused request writes nothing');
 });
 
@@ -266,6 +268,120 @@ it('refuses to re-scope a super_admin\'s access', function () {
         ->put("/super-admin/admins/{$victim->uuid}/schools", ['schools' => [$school->uuid]])
         ->assertForbidden();
 });
+
+/*
+ * ─── THE LISTING: SEARCH, FILTERS, PAGINATION ────────────────────────────────────────────────────
+ *
+ * Asserted on the SET of rows returned, never on the count. A count cannot tell "these two people"
+ * from "some other two", and every filter here is exactly the kind of thing that returns a
+ * plausible number of wrong rows.
+ */
+function pu_listedEmails($response): array
+{
+    $emails = collect($response->viewData('page')['props']['admins'])->pluck('email')->all();
+    sort($emails);
+
+    return $emails;
+}
+
+it('filters by role, by school and by search term — on the rows, not the count', function () {
+    $this->seed(DatabaseSeeder::class);
+
+    $actor = pu_superAdmin();
+    [$lagos, $abuja] = [al_makeSchool(), al_makeSchool()];
+
+    $bursar = al_makeUser($lagos->id);
+    $bursar->forceFill(['first_name' => 'Ada', 'last_name' => 'Okonkwo', 'email' => 'ada.okonkwo@example.test'])->save();
+    $bursar->grantSchoolAccess($lagos, 'accounts_officer');
+
+    $auditor = al_makeUser($abuja->id);
+    $auditor->forceFill(['first_name' => 'Bem', 'last_name' => 'Tersoo', 'email' => 'bem.tersoo@example.test'])->save();
+    $auditor->grantSchoolAccess($abuja, 'internal_auditor');
+
+    $both = al_makeUser($lagos->id);
+    $both->forceFill(['first_name' => 'Chi', 'last_name' => 'Eze', 'email' => 'chi.eze@example.test'])->save();
+    $both->grantSchoolAccess($abuja, 'accounts_officer');
+
+    $get = fn (array $query) => $this->actingAs($actor)->get('/super-admin/admins?'.http_build_query($query));
+
+    // ROLE — Ada and Chi are accounts officers; Bem is not.
+    expect(pu_listedEmails($get(['role' => 'accounts_officer'])))
+        ->toEqual(['ada.okonkwo@example.test', 'chi.eze@example.test']);
+
+    // SCHOOL — filters on the SEAT's team. Chi is seated in Abuja despite a Lagos primary
+    // school_id, which is the case a school_user-pivot filter would get wrong.
+    expect(pu_listedEmails($get(['school' => $abuja->uuid])))
+        ->toEqual(['bem.tersoo@example.test', 'chi.eze@example.test']);
+
+    // ROLE + SCHOOL compose (AND), rather than the last one winning.
+    expect(pu_listedEmails($get(['role' => 'accounts_officer', 'school' => $abuja->uuid])))
+        ->toEqual(['chi.eze@example.test']);
+
+    // SEARCH — surname, email fragment, and a FULL NAME that matches neither column alone.
+    expect(pu_listedEmails($get(['q' => 'Okonkwo'])))->toEqual(['ada.okonkwo@example.test']);
+    expect(pu_listedEmails($get(['q' => 'bem.tersoo@'])))->toEqual(['bem.tersoo@example.test']);
+    expect(pu_listedEmails($get(['q' => 'Chi Eze'])))->toEqual(['chi.eze@example.test']);
+
+    // A wildcard is a LITERAL, not an operator. Without the escaping this returns everybody, which
+    // reads as a broken filter rather than as a match.
+    expect(pu_listedEmails($get(['q' => '%'])))->toEqual([]);
+});
+
+it('pages with a stable order, and every row appears exactly once across the pages', function () {
+    $this->seed(DatabaseSeeder::class);
+
+    $actor = pu_superAdmin();
+    $school = al_makeSchool();
+
+    // Deliberately SHARE a first name across all seven. first_name is the sort key, so identical
+    // values are exactly the case where an unstable order duplicates a row onto two pages and drops
+    // another entirely — a bug a count-based assertion cannot see.
+    $expected = [];
+    foreach (range(1, 7) as $i) {
+        $u = al_makeUser($school->id);
+        $u->forceFill(['first_name' => 'Same', 'last_name' => 'Person'.$i, 'email' => "pager{$i}@example.test"])->save();
+        $u->grantSchoolAccess($school, 'admin_viewer');
+        $expected[] = "pager{$i}@example.test";
+    }
+    sort($expected);
+
+    $seen = [];
+    foreach ([1, 2, 3] as $page) {
+        $response = $this->actingAs($actor)->get('/super-admin/admins?'.http_build_query([
+            'per_page' => 10, 'role' => 'admin_viewer', 'page' => $page,
+        ]));
+        $seen = array_merge($seen, pu_listedEmails($response));
+    }
+
+    // per_page 10 over 7 rows: page 1 carries them all, pages 2 and 3 are empty. The UNION is what
+    // matters, and it must contain each row ONCE.
+    sort($seen);
+    expect($seen)->toEqual($expected);
+
+    // And with a page size that actually splits them, the two pages partition the set.
+    $split = [];
+    foreach ([1, 2] as $page) {
+        $split = array_merge($split, pu_listedEmails(
+            $this->actingAs($actor)->get('/super-admin/admins?'.http_build_query([
+                'per_page' => 10, 'role' => 'admin_viewer', 'page' => $page,
+            ]))
+        ));
+    }
+    expect(array_unique($split))->toHaveCount(count($split), 'no row may appear on two pages');
+});
+
+it('refuses a per_page outside the offered set', function () {
+    $this->seed(DatabaseSeeder::class);
+
+    $actor = pu_superAdmin();
+
+    // An unbounded per_page is a query-string-shaped way to ask for every row and every seat join.
+    $this->actingAs($actor)->get('/super-admin/admins?per_page=100000')
+        ->assertSessionHasErrors('per_page');
+
+    $this->actingAs($actor)->get('/super-admin/admins?per_page=25')
+        ->assertSessionHasNoErrors();
+})->group('arch');
 
 it('pins the assignable set in both directions', function () {
     // super_admin absent — the D1 mirror.

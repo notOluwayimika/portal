@@ -3,7 +3,9 @@
 namespace App\Http\Requests;
 
 use App\Exceptions\DutySeparationViolationException;
+use App\Models\Role;
 use App\Models\School;
+use App\Models\Scopes\SchoolScope;
 use App\Models\User;
 use App\Support\DutySeparation;
 use Database\Seeders\RbacSeeder;
@@ -36,8 +38,8 @@ use Illuminate\Validation\Validator;
  *
  * Less than it first appears, and saying so here is cheaper than someone discovering it later.
  * Layer 3 was bite-proven by deleting its call: the provisioning suite stayed 12/12 GREEN. The
- * reason is that `bootstrap/app.php:145` ALREADY renders `DutySeparationViolationException` as a
- * redirect-back-with-errors keyed on `roles` — the identical shape this request produces — so
+ * reason is that `bootstrap/app.php:145 (DutySeparationViolationException)` ALREADY renders that
+ * exception as a redirect-back-with-errors keyed on `roles` — the identical shape this produces — so
  * layer 2's throw is indistinguishable from layer 3's refusal at the HTTP boundary, and the
  * controller's `DB::transaction` rolls back whatever the loop had written. On observable behaviour
  * the two layers agree.
@@ -139,7 +141,7 @@ class ProvisionUserRequest extends FormRequest
 
         // withoutGlobalScope: the address may belong to a staffer in another school entirely, which
         // is the whole point of the existing-email path.
-        return User::withoutGlobalScope(\App\Models\Scopes\SchoolScope::class)
+        return User::withoutGlobalScope(SchoolScope::class)
             ->where('email', $email)
             ->first();
     }
@@ -178,7 +180,9 @@ class ProvisionUserRequest extends FormRequest
 
         $schools = School::whereIn('uuid', (array) $this->input('schools', []))->get();
 
-        $label = $target?->email ?? (string) $this->input('email');
+        // `->` and not `?->`: null-coalescing already suppresses the access on null, so the
+        // nullsafe is redundant and Larastan says so (nullsafe.neverNull).
+        $label = $target->email ?? (string) $this->input('email');
 
         foreach ($schools as $school) {
             // The roles they ALREADY hold in THIS school. A new account holds none, so the same
@@ -229,7 +233,7 @@ class ProvisionUserRequest extends FormRequest
         $out = [];
 
         foreach ($requested as $index => $role) {
-            $abilities = \App\Models\Role::where('name', $role)
+            $abilities = Role::where('name', $role)
                 ->where('guard_name', RbacSeeder::GUARD)
                 ->whereNull('school_id')
                 ->with('permissions')

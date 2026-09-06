@@ -104,6 +104,28 @@ enum Permission: string
     // C6 matrix editing). super_admin holds none of them — its passage is
     // the Gate::before bypass, per the authority probe.
     case ADMIN_AREA_ACCESS = 'admin_area.access';
+    // ── THE READ-ONLY DOOR INTO THE ADMIN AREA (admin_viewer) ────────────────────────────────────
+    // `admin_area.access` is NOT a read gate and its name says otherwise, which is why this case
+    // exists. Measured from `route:list` on 2026-09-06: that one permission is the SOLE guard on 18
+    // write routes — POST/PUT /students, POST /api/guardians/{guardian}/password, POST|DELETE
+    // /setup/principals and /api/heads-of-schools, the notice CRUD, POST|DELETE
+    // /api/teacher-assignments, PUT /api/teachers/{teacher}/schools, and the two curriculum
+    // migrations — alongside 22 GET routes in the same flat group. So a role granted it to "see the
+    // admin area" can create and edit students and reset a guardian's password.
+    //
+    // This is the hazard web.php:1039-1043 already ruled on for the audit seat ("granting a whole
+    // AREA to solve one page means everything later placed in that area inherits it silently",
+    // docs/handoff/tickets/audit-seat-has-the-ability-and-no-way-to-reach-it.md). The same ruling
+    // applies here, so the resolution is the same shape: a SECOND, read-only door.
+    //
+    // The 22 GET routes gate on `admin_area.access|admin_area.view` — an OR, so every current
+    // holder keeps exactly what it had and nobody's authority moves. The 18 write routes are NOT
+    // touched and keep `admin_area.access` alone. That asymmetry is the whole mechanism and it is
+    // FAIL-CLOSED: a route added to the area tomorrow inherits `admin_area.access` from the group
+    // and is invisible to this permission unless somebody deliberately widens it, which is the
+    // property `admin_area.access` never had. AdminViewerHoldsNoWriteGateTest asserts the closure
+    // directly against the live route table, so a write route widened by mistake reds.
+    case ADMIN_AREA_VIEW = 'admin_area.view';
     case STUDENT_DIRECTORY_VIEW = 'student_directory.view';
     case RESULT_REVIEW_ACCESS = 'result_review.access';
     case REPORT_VIEW = 'report.view';

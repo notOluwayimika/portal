@@ -3,6 +3,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "head_of_school",
             "internal_auditor",
             "super_admin",
@@ -259,6 +260,7 @@
             "accounts_officer",
             "accounts_supervisor",
             "admin",
+            "admin_viewer",
             "boarding_parent",
             "executive_director",
             "finance_lead",
@@ -287,6 +289,7 @@
             "accounts_officer",
             "accounts_supervisor",
             "admin",
+            "admin_viewer",
             "boarding_parent",
             "executive_director",
             "finance_lead",
@@ -320,6 +323,7 @@
             "accounts_officer",
             "accounts_supervisor",
             "admin",
+            "admin_viewer",
             "boarding_parent",
             "executive_director",
             "finance_lead",
@@ -340,6 +344,7 @@
             "accounts_officer",
             "accounts_supervisor",
             "admin",
+            "admin_viewer",
             "boarding_parent",
             "executive_director",
             "finance_lead",
@@ -358,6 +363,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "head_of_school",
             "internal_auditor",
             "super_admin"
@@ -367,6 +373,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "head_of_school",
             "internal_auditor",
             "super_admin"
@@ -376,6 +383,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "head_of_school",
             "internal_auditor",
             "super_admin",
@@ -395,6 +403,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "head_of_school",
             "internal_auditor",
             "super_admin",
@@ -405,6 +414,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "head_of_school",
             "internal_auditor",
             "super_admin",
@@ -415,6 +425,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "head_of_school",
             "internal_auditor",
             "super_admin",
@@ -425,6 +436,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "head_of_school",
             "internal_auditor",
             "super_admin",
@@ -435,6 +447,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "head_of_school",
             "internal_auditor",
             "super_admin",
@@ -453,6 +466,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "head_of_school",
             "principal",
             "super_admin"
@@ -462,6 +476,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "head_of_school",
             "principal",
             "super_admin"
@@ -471,6 +486,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "head_of_school",
             "principal",
             "super_admin"
@@ -480,6 +496,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "head_of_school",
             "key_stage_coordinator",
             "super_admin",
@@ -490,6 +507,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "head_of_school",
             "key_stage_coordinator",
             "super_admin",
@@ -509,6 +527,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "head_of_school",
             "key_stage_coordinator",
             "super_admin",
@@ -519,6 +538,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "head_of_school",
             "key_stage_coordinator",
             "super_admin",
@@ -529,6 +549,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "head_of_school",
             "key_stage_coordinator",
             "super_admin",
@@ -548,6 +569,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "head_of_school",
             "principal",
             "super_admin"
@@ -575,6 +597,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "guardian",
             "head_of_school",
             "principal",
@@ -585,6 +608,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "guardian",
             "head_of_school",
             "principal",
@@ -631,6 +655,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "head_of_school",
             "key_stage_coordinator",
             "super_admin",
@@ -648,6 +673,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "head_of_school",
             "key_stage_coordinator",
             "super_admin",
@@ -782,6 +808,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "guardian",
             "head_of_school",
             "principal",
@@ -811,6 +838,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "super_admin"
         ]
     },
@@ -849,6 +877,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "super_admin"
         ]
     },
@@ -856,6 +885,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "super_admin"
         ]
     },
@@ -863,6 +893,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "super_admin"
         ]
     },
@@ -872,6 +903,7 @@
             "accounts_officer",
             "accounts_supervisor",
             "admin",
+            "admin_viewer",
             "boarding_parent",
             "executive_director",
             "finance_lead",
@@ -898,6 +930,7 @@
             "accounts_officer",
             "accounts_supervisor",
             "admin",
+            "admin_viewer",
             "boarding_parent",
             "executive_director",
             "finance_lead",
@@ -916,6 +949,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "head_of_school",
             "principal",
             "super_admin"
@@ -932,6 +966,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "head_of_school",
             "principal",
             "super_admin"
@@ -950,6 +985,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "head_of_school",
             "key_stage_coordinator",
             "super_admin",
@@ -960,6 +996,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "head_of_school",
             "key_stage_coordinator",
             "super_admin",
@@ -988,6 +1025,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "guardian",
             "head_of_school",
             "principal",
@@ -998,6 +1036,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "guardian",
             "head_of_school",
             "principal",
@@ -1008,6 +1047,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "form_teacher",
             "head_of_school",
             "principal",
@@ -1072,6 +1112,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "form_teacher",
             "head_of_school",
             "principal",
@@ -1082,6 +1123,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "guardian",
             "head_of_school",
             "principal",
@@ -1093,6 +1135,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "form_teacher",
             "head_of_school",
             "principal",
@@ -1103,6 +1146,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "form_teacher",
             "head_of_school",
             "principal",
@@ -1113,6 +1157,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "guardian",
             "head_of_school",
             "principal",
@@ -1133,6 +1178,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "head_of_school",
             "key_stage_coordinator",
             "super_admin",
@@ -1143,6 +1189,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "super_admin"
         ]
     },
@@ -1150,6 +1197,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "super_admin"
         ]
     },
@@ -1368,6 +1416,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "guardian",
             "head_of_school",
             "principal",
@@ -1378,6 +1427,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "guardian",
             "head_of_school",
             "principal",
@@ -1388,6 +1438,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "guardian",
             "head_of_school",
             "principal",
@@ -1399,6 +1450,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "guardian",
             "head_of_school",
             "principal",
@@ -1482,6 +1534,7 @@
             "accounts_officer",
             "accounts_supervisor",
             "admin",
+            "admin_viewer",
             "boarding_parent",
             "executive_director",
             "finance_lead",
@@ -1507,6 +1560,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "super_admin"
         ]
     },
@@ -1514,6 +1568,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "super_admin"
         ]
     },
@@ -1521,6 +1576,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "super_admin"
         ]
     },
@@ -1528,6 +1584,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "super_admin"
         ]
     },
@@ -1558,6 +1615,7 @@
             "accounts_officer",
             "accounts_supervisor",
             "admin",
+            "admin_viewer",
             "boarding_parent",
             "executive_director",
             "finance_lead",
@@ -1576,6 +1634,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "super_admin"
         ]
     },
@@ -1583,6 +1642,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "super_admin"
         ]
     },
@@ -1590,6 +1650,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "head_of_school",
             "principal",
             "super_admin"
@@ -1613,6 +1674,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "head_of_school",
             "principal",
             "super_admin"
@@ -1622,6 +1684,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "head_of_school",
             "principal",
             "super_admin"
@@ -1633,6 +1696,7 @@
             "accounts_officer",
             "accounts_supervisor",
             "admin",
+            "admin_viewer",
             "boarding_parent",
             "executive_director",
             "finance_lead",
@@ -1659,6 +1723,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "head_of_school",
             "principal",
             "super_admin"
@@ -1670,6 +1735,7 @@
             "accounts_officer",
             "accounts_supervisor",
             "admin",
+            "admin_viewer",
             "boarding_parent",
             "executive_director",
             "finance_lead",
@@ -1690,6 +1756,7 @@
             "accounts_officer",
             "accounts_supervisor",
             "admin",
+            "admin_viewer",
             "boarding_parent",
             "executive_director",
             "finance_lead",
@@ -1710,6 +1777,7 @@
             "accounts_officer",
             "accounts_supervisor",
             "admin",
+            "admin_viewer",
             "boarding_parent",
             "executive_director",
             "finance_lead",
@@ -1730,6 +1798,7 @@
             "accounts_officer",
             "accounts_supervisor",
             "admin",
+            "admin_viewer",
             "boarding_parent",
             "executive_director",
             "finance_lead",
@@ -1750,6 +1819,7 @@
             "accounts_officer",
             "accounts_supervisor",
             "admin",
+            "admin_viewer",
             "boarding_parent",
             "executive_director",
             "finance_lead",
@@ -1768,6 +1838,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "super_admin"
         ]
     },
@@ -1775,6 +1846,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "super_admin"
         ]
     },
@@ -1782,6 +1854,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "super_admin"
         ]
     },
@@ -1789,6 +1862,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "super_admin"
         ]
     },
@@ -1796,6 +1870,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "guardian",
             "head_of_school",
             "super_admin",
@@ -1806,6 +1881,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "super_admin"
         ]
     },
@@ -1813,6 +1889,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "super_admin"
         ]
     },
@@ -1820,6 +1897,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "head_of_school",
             "principal",
             "super_admin"
@@ -1837,6 +1915,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "guardian",
             "head_of_school",
             "super_admin",
@@ -1847,6 +1926,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "guardian",
             "head_of_school",
             "principal",
@@ -1858,6 +1938,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "super_admin"
         ]
     },
@@ -1865,6 +1946,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "guardian",
             "head_of_school",
             "super_admin",
@@ -1884,6 +1966,7 @@
             "accounts_officer",
             "accounts_supervisor",
             "admin",
+            "admin_viewer",
             "boarding_parent",
             "executive_director",
             "finance_lead",
@@ -1902,6 +1985,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "principal",
             "super_admin"
         ]
@@ -1910,6 +1994,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "super_admin"
         ]
     },
@@ -1917,6 +2002,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "principal",
             "super_admin"
         ]
@@ -1925,6 +2011,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "guardian",
             "head_of_school",
             "principal",
@@ -1935,6 +2022,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "guardian",
             "head_of_school",
             "principal",
@@ -1963,6 +2051,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "super_admin"
         ]
     },
@@ -1972,6 +2061,7 @@
             "accounts_officer",
             "accounts_supervisor",
             "admin",
+            "admin_viewer",
             "boarding_parent",
             "executive_director",
             "finance_lead",
@@ -1992,6 +2082,7 @@
             "accounts_officer",
             "accounts_supervisor",
             "admin",
+            "admin_viewer",
             "boarding_parent",
             "executive_director",
             "finance_lead",
@@ -2012,6 +2103,7 @@
             "accounts_officer",
             "accounts_supervisor",
             "admin",
+            "admin_viewer",
             "boarding_parent",
             "executive_director",
             "finance_lead",
@@ -2032,6 +2124,7 @@
             "accounts_officer",
             "accounts_supervisor",
             "admin",
+            "admin_viewer",
             "boarding_parent",
             "executive_director",
             "finance_lead",
@@ -2052,6 +2145,7 @@
             "accounts_officer",
             "accounts_supervisor",
             "admin",
+            "admin_viewer",
             "boarding_parent",
             "executive_director",
             "finance_lead",
@@ -2072,6 +2166,7 @@
             "accounts_officer",
             "accounts_supervisor",
             "admin",
+            "admin_viewer",
             "boarding_parent",
             "executive_director",
             "finance_lead",
@@ -2092,6 +2187,7 @@
             "accounts_officer",
             "accounts_supervisor",
             "admin",
+            "admin_viewer",
             "boarding_parent",
             "executive_director",
             "finance_lead",
@@ -2112,6 +2208,7 @@
             "accounts_officer",
             "accounts_supervisor",
             "admin",
+            "admin_viewer",
             "boarding_parent",
             "executive_director",
             "finance_lead",
@@ -2240,6 +2337,7 @@
             "accounts_officer",
             "accounts_supervisor",
             "admin",
+            "admin_viewer",
             "boarding_parent",
             "executive_director",
             "finance_lead",
@@ -2349,6 +2447,7 @@
             "accounts_officer",
             "accounts_supervisor",
             "admin",
+            "admin_viewer",
             "boarding_parent",
             "executive_director",
             "finance_lead",
@@ -2367,6 +2466,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "head_of_school",
             "internal_auditor",
             "super_admin",
@@ -2697,6 +2797,7 @@
             "accounts_officer",
             "accounts_supervisor",
             "admin",
+            "admin_viewer",
             "boarding_parent",
             "executive_director",
             "finance_lead",
@@ -2717,6 +2818,7 @@
             "accounts_officer",
             "accounts_supervisor",
             "admin",
+            "admin_viewer",
             "boarding_parent",
             "executive_director",
             "finance_lead",
@@ -2767,6 +2869,7 @@
             "accounts_officer",
             "accounts_supervisor",
             "admin",
+            "admin_viewer",
             "boarding_parent",
             "executive_director",
             "finance_lead",
@@ -2787,6 +2890,7 @@
             "accounts_officer",
             "accounts_supervisor",
             "admin",
+            "admin_viewer",
             "boarding_parent",
             "executive_director",
             "finance_lead",
@@ -2807,6 +2911,7 @@
             "accounts_officer",
             "accounts_supervisor",
             "admin",
+            "admin_viewer",
             "boarding_parent",
             "executive_director",
             "finance_lead",
@@ -2827,6 +2932,7 @@
             "accounts_officer",
             "accounts_supervisor",
             "admin",
+            "admin_viewer",
             "boarding_parent",
             "executive_director",
             "finance_lead",
@@ -2981,6 +3087,7 @@
             "accounts_officer",
             "accounts_supervisor",
             "admin",
+            "admin_viewer",
             "boarding_parent",
             "executive_director",
             "finance_lead",
@@ -3202,6 +3309,7 @@
         "auth": true,
         "roles": [
             "admin",
+            "admin_viewer",
             "guardian",
             "head_of_school",
             "principal",
@@ -3215,6 +3323,7 @@
             "accounts_officer",
             "accounts_supervisor",
             "admin",
+            "admin_viewer",
             "boarding_parent",
             "executive_director",
             "finance_lead",
@@ -3241,6 +3350,7 @@
             "accounts_officer",
             "accounts_supervisor",
             "admin",
+            "admin_viewer",
             "boarding_parent",
             "executive_director",
             "finance_lead",
@@ -3261,6 +3371,7 @@
             "accounts_officer",
             "accounts_supervisor",
             "admin",
+            "admin_viewer",
             "boarding_parent",
             "executive_director",
             "finance_lead",
@@ -3281,6 +3392,7 @@
             "accounts_officer",
             "accounts_supervisor",
             "admin",
+            "admin_viewer",
             "boarding_parent",
             "executive_director",
             "finance_lead",
@@ -3309,6 +3421,7 @@
             "accounts_officer",
             "accounts_supervisor",
             "admin",
+            "admin_viewer",
             "boarding_parent",
             "executive_director",
             "finance_lead",
@@ -3361,6 +3474,7 @@
             "accounts_officer",
             "accounts_supervisor",
             "admin",
+            "admin_viewer",
             "boarding_parent",
             "executive_director",
             "finance_lead",
@@ -3381,6 +3495,7 @@
             "accounts_officer",
             "accounts_supervisor",
             "admin",
+            "admin_viewer",
             "boarding_parent",
             "executive_director",
             "finance_lead",
@@ -3401,6 +3516,7 @@
             "accounts_officer",
             "accounts_supervisor",
             "admin",
+            "admin_viewer",
             "boarding_parent",
             "executive_director",
             "finance_lead",
@@ -3421,6 +3537,7 @@
             "accounts_officer",
             "accounts_supervisor",
             "admin",
+            "admin_viewer",
             "boarding_parent",
             "executive_director",
             "finance_lead",
@@ -3441,6 +3558,7 @@
             "accounts_officer",
             "accounts_supervisor",
             "admin",
+            "admin_viewer",
             "boarding_parent",
             "executive_director",
             "finance_lead",
@@ -3680,6 +3798,7 @@
             "accounts_officer",
             "accounts_supervisor",
             "admin",
+            "admin_viewer",
             "boarding_parent",
             "executive_director",
             "finance_lead",
@@ -3707,6 +3826,7 @@
             "accounts_officer",
             "accounts_supervisor",
             "admin",
+            "admin_viewer",
             "boarding_parent",
             "executive_director",
             "finance_lead",
@@ -3758,6 +3878,7 @@
             "accounts_officer",
             "accounts_supervisor",
             "admin",
+            "admin_viewer",
             "boarding_parent",
             "executive_director",
             "finance_lead",

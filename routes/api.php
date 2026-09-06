@@ -32,6 +32,7 @@ use App\Http\Controllers\SubjectResultStatusController;
 use App\Http\Controllers\TeacherController;
 use App\Http\Controllers\TeacherSchoolAccessController;
 use App\Http\Controllers\TermController;
+use App\Support\AdminAreaGate;
 use Illuminate\Support\Facades\Route;
 
 // Authentication (public)
@@ -278,23 +279,33 @@ Route::middleware(['auth:sanctum', 'tenant', 'permission:academic_setup.manage']
     require __DIR__.'/endpoints/guardian.php';
     require __DIR__.'/endpoints/head-of-school.php';
 });
-Route::middleware(['auth:sanctum', 'tenant', 'permission:admin_area.access'])->group(function () {
+/*
+ * ── THE ADMIN AREA (API half): ONE GATE, NOW TWO DOORS ───────────────────────────────────────────
+ *
+ * The group gate moved from `admin_area.access` to `admin_area.access|admin_area.view`
+ * (AdminAreaGate::READ) so the read-only admin seat can reach the GETs. EVERY WRITE in here — and
+ * in the two files required at the foot — re-narrows to AdminAreaGate::ACCESS on its own
+ * declaration. Middleware stacks intersect, so each write still demands exactly `admin_area.access`
+ * and no existing holder's authority changed. See AdminAreaGate for why this shape and not
+ * `withoutMiddleware`, and for what stops a future write route inheriting the widened gate.
+ */
+Route::middleware(['auth:sanctum', 'tenant', AdminAreaGate::READ])->group(function () {
     // Head of Schools
     Route::get('/heads-of-schools', [HeadOfSchoolController::class, 'index']);
-    Route::post('/heads-of-schools', [HeadOfSchoolController::class, 'store']);
-    Route::delete('/heads-of-schools/{teacher:uuid}', [HeadOfSchoolController::class, 'destroy']);
+    Route::post('/heads-of-schools', [HeadOfSchoolController::class, 'store'])->middleware(AdminAreaGate::ACCESS);
+    Route::delete('/heads-of-schools/{teacher:uuid}', [HeadOfSchoolController::class, 'destroy'])->middleware(AdminAreaGate::ACCESS);
 
-    Route::post('/guardians/{guardian:uuid}/password', [GuardianController::class, 'setPassword']);
+    Route::post('/guardians/{guardian:uuid}/password', [GuardianController::class, 'setPassword'])->middleware(AdminAreaGate::ACCESS);
 
     // Teacher multi-school access (school_user pivot); admin can only grant
     // schools they themselves can access.
-    Route::put('/teachers/{teacher:uuid}/schools', [TeacherSchoolAccessController::class, 'sync']);
+    Route::put('/teachers/{teacher:uuid}/schools', [TeacherSchoolAccessController::class, 'sync'])->middleware(AdminAreaGate::ACCESS);
 
     // CCM -> non-CCM curriculum migration
-    Route::post('/curricula/{curriculum:uuid}/move-from-ccm', [CurriculumController::class, 'moveFromCcm']);
+    Route::post('/curricula/{curriculum:uuid}/move-from-ccm', [CurriculumController::class, 'moveFromCcm'])->middleware(AdminAreaGate::ACCESS);
 
     // Mirror an active curriculum into a past (completed) term for retroactive entry
-    Route::post('/curricula/{curriculum:uuid}/backfill-term', [CurriculumController::class, 'backfillTerm']);
+    Route::post('/curricula/{curriculum:uuid}/backfill-term', [CurriculumController::class, 'backfillTerm'])->middleware(AdminAreaGate::ACCESS);
 
     /*
      * Which curricula already have one of the two migrations above sitting on the queue. The CCM and

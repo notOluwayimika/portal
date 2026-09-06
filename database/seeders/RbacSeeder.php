@@ -5,6 +5,7 @@ namespace Database\Seeders;
 use App\Enums\Permission as PermissionEnum;
 use App\Models\Permission;
 use App\Models\Role;
+use App\Support\ReadOnlyAbility;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 use Spatie\Permission\PermissionRegistrar;
@@ -56,8 +57,16 @@ class RbacSeeder extends Seeder
      * (The prior note here said the finance roles were "not seeded (step-0)". That stopped being true
      * with the 2026-08-01 realignment, which put all four in ROLES. Their absence below is now a
      * decision, not a consequence.)
+     *
+     * `admin_viewer` joined 2026-09-06 and is here on purpose, not by symmetry with `admin`.
+     * Read-only is not low-stakes: the seat reads student records, the guardian audit trail and
+     * `activity_log.view_sensitive`. A seat that can change nothing but can SEE everything an admin
+     * sees is exactly the account worth stealing quietly, because its misuse leaves no write behind
+     * to notice. Note the flag binds only at role CREATION, so this line has effect on a fresh
+     * install and on `--fresh`; on an environment where the row already exists it is the matrix
+     * toggle that governs.
      */
-    public const TWO_FACTOR_REQUIRED = ['super_admin', 'admin', 'executive_director'];
+    public const TWO_FACTOR_REQUIRED = ['super_admin', 'admin', 'admin_viewer', 'executive_director'];
 
     /**
      * super_admin's explicit PLATFORM-ADMIN set (ADR 0045 A2/A3, slice B2).
@@ -79,6 +88,10 @@ class RbacSeeder extends Seeder
     public const ROLES = [
         'super_admin',
         'admin',
+        // Read-only admin (2026-09-06). Grants are DERIVED from `admin` in the map below, never
+        // listed beside it. Its door into the admin area is `admin_area.view`, not
+        // `admin_area.access` — see that enum case for why the two are not interchangeable.
+        'admin_viewer',
         'principal',
         'head_of_school',
         'teacher',
@@ -206,6 +219,69 @@ class RbacSeeder extends Seeder
         // (or in the route files) from the pre-swap sets is a red test.
         // super_admin deliberately gets none: its passage is Gate::before.
 
+        // ── admin's OWN grants — the ones that belong to no shared fragment ──────────────────────
+        //
+        // Extracted so `admin_viewer` below can be derived from the same six fragments PLUS this,
+        // rather than from a hand-written twin that drifts the day somebody grants `admin`
+        // something new.
+        //
+        // A FRAGMENT AND NOT ONE `$adminGrants` ARRAY, and that is the grants-convergence lint's
+        // constraint rather than a style choice. That lint tables every `$fragment = [ … ];` between
+        // `function grantsMap()` and its `return [`, and REFUSES — `NOT LINTED`, exit 1 — on a
+        // fragment whose body spreads another, because a transitive resolution would depend on a
+        // definition order it does not parse (bin/ci-grants-convergence-lint.php, the fragment
+        // model). Wrapping the six spreads in one `$adminGrants` is exactly that shape and turns
+        // the gate off. Keeping the fragments flat keeps all seven visible to it, which is the
+        // reason to write it this way and not the tidier one.
+        $adminOwn = [
+            PermissionEnum::MANAGE_TEACHER_ASSIGNMENTS->value,
+            PermissionEnum::MANAGE_HEAD_OF_SCHOOL_COMMENTS->value,
+            // Route access (C2)
+            PermissionEnum::ADMIN_AREA_ACCESS->value,
+            PermissionEnum::STUDENT_DIRECTORY_VIEW->value,
+            PermissionEnum::RESULT_REVIEW_ACCESS->value,
+            PermissionEnum::REPORT_VIEW->value,
+            PermissionEnum::CURRICULUM_SUBJECT_VIEW->value,
+            PermissionEnum::STUDENT_CURRICULUM_VIEW->value,
+            PermissionEnum::DASHBOARD_VIEW->value,
+            PermissionEnum::RESULT_VIEW->value,
+            PermissionEnum::ACADEMIC_SETUP_MANAGE->value,
+            // ── ROLLOVER (M4) — ADMIN ONLY FOR NOW, AND THAT IS A DECISION ────────────────
+            // Separate from academic_setup.manage on purpose: config edits are reversible and
+            // one row at a time; a rollover moves every pupil in the school across a year
+            // boundary and cannot be undone by re-editing a row.
+            //
+            // ADMIN-ONLY IS THE DECISION, NOT AN OMISSION. This is the single most destructive
+            // action in the system — it moves every pupil in a school across a year boundary —
+            // so it ships with the smallest grant that can actually exercise it, to be widened
+            // deliberately rather than narrowed after the fact.
+            //
+            // `registrar` is a FAST-FOLLOW, not a gap: the milestone's trigger was "a registrar
+            // is expected to run one themselves", and that is blocked on a prerequisite this
+            // work surfaced — registrar reaches NO role-gated route at all (see its block
+            // below), so granting rollover alone would produce a permission it cannot exercise.
+            // Ticket: docs/handoff/tickets/registrar-reaches-no-role-gated-route.md
+            PermissionEnum::ACADEMICS_ROLLOVER->value,
+            PermissionEnum::PRINCIPAL_APPROVAL_MANAGE->value,
+            PermissionEnum::FINANCE_ACCESS->value,
+            // Billing (S1 Part 0): admin may raise invoices and apply policy-backed reductions.
+            PermissionEnum::FINANCE_INVOICE_GENERATE->value,
+            PermissionEnum::FINANCE_INVOICE_REDUCTION_APPLY->value,
+            // Fee-schedule authorship (S1 commit 2).
+            PermissionEnum::FINANCE_FEE_SCHEDULE_MANAGE->value,
+            PermissionEnum::FINANCE_BANK_ACCOUNT_MANAGE->value,
+            // Credit-note issuance is now maker-checker (Ph3): admin keeps finance
+            // read access but holds NEITHER the maker nor the checker permission —
+            // even admin cannot forgive money alone. The dedicated accounts_officer /
+            // finance_director roles own the two-person flow.
+            PermissionEnum::ACADEMIC_DATA_VIEW->value,
+            PermissionEnum::SCORE_MANAGE->value,
+            PermissionEnum::STUDENT_STATUS_VIEW->value,
+            PermissionEnum::STUDENT_VIEW->value,
+            // RBAC administration (C5): the school-admin Users module.
+            PermissionEnum::RBAC_MANAGE_USERS->value,
+        ];
+
         return [
             'admin' => [
                 ...$guardianFull,
@@ -214,52 +290,55 @@ class RbacSeeder extends Seeder
                 ...$assessments,
                 ...$activityAdmin,
                 ...$resultChecker,
-                PermissionEnum::MANAGE_TEACHER_ASSIGNMENTS->value,
-                PermissionEnum::MANAGE_HEAD_OF_SCHOOL_COMMENTS->value,
-                // Route access (C2)
-                PermissionEnum::ADMIN_AREA_ACCESS->value,
-                PermissionEnum::STUDENT_DIRECTORY_VIEW->value,
-                PermissionEnum::RESULT_REVIEW_ACCESS->value,
-                PermissionEnum::REPORT_VIEW->value,
-                PermissionEnum::CURRICULUM_SUBJECT_VIEW->value,
-                PermissionEnum::STUDENT_CURRICULUM_VIEW->value,
-                PermissionEnum::DASHBOARD_VIEW->value,
-                PermissionEnum::RESULT_VIEW->value,
-                PermissionEnum::ACADEMIC_SETUP_MANAGE->value,
-                // ── ROLLOVER (M4) — ADMIN ONLY FOR NOW, AND THAT IS A DECISION ────────────────
-                // Separate from academic_setup.manage on purpose: config edits are reversible and
-                // one row at a time; a rollover moves every pupil in the school across a year
-                // boundary and cannot be undone by re-editing a row.
-                //
-                // ADMIN-ONLY IS THE DECISION, NOT AN OMISSION. This is the single most destructive
-                // action in the system — it moves every pupil in a school across a year boundary —
-                // so it ships with the smallest grant that can actually exercise it, to be widened
-                // deliberately rather than narrowed after the fact.
-                //
-                // `registrar` is a FAST-FOLLOW, not a gap: the milestone's trigger was "a registrar
-                // is expected to run one themselves", and that is blocked on a prerequisite this
-                // work surfaced — registrar reaches NO role-gated route at all (see its block
-                // below), so granting rollover alone would produce a permission it cannot exercise.
-                // Ticket: docs/handoff/tickets/registrar-reaches-no-role-gated-route.md
-                PermissionEnum::ACADEMICS_ROLLOVER->value,
-                PermissionEnum::PRINCIPAL_APPROVAL_MANAGE->value,
-                PermissionEnum::FINANCE_ACCESS->value,
-                // Billing (S1 Part 0): admin may raise invoices and apply policy-backed reductions.
-                PermissionEnum::FINANCE_INVOICE_GENERATE->value,
-                PermissionEnum::FINANCE_INVOICE_REDUCTION_APPLY->value,
-                // Fee-schedule authorship (S1 commit 2).
-                PermissionEnum::FINANCE_FEE_SCHEDULE_MANAGE->value,
-                PermissionEnum::FINANCE_BANK_ACCOUNT_MANAGE->value,
-                // Credit-note issuance is now maker-checker (Ph3): admin keeps finance
-                // read access but holds NEITHER the maker nor the checker permission —
-                // even admin cannot forgive money alone. The dedicated accounts_officer /
-                // finance_director roles own the two-person flow.
-                PermissionEnum::ACADEMIC_DATA_VIEW->value,
-                PermissionEnum::SCORE_MANAGE->value,
-                PermissionEnum::STUDENT_STATUS_VIEW->value,
-                PermissionEnum::STUDENT_VIEW->value,
-                // RBAC administration (C5): the school-admin Users module.
-                PermissionEnum::RBAC_MANAGE_USERS->value,
+                ...$adminOwn,
+            ],
+            // ── admin_viewer — THE READ-ONLY ADMIN SEAT ──────────────────────────────────────────
+            //
+            // DERIVED, NOT LISTED. Exactly `admin`'s grants filtered through
+            // {@see \App\Support\ReadOnlyAbility}: terminal segment `view` or `view_*`. Writing the
+            // set out by hand would drift the day somebody grants `admin` something new — silently,
+            // and in the dangerous direction, because a read-only role that quietly stops mirroring
+            // its parent's READS is a nuisance while one that quietly acquires a WRITE is a breach.
+            // Deriving means a new `admin` grant is admitted here only if it is named as a read.
+            //
+            // WHAT FALLS OUT, and it is worth reading rather than assuming: every `*.manage`, every
+            // maker (`*.submit`, `finance.invoice.generate`), every checker (`*.approve`,
+            // `*.reject`), `academics.rollover`, `rbac.manage_users`, the guardian write set, and —
+            // deliberately — `activity_log.export` and `guardian.export`. An export is a bulk
+            // extraction, not a read of the screen in front of you, and the convention excludes it
+            // by construction rather than by a special case. `activity_log.view_sensitive` IS here:
+            // it is a read, the seat is an oversight seat, and withholding it would need an
+            // exception the convention exists to avoid.
+            //
+            // THE ONE MEMBER THAT IS NOT DERIVED is `admin_area.view`, and it CANNOT be: `admin`
+            // does not hold it. It is the read-only door coined for this seat because
+            // `admin_area.access` is not a read gate — it is the sole guard on 18 write routes (the
+            // measurement and the ruling are on the enum case). The 22 GET routes in that area now
+            // gate on `admin_area.access|admin_area.view`, so `admin` keeps everything and this seat
+            // gets the reads and nothing else.
+            //
+            // TWO-FACTOR: `admin_viewer` is in TWO_FACTOR_REQUIRED (:60). Read-only is not
+            // low-stakes — this seat reads student records, the guardian audit trail and the
+            // sensitive activity log.
+            //
+            // THE SEVEN SPREADS ARE REPEATED FROM `admin` ABOVE, AND THAT REPETITION IS GATED.
+            // Collapsing them into one `$adminGrants = [ … ]` variable would read better and would
+            // turn OFF the grants-convergence lint, which refuses a fragment that nests a fragment
+            // (see $adminOwn's note). So the fragment NAMES are written twice while the
+            // PERMISSIONS are still written once — and an eighth fragment added to `admin` and
+            // forgotten here does not slip through: AdminViewerReadOnlyTest's "every read-only
+            // grant on admin must reach admin_viewer" arm reds on exactly that.
+            'admin_viewer' => [
+                ...ReadOnlyAbility::filter([
+                    ...$guardianFull,
+                    ...$studentSubjectFull,
+                    ...$enrollmentAdmin,
+                    ...$assessments,
+                    ...$activityAdmin,
+                    ...$resultChecker,
+                    ...$adminOwn,
+                ]),
+                PermissionEnum::ADMIN_AREA_VIEW->value,
             ],
             'head_of_school' => [
                 ...$guardianFull,

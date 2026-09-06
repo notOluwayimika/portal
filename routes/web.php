@@ -49,6 +49,7 @@ use App\Models\Teacher;
 use App\Models\Term;
 use App\Services\ResultSignatureService;
 use App\Support\ActiveSchool;
+use App\Support\AdminAreaGate;
 use App\Support\ApprovalAbility;
 use App\Support\CurrentTerm;
 use Illuminate\Support\Facades\DB;
@@ -729,10 +730,28 @@ Route::middleware(['auth', 'tenant', 'permission:finance.access'])->group(functi
         ->name('admin.finance.discount-award-imports');
 });
 
-Route::middleware(['auth', 'tenant', 'permission:admin_area.access'])->group(function () {
+/*
+ * ── THE ADMIN AREA: ONE GATE, NOW TWO DOORS ──────────────────────────────────────────────────────
+ *
+ * This group used to be FLAT — `admin_area.access` guarded 22 GET routes and 18 writes alike, so
+ * "let them see the admin area" and "let them create students and reset guardian passwords" were
+ * the same grant. That is the hazard this file already ruled on for the audit seat at :1039 below;
+ * `admin_viewer` (2026-09-06) is the seat that forced resolving it here too.
+ *
+ * The GROUP now carries `admin_area.access|admin_area.view` ({@see \App\Support\AdminAreaGate}), and
+ * each of the four WRITES re-narrows to `admin_area.access` on its own declaration. Stacks
+ * intersect, so a write still demands exactly what it demanded before and no existing holder's
+ * authority moved. That file also records why this shape rather than the tidier-looking
+ * `withoutMiddleware`, which both route oracles are blind to, and what stops a write route added
+ * here later from silently inheriting the widened gate.
+ *
+ * No declaration moved and no ordering changed — `guardians/import` still precedes
+ * `guardians/{guardian:uuid}`, which is the one shadowing constraint in here.
+ */
+Route::middleware(['auth', 'tenant', AdminAreaGate::READ])->group(function () {
     Route::get('/setup/principals', [PrincipalController::class, 'index'])->name('principals.index');
-    Route::post('/setup/principals', [PrincipalController::class, 'store'])->name('principals.store');
-    Route::delete('/setup/principals/{principal:uuid}', [PrincipalController::class, 'destroy'])->name('principals.destroy');
+    Route::post('/setup/principals', [PrincipalController::class, 'store'])->name('principals.store')->middleware(AdminAreaGate::ACCESS);
+    Route::delete('/setup/principals/{principal:uuid}', [PrincipalController::class, 'destroy'])->name('principals.destroy')->middleware(AdminAreaGate::ACCESS);
 
     Route::get('/setup/head-of-schools', function () {
         return Inertia::render('admin/head-of-schools/index');
@@ -849,8 +868,8 @@ Route::middleware(['auth', 'tenant', 'permission:admin_area.access'])->group(fun
         ]);
     })->name('guardians.audit');
 
-    Route::post('students', [StudentController::class, 'store']);
-    Route::put('students/{student:uuid}', [StudentController::class, 'update']);
+    Route::post('students', [StudentController::class, 'store'])->middleware(AdminAreaGate::ACCESS);
+    Route::put('students/{student:uuid}', [StudentController::class, 'update'])->middleware(AdminAreaGate::ACCESS);
 
 });
 

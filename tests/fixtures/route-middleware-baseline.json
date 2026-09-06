@@ -93,6 +93,7 @@
         "api",
         "auth:sanctum",
         "tenant",
+        "permission:admin_area.access|admin_area.view",
         "permission:admin_area.access"
     ],
     "DELETE /api/marking-components/{markingComponent}": [
@@ -105,12 +106,14 @@
         "api",
         "auth:sanctum",
         "tenant",
+        "permission:admin_area.access|admin_area.view",
         "permission:admin_area.access"
     ],
     "DELETE /api/notices/{notice}": [
         "api",
         "auth:sanctum",
         "tenant",
+        "permission:admin_area.access|admin_area.view",
         "permission:admin_area.access"
     ],
     "DELETE /api/scholarships/{scholarship}": [
@@ -159,6 +162,7 @@
         "api",
         "auth:sanctum",
         "tenant",
+        "permission:admin_area.access|admin_area.view",
         "permission:admin_area.access"
     ],
     "DELETE /api/teachers/{teacher}": [
@@ -192,6 +196,7 @@
         "web",
         "auth",
         "tenant",
+        "permission:admin_area.access|admin_area.view",
         "permission:admin_area.access"
     ],
     "DELETE /super-admin/schools/{school}/fallback-signature": [
@@ -508,7 +513,7 @@
         "api",
         "auth:sanctum",
         "tenant",
-        "permission:admin_area.access"
+        "permission:admin_area.access|admin_area.view"
     ],
     "GET /api/internal-audit/invoices/pending": [
         "api",
@@ -538,19 +543,19 @@
         "api",
         "auth:sanctum",
         "tenant",
-        "permission:admin_area.access"
+        "permission:admin_area.access|admin_area.view"
     ],
     "GET /api/notices/categories": [
         "api",
         "auth:sanctum",
         "tenant",
-        "permission:admin_area.access"
+        "permission:admin_area.access|admin_area.view"
     ],
     "GET /api/notices/{notice}": [
         "api",
         "auth:sanctum",
         "tenant",
-        "permission:admin_area.access"
+        "permission:admin_area.access|admin_area.view"
     ],
     "GET /api/notifications": [
         "api",
@@ -720,13 +725,13 @@
         "api",
         "auth:sanctum",
         "tenant",
-        "permission:admin_area.access"
+        "permission:admin_area.access|admin_area.view"
     ],
     "GET /api/teacher-assignments/teachers": [
         "api",
         "auth:sanctum",
         "tenant",
-        "permission:admin_area.access"
+        "permission:admin_area.access|admin_area.view"
     ],
     "GET /api/teachers": [
         "api",
@@ -914,25 +919,25 @@
         "web",
         "auth",
         "tenant",
-        "permission:admin_area.access"
+        "permission:admin_area.access|admin_area.view"
     ],
     "GET /guardians/import": [
         "web",
         "auth",
         "tenant",
-        "permission:admin_area.access"
+        "permission:admin_area.access|admin_area.view"
     ],
     "GET /guardians/{guardian}": [
         "web",
         "auth",
         "tenant",
-        "permission:admin_area.access"
+        "permission:admin_area.access|admin_area.view"
     ],
     "GET /guardians/{guardian}/audit": [
         "web",
         "auth",
         "tenant",
-        "permission:admin_area.access"
+        "permission:admin_area.access|admin_area.view"
     ],
     "GET /head-of-school/comments": [
         "web",
@@ -960,13 +965,13 @@
         "web",
         "auth",
         "tenant",
-        "permission:admin_area.access"
+        "permission:admin_area.access|admin_area.view"
     ],
     "GET /notifications/queue-health": [
         "web",
         "auth",
         "tenant",
-        "permission:admin_area.access"
+        "permission:admin_area.access|admin_area.view"
     ],
     "GET /outstanding-comments": [
         "web",
@@ -1040,25 +1045,25 @@
         "web",
         "auth",
         "tenant",
-        "permission:admin_area.access"
+        "permission:admin_area.access|admin_area.view"
     ],
     "GET /setup/curricula-backfill": [
         "web",
         "auth",
         "tenant",
-        "permission:admin_area.access"
+        "permission:admin_area.access|admin_area.view"
     ],
     "GET /setup/curricula-ccm": [
         "web",
         "auth",
         "tenant",
-        "permission:admin_area.access"
+        "permission:admin_area.access|admin_area.view"
     ],
     "GET /setup/curricula/{curriculum}": [
         "web",
         "auth",
         "tenant",
-        "permission:admin_area.access"
+        "permission:admin_area.access|admin_area.view"
     ],
     "GET /setup/curriculum-subject/{curriculumSubject}": [
         "web",
@@ -1071,13 +1076,13 @@
         "web",
         "auth",
         "tenant",
-        "permission:admin_area.access"
+        "permission:admin_area.access|admin_area.view"
     ],
     "GET /setup/principals": [
         "web",
         "auth",
         "tenant",
-        "permission:admin_area.access"
+        "permission:admin_area.access|admin_area.view"
     ],
     "GET /setup/review/pending": [
         "web",
@@ -1109,7 +1114,7 @@
         "web",
         "auth",
         "tenant",
-        "permission:admin_area.access"
+        "permission:admin_area.access|admin_area.view"
     ],
     "GET /setup/teacher/{teacher}": [
         "web",
@@ -1134,7 +1139,7 @@
         "web",
         "auth",
         "tenant",
-        "permission:admin_area.access"
+        "permission:admin_area.access|admin_area.view"
     ],
     "GET /students/{student}": [
         "web",
@@ -1175,7 +1180,7 @@
         "web",
         "auth",
         "tenant",
-        "permission:admin_area.access"
+        "permission:admin_area.access|admin_area.view"
     ],
     "GET /two-factor-challenge": [
         "web",
@@ -1413,12 +1418,14 @@
         "api",
         "auth:sanctum",
         "tenant",
+        "permission:admin_area.access|admin_area.view",
         "permission:admin_area.access"
     ],
     "POST /api/curricula/{curriculum}/move-from-ccm": [
         "api",
         "auth:sanctum",
         "tenant",
+        "permission:admin_area.access|admin_area.view",
         "permission:admin_area.access"
     ],
     "POST /api/curricula/{curriculum}/subjects": [
@@ -1546,6 +1553,7 @@
         "api",
         "auth:sanctum",
         "tenant",
+        "permission:admin_area.access|admin_area.view",
         "permission:admin_area.access"
     ],
     "POST /api/guardians/{guardian}/resend-invitation": [
@@ -1564,6 +1572,7 @@
         "api",
         "auth:sanctum",
         "tenant",
+        "permission:admin_area.access|admin_area.view",
         "permission:admin_area.access"
     ],
     "POST /api/internal-audit/invoices/approve": [
@@ -1596,18 +1605,21 @@
         "api",
         "auth:sanctum",
         "tenant",
+        "permission:admin_area.access|admin_area.view",
         "permission:admin_area.access"
     ],
     "POST /api/notices/categories": [
         "api",
         "auth:sanctum",
         "tenant",
+        "permission:admin_area.access|admin_area.view",
         "permission:admin_area.access"
     ],
     "POST /api/notices/{notice}/end": [
         "api",
         "auth:sanctum",
         "tenant",
+        "permission:admin_area.access|admin_area.view",
         "permission:admin_area.access"
     ],
     "POST /api/notifications/read-all": [
@@ -1727,6 +1739,7 @@
         "api",
         "auth:sanctum",
         "tenant",
+        "permission:admin_area.access|admin_area.view",
         "permission:admin_area.access"
     ],
     "POST /api/teachers": [
@@ -1913,12 +1926,14 @@
         "web",
         "auth",
         "tenant",
+        "permission:admin_area.access|admin_area.view",
         "permission:admin_area.access"
     ],
     "POST /students": [
         "web",
         "auth",
         "tenant",
+        "permission:admin_area.access|admin_area.view",
         "permission:admin_area.access"
     ],
     "POST /super-admin/admins": [
@@ -2053,6 +2068,7 @@
         "api",
         "auth:sanctum",
         "tenant",
+        "permission:admin_area.access|admin_area.view",
         "permission:admin_area.access"
     ],
     "PUT /api/scholarships/{scholarship}": [
@@ -2095,6 +2111,7 @@
         "api",
         "auth:sanctum",
         "tenant",
+        "permission:admin_area.access|admin_area.view",
         "permission:admin_area.access"
     ],
     "PUT /api/v1/finance/fee-schedules/{feeSchedule}": [
@@ -2121,6 +2138,7 @@
         "web",
         "auth",
         "tenant",
+        "permission:admin_area.access|admin_area.view",
         "permission:admin_area.access"
     ],
     "PUT /super-admin/admins/{uuid}/schools": [

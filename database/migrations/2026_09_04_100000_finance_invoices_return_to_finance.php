@@ -57,16 +57,31 @@ use Illuminate\Support\Facades\Schema;
  * that the guard below can be installed unconditionally — the instant one unpaired row exists, it
  * could never be added without a data fix first, so this is the only moment it is free.
  *
- * ── `reviewed_at` AND `returned_at` BOTH SET: NOTHING ENFORCES IT, STATED PLAINLY ────────────────
+ * ── `reviewed_at` AND `returned_at` BOTH SET: THE RULING LANDED, AND IT LANDED IN PHP ────────────
  *
- * It is not a state the system produces — no path writes both — but that is a claim about the code
- * that will exist, not about the schema. **At the database, NOTHING REFUSES IT.** The trigger below
- * is deliberately not the place: whether an auditor may release a bill that is currently out with
- * Finance is a domain ruling about the return workflow, and it is owed by the commit that adds the
- * return action, not by the migration that adds the column. The two places it can be enforced when
- * that ruling lands are (a) a third arm on this trigger, or (b) `whereNull('returned_at')` in
- * `ApproveInvoice`'s compare-and-swap, which today asserts only `whereNull(reviewed_at)`.
- * Recording it as an open gap rather than implying the schema closes it.
+ * It is not a state the system produces — no path writes both — but that is a claim about the code,
+ * not about the schema. **At the database, NOTHING REFUSES IT.** That sentence is still true and is
+ * kept deliberately: the trigger below was never the place, because whether an auditor may release a
+ * bill that is currently out with Finance is a domain ruling about the return workflow, owed by the
+ * commit that adds the return action rather than by the migration that adds the column.
+ *
+ * THAT COMMIT SHIPPED, AND IT CHOSE (b). This paragraph used to name two open options — (a) a third
+ * arm on this trigger, or (b) `whereNull('returned_at')` in `ApproveInvoice`'s compare-and-swap —
+ * and defer between them. The deferral is over. Option (b) is in the tree:
+ *
+ *   - `app/Finance/Actions/ApproveInvoice.php:174 (handle)` — `->whereNull('returned_at')` inside
+ *     the compare-and-swap, with the read-side `refuseIfOutWithFinance` calls at `:163` and `:185`;
+ *   - `app/Finance/Actions/ReturnInvoice.php:190 (handle)` — the mirror,
+ *     `whereNull(RELEASE_STAMP_COLUMN)`, so the other order is refused just as flatly;
+ *   - the reasoning lives beside the guard, in the file docblock immediately above
+ *     `app/Finance/Actions/ApproveInvoice.php:114 (ApproveInvoice)` — the section headed
+ *     "APPROVE-OVER-A-RETURN IS REFUSED HERE, IN THE ACTION, AND NOT IN THE TRIGGER".
+ *
+ * SO THE ENFORCEMENT IS IN PHP AND NOT AT THE DATABASE — two application writers, no schema object.
+ * A raw `UPDATE` at a prompt still produces the state, and `down()`ing the actions would restore it.
+ * Whether that is the final answer or whether arm (a) is still owed is a ruling nobody has made out
+ * loud; it is carried at
+ * `docs/handoff/tickets/the-both-set-guard-is-php-only-and-nobody-ruled-it-final.md`.
  *
  * ── THE PAIRING GUARD IS A TRIGGER, NOT A `CHECK` ───────────────────────────────────────────────
  *

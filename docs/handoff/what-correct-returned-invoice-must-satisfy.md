@@ -24,6 +24,335 @@ as a named seam in §F and is NOT answered anywhere in this document.
 | "finance_invoices.return_reason" | **Correct** — `2026_09_04_100000_finance_invoices_return_to_finance.php:182`, nullable `VARCHAR(255)`. |
 | "the activitylog entries ReturnInvoice and ApproveInvoice write" | **Correct**, both exist and both write. `app/Finance/Actions/ReturnInvoice.php:214-227`, `app/Finance/Actions/ApproveInvoice.php:197-208`. |
 
+## CORRECTION, 2026-09-06 — requirement 4's readership
+
+**This document is merged and this part of it is wrong. It is corrected here rather than edited
+away, because the METHOD that produced each error is the reusable part.**
+
+**Measured at `97555b24` (`origin/staging`), and the base matters.** An earlier pass of this
+correction was measured at `f22e86fb`, this document's own merge commit, and every number in it was
+stale within a day: `97555b24` carries PR #420, which adds a SIXTEENTH role, `admin_viewer`, holding
+four of the seven activity-log abilities. Nothing in the earlier pass's coverage numbers could have
+revealed that — `tests/fixtures/route-access-map.json` holds **384 routes at both commits**, so
+*"384 routes EXAMINED"* was byte-identical before and after while 121 of its role lists moved. **A
+denominator that holds while the content moves is not a freshness check.** Any number below is to be
+re-derived against the base you are reading at, and the base is stated so that is possible.
+
+### What it said
+
+Four places in this document say the same thing, and each now carries an inline
+**[CORRECTED 2026-09-06]** marker pointing back here: the requirement-4 row of the §E status table;
+the paragraph headed *"The requirement-4 finding, stated plainly"*; the *"Finance and Internal Audit
+only"* paragraph under §"Requirement 4, both halves"; and finding 13 under THE CONSTRAINTS. They are
+named by heading rather than by line number, because a line number inside the document it cites goes
+stale the moment the document is edited — which it did, twice, while this block was being written.
+
+> **No Finance role holds either** — not `accounts_officer`, not `finance_lead`, not
+> `accounts_supervisor`, not `executive_director`, not `principal`.
+>
+> […] so Finance **cannot read the return history at all**; and `teacher` holds
+> `activity_log.view`, so a role that is neither Finance nor IA can read the API.
+
+### What is true — three corrections, one to each clause
+
+**(1) The grant measurement was right. The CAPABILITY conclusion drawn from it was not.**
+
+No Finance role holds any `activity_log.*` ability. That stands, at both bases. **But there is a
+dedicated Finance-facing surface that carries the reason, the returner and the timestamp:**
+
+| surface | gate | reaches it (`tests/fixtures/route-access-map.json`) |
+| --- | --- | --- |
+| `GET /finance/returned-bills` (`routes/web.php:355-357`) | `permission:finance.invoice.generate` | `accounts_officer`, `admin`, `super_admin` |
+| `GET /api/v1/finance/invoices/returned` (`routes/endpoints/finance.php:495-496`) | same | same |
+
+`app/Finance/Http/Controllers/ReturnedInvoiceQueueController.php:190-192` puts `returned_at`,
+`returned_by` (a NAME, via `App\Finance\Services\ActorName`) and `return_reason` — *"passed whole and
+untruncated"* — into that payload.
+
+**So the correct sentence is a SPLIT, and it names SEATS rather than a department:**
+
+- **CURRENT STATE — `accounts_officer` HAS it** (with `admin` and `super_admin`). It is one Finance
+  seat of four: `finance_lead`, `accounts_supervisor` and `executive_director` reach neither door and
+  hold no activity-log ability, so for them the original sentence is exactly right. Saying *"Finance
+  has the current state"* would generalise past the artifact, which is the same defect one level down
+  as the one being corrected.
+- **HISTORY — no Finance seat has it.** The activity row is the only history, and no Finance role can
+  read the log.
+
+**What the queue's filter actually does, stated at its measured size.** The filter is
+`whereNull(Invoice::RELEASE_STAMP_COLUMN)` / `whereNotNull('returned_at')` / `excludingVoid()`
+(`app/Finance/Http/Controllers/ReturnedInvoiceQueueController.php:162-164`;
+`RELEASE_STAMP_COLUMN = 'reviewed_at'`, `app/Finance/Models/Invoice.php:237`). Of the three ways a
+bill could leave that screen, **only one exists today**:
+
+| exit | reachable? |
+| --- | --- |
+| **voided** | **YES.** No void path reads `returned_at`; `excludingVoid()` removes the row. |
+| corrected / resubmitted | **NO — the verb does not exist.** `ReturnedInvoiceQueueController.php:32-35` says so: *"No correction, no resubmission, no state change […] whether a correction clears `returned_at`, whether it stamps a second column, whether it is a new bill entirely"* is an open Brookstone question. `grep -rn "'returned_at' =>" app/` finds ONE writer, `app/Finance/Actions/ReturnInvoice.php:192`, and it writes `now()`. Nothing writes NULL. |
+| re-released | **NO — refused, in both directions.** `app/Finance/Actions/ApproveInvoice.php:273` (`refuseIfOutWithFinance`), called at `:163` and `:185`, with `->whereNull('returned_at')` in the compare-and-swap at `:174`. |
+
+So the loss of history is real but its mechanism is narrower than *"a bill leaves the screen when it
+is corrected"*: **today a bill leaves only by being voided.** The presence of a predicate in a filter
+licenses *"this filter could exclude X"* — never *"X happens"*.
+
+Likewise `app/Finance/Actions/ReturnInvoice.php:222-224` — *"a second return overwrites the column,
+and this row is then the only place the first return's instruction exists"* — is a FORWARD-LOOKING
+statement. A second return is refused today: `refuseIfAlreadyReturned` at
+`app/Finance/Actions/ReturnInvoice.php:279`, called at `:182`, with `->whereNull('returned_at')` in
+the CAS at `:189`. It is the same status the same codebase gives its own release filter, *"a BELT
+rather than a working exclusion today"*.
+
+Requirement 4's Finance half is therefore **partially satisfied for one seat**, not unsatisfied — and
+the part that is missing is precisely the part requirement 3 calls *"a full record"*. Open question
+12 under §"Open questions" (*"Does requirement 4 need an RBAC change or a different surface?"*) had
+already listed *"accept that Finance sees the current-state columns only and not the history"* as an
+option, so the option was seen; the flat sentence earlier is what overstated it.
+
+**(2) The `teacher` clause is wrong, and the CLAIM it was supporting is right for other roles.**
+
+*"A role that is neither Finance nor IA can read the API"* is true of the DOOR and false of the ROWS,
+for `teacher` specifically — traced below: `teacher` lacks `view_all`, so it sees only rows it
+caused, and it can cause no finance act.
+
+**But the underlying claim survives, through roles the passage did not name.** `admin`,
+`head_of_school` and — since `97555b24` — `admin_viewer` all hold `activity_log.view_all`, so none of
+them is self-filtered, and none is a Finance or an Internal Audit seat. **`admin_viewer` is the
+sharpest instance**, because it is a NEW read-only oversight seat that also holds
+`activity_log.view_sensitive`, and it is derived rather than hand-listed
+(`database/seeders/RbacSeeder.php:181-184`):
+
+```php
+$map['admin_viewer'] = [
+    ...ReadOnlyAbility::filter($map['admin']),
+    PermissionEnum::ADMIN_AREA_VIEW->value,
+];
+```
+
+`RbacSeeder.php:167-170` states the outcome deliberately: `activity_log.export` falls out, and
+*"`activity_log.view_sensitive` IS admitted: it is a read, and the seat is an oversight seat."*
+
+So finding 13's *"visible to one it excludes"* half is **correct as a claim and wrong in its
+example**. Fix the example, keep the finding.
+
+**(3) The method error, which is the reusable part.**
+
+**A gate measurement answers "who holds this permission". It does not answer "who can see this
+fact".** The original finding measured the activity log's two doors correctly and then drew a
+conclusion about a CAPABILITY, which is a different object: a capability is satisfied by any surface,
+and the search for other surfaces was never run. This is *presence is not reachability* with the sign
+flipped — an absence at one door read as an absence everywhere — and it is the shape CLAUDE.md warns
+about, where a claim of ABSENCE requires an exhaustive search and the memory of not having seen a
+thing is not that search.
+
+The search that closes it is cheap, and it is on the COLUMN rather than on the permission:
+
+```bash
+grep -rn "return_reason\|returned_at\|returned_by_user_id" app resources/js
+```
+
+73 hits, of which `ReturnedInvoiceQueueController` is 15.
+
+### AND THE MAP-VERSUS-DATABASE DISTINCTION, WHICH IS NOW LIVE — IN THE OPPOSITE DIRECTION
+
+The brief that commissioned this correction suspected the original numbers were measured against the
+wrong object — `RbacSeeder::grantsMap()` (intent, in code) rather than the live grants (reality, in
+the database) — because `RbacSeeder.php:624` names a convergence migration,
+`2026_09_01_120000_grant_internal_auditor_activity_log_view_all`, that grants to an existing role.
+**That specific reasoning is false: `:625`, the line the comment annotates, IS
+`PermissionEnum::ACTIVITY_LOG_VIEW_ALL->value`, inside the `internal_auditor` block opening at
+`:610`.** The grant is in the map. The convergence migration exists because `rbac:sync` is
+non-destructive for an already-existing role, not because the map lacks it.
+
+**The suspicion was nonetheless right, and the direction is the surprise: HERE IT IS THE DATABASE
+THAT IS STALE.** `php artisan rbac:diff-grants` at `97555b24`:
+
+```
+SECTION A — permission catalog (enum vs `permissions` rows)
+ 1 declared in the enum, NO permission row:
+ - admin_area.view
+
+ BANNER: the catalog does not agree with the enum, which means `rbac:sync` has NOT been
+ run on this database. SECTION B IS UNINTERPRETABLE until it is [...]
+
+ 1 role(s) in grantsMap() have NO global role row — rbac:sync would create them:
+ - admin_viewer
+
+FOOTER — school-scoped `web` role rows (school_id IS NOT NULL), counted, NEVER diffed: 0
+TOTALS catalog: 1 missing row(s), 0 extra row(s) | grants: 0 missing, 0 extra across 0 role(s) | roles: 1 mapped-without-row, 0 unmapped
+```
+
+Exit **1**. So on the machine this was measured from, `admin_viewer` exists in the seeder and not in
+the database, because nobody has run `rbac:sync` since PR #420 landed. **`rbac:sync` was NOT run** —
+it is a mutation of a production-derived copy and it is the maintainer's call, not a measurement
+step. (The catalog diff is `missing_rows` only, `1 missing / 0 extra`, which by
+`docs/runbooks/rbac-grants-reconciliation.md` §2a is the safe case; that is information for whoever
+decides, not a licence taken here.)
+
+**Which is authoritative for "who can read the return history"?** The TREE — `grantsMap()` and the
+two derived oracles — because that is what every environment holds after a deploy, and it is what the
+oracles are regenerated from. A database mid-deploy is one environment's transient state. Both are
+reported below, separately and labelled, because collapsing them is exactly how a stale number
+becomes a confident assertion.
+
+**Keep the general rule and note where it does bite.** Three migrations touching `activity_log`
+grants (`2026_08_02_100000`, `2026_08_04_100000`, `2026_09_01_120000`) each operate on GLOBAL rows
+only and each explicitly reports school-scoped rows as UNTOUCHED, and `roles` is team-scoped — so a
+school-scoped role row can carry grants no map describes. `rbac:diff-grants` counts those and refuses
+to diff them (`app/Console/Commands/RbacDiffGrants.php:45-46`). Here that count is **0**.
+
+## THE MATRIX, RE-MEASURED — 2026-09-06, at `97555b24`
+
+**INTENT — `RbacSeeder::grantsMap()`, executed. 16 roles. This is the authority.**
+
+```
+ROLE                  view  view_all  view_own  view_system  view_cross_school  export  view_sensitive
+admin                  YES     YES       YES         .              .            YES        YES
+head_of_school         YES     YES       YES         .              .            YES        YES
+teacher                YES      .        YES         .              .             .          .
+registrar               .       .         .          .              .             .          .
+guardian                .       .         .          .              .             .          .
+principal               .       .         .          .              .             .          .
+boarding_parent         .       .         .          .              .             .          .
+key_stage_coordinator   .       .         .          .              .             .          .
+form_teacher            .       .         .          .              .             .          .
+accounts_officer        .       .         .          .              .             .          .
+executive_director      .       .         .          .              .             .          .
+accounts_supervisor     .       .         .          .              .             .          .
+finance_lead            .       .         .          .              .             .          .
+internal_auditor       YES     YES        .          .              .            YES         .
+super_admin             .       .         .         YES            YES            .          .
+admin_viewer           YES     YES       YES         .              .             .         YES
+
+HOLDERS / 16   view=5  view_all=4  view_own=4  view_system=1  view_cross_school=1  export=3  view_sensitive=3
+POSITIVE CONTROL  finance.access                     roles=6
+ABSENT   CONTROL  activity_log.zzz-no-such-ability   roles=0
+```
+
+**REALITY — `role_has_permissions` on `db=portaa10_portal`. 15 roles, 15 global, 0 school-scoped.**
+Identical to the block above except that **the `admin_viewer` row does not exist**, so
+`view`/`view_all`/`view_own` read 4/3/3 and `view_sensitive` reads 2. `model_has_permissions` holds
+**0 rows in total**, so nobody holds an activity-log ability outside a role. The delta is exactly the
+one `rbac:diff-grants` names above; it is a deploy that has not happened on this machine, not a
+finding about the tree.
+
+**Coverage, three numbers.** EXAMINED: 16 of 16 mapped roles (15 of 15 in the database) × 7 of 7
+`activity_log.*` enum values (`app/Enums/Permission.php:55-61`). EXCLUDED with a stated reason: **1**
+— the `api`-guard `super_admin` row (`RbacSeeder.php:19-21`), which carries no web grants and is
+outside `guard_name = 'web'` by construction. **UNRECOGNISED: 0** — a query for `permissions` rows
+named `activity_log.%` outside the seven returned an empty set, asserted directly rather than
+inferred from a clean run.
+
+**Two things no grant table sees, checked separately so neither is a silent gap:**
+
+- **Direct user grants** — `model_has_permissions` is empty, measured above.
+- **`Gate::before`, and it is CONDITIONAL** — `super_admin` holds neither `view` nor `view_all` and
+  reaches BOTH doors anyway. The mechanism is
+  `app/Providers/AppServiceProvider.php:127` (`registerSuperAdminGate`), whose bypass arm at `:132`
+  is `config('auth.gate_before_superadmin') && $user->isSuperAdmin()`. `RbacSeeder.php:268` is a
+  COMMENT recording the intent — *"super_admin deliberately gets none: its passage is
+  Gate::before"* — not the mechanism, and citing it as the mechanism was a coordinate error
+  corrected on 2026-09-06.
+
+  **The flag matters, and it is why this bullet says "conditional".**
+  `config/auth.php:133` defaults it to `true` via `AUTH_GATE_BEFORE_SUPERADMIN`, so it is
+  environment-overridable. `app/Support/RouteAccessMap.php:24-26` states the oracle's dependency on
+  it outright — super_admin is admitted *"only while auth.gate_before_superadmin is on […] flag-off
+  admits only actual holders"*. So **with the flag off, `super_admin` reads NOTHING on either audit
+  door**, holding neither ability. The row below is written for the default.
+
+  This is also why the grant matrix and the reachability oracle disagree by one role, and the oracle
+  is the one that answers the question asked.
+
+**Environment caveat, bounding what the database half can support.** This database has replayed
+**179 of the tree's 181** migrations. The two unrun are
+`2026_09_04_100000_finance_invoices_return_to_finance` and
+`2026_09_04_110000_finance_invoices_auditor_queue_index` — both schema-only and neither touching
+roles, permissions or grants. `finance_invoices` holds 0 rows and `activity_log` holds 180,952 of
+which **0** carry `log_name = 'finance'`, so this machine is not a source of finance ROW facts, and
+`returned_at` does not exist on it at all.
+
+## WHICH SEATS CAN READ THE RETURN HISTORY — 2026-09-06, at `97555b24`
+
+The return history is `activity_log` rows with `log_name = 'finance'` and
+`event = 'invoice.returned'` (`app/Finance/Actions/ReturnInvoice.php:214-227`). Reading one takes
+THREE things, and a matrix of grants answers only the first.
+
+**1 — the door.** `tests/fixtures/route-access-map.json` — 384 routes EXAMINED, 11 matched
+`activity-log`, absent control `zzz-no-such-route` = 0, positive control `/api/` = 276:
+
+| door | gate | roles that reach it |
+| --- | --- | --- |
+| `GET /api/activity-logs` and siblings | `activity_log.view` (`routes/api.php:386`) | `admin`, `admin_viewer`, `head_of_school`, `internal_auditor`, `super_admin`, `teacher` — **6 of 16** |
+| `GET /activity-logs` (the page) | `activity_log.view_all` (`routes/web.php:1081`) | `admin`, `admin_viewer`, `head_of_school`, `internal_auditor`, `super_admin` — **5 of 16** |
+| `GET /api/activity-logs/export` | `activity_log.export`, INTERSECTED with the group gate (`routes/endpoints/activity-log.php:25`) | `admin`, `head_of_school`, `internal_auditor`, `super_admin` — **4 of 16**; `admin_viewer` is refused here |
+
+**2 — the row filter.** `app/Services/ActivityLog/ActivityLogQueryService.php:54-57`:
+
+```php
+// No view_all → users only see activity they themselves caused.
+if (! $user->can('activity_log.view_all')) {
+    $query->where('causer_type', User::class)
+        ->where('causer_id', $user->id);
+}
+```
+
+Every read method on `app/Http/Controllers/ActivityLog/ActivityLogController.php` goes through
+`baseQuery` — `index:56`, `show:81`, `filterOptions:118`, `stats:166`, `export:230`. The one that
+does not, `downloadExport:285`, serves an already-created `Export` and is gated by `ExportPolicy` on
+permission AND owner. There is no second path into the rows.
+
+**3 — the sensitivity filter.** `config/activity_log_sensitive.php:27-49` declares **12** entry
+patterns. Two begin `finance.` — `finance.fee_adjusted` (`:30`) and `finance.refund_issued` (`:31`) —
+and the only wildcard is `permissions.*` (`:41`). `finance.invoice.returned` matches none of the
+twelve, so `excludeSensitive` does not hide it from a seat lacking `view_sensitive`.
+
+### The answer
+
+| seat | can it read the return history? |
+| --- | --- |
+| `internal_auditor` | **YES, in full.** `view` (the feed), `view_all` (so `:54-57` does not self-filter it) and `export`. It lacks `view_sensitive`, which costs it nothing here because the return event is not a declared sensitive entry. Requirement 4's IA half, satisfied. |
+| `accounts_officer` | **NO for the history** — zero activity-log abilities. **YES for the current return**, on `/finance/returned-bills`, until the bill is voided. |
+| `accounts_supervisor`, `finance_lead`, `executive_director` | **NO, on both counts.** No activity-log ability and no returned-bills door. |
+| `admin`, `head_of_school` | YES, in full, plus `view_sensitive` and `export`. Neither is a Finance nor an IA seat. |
+| `admin_viewer` (new at `97555b24`) | **YES, in full, plus `view_sensitive` — and NOT `export`.** A read-only oversight seat, neither Finance nor IA, that can read every return on both doors. This is the live instance of requirement 4's *"never to anyone else"* concern, and it arrived after this document was merged. |
+| `super_admin` | YES **while `auth.gate_before_superadmin` is on** (its default), by `Gate::before` (`app/Providers/AppServiceProvider.php:127`, bypass arm `:132`) and not by grant. With the flag off it holds neither ability and reads nothing. Bounded to the active school by `SchoolScope` either way (ADR 0036). |
+| `teacher` | **Reaches the API door and can see NO finance row.** Traced below. |
+| `guardian`, `principal`, `registrar`, `form_teacher`, `boarding_parent`, `key_stage_coordinator` | NO — no door. |
+
+### The teacher grant: what it EXPOSES, traced
+
+`teacher` holds `activity_log.view` and `activity_log.view_own`
+(`RbacSeeder.php:201-204`, spread at `:364`) and reaches `GET /api/activity-logs`. Then:
+
+- **not school-wide, not module-scoped — OWN-ACTIONS-ONLY.** Without `view_all`,
+  `ActivityLogQueryService.php:55-57` adds `causer_type = User::class AND causer_id = <this user>`.
+  There is no module or `log_name` predicate anywhere in `baseQuery`; the causer predicate does all
+  the work.
+- **school-scoped as well.** Without `view_cross_school` (`:42`), rows are constrained to
+  `ActiveSchool::id()`, and school-less system rows only with `view_system`, which teacher lacks.
+- **sensitive rows excluded** (`:61`), teacher having no `view_sensitive`.
+- **it cannot CAUSE a finance row.** The causer of `finance.invoice.returned` is the actor passed to
+  `ReturnInvoice`, and that action asserts `finance.invoice.reject` against the actor — held by
+  `internal_auditor` alone. `teacher` holds no `finance.*` ability at all.
+- **and it cannot export.** `routes/endpoints/activity-log.php:25` puts
+  `permission:activity_log.export` on the export route, INTERSECTING with the group gate.
+
+**So the finding evaporates AS A TEACHER EXPOSURE.** A teacher's audit read is a read of their own
+trail, and a teacher cannot produce a finance act, so the intersection is empty. **It does not
+evaporate as a finding** — see correction (2): `admin`, `head_of_school` and `admin_viewer` hold
+`view_all` and are not self-filtered.
+
+**What is left of the teacher observation, in its smaller and still-true form:** a seat with no audit
+remit is admitted through the audit API's front door, and the only thing standing between it and
+other people's rows is a predicate inside a service rather than the gate. `routes/web.php:1064-1069`
+records that this is exactly why the PAGE was gated on `view_all` — *"the GATE AND THE QUERY NOW KEY
+ON THE SAME FACT"*. The API group has not had that treatment, and `routes/api.php:365-384` explains
+why its gate is `view`: it was narrowed FROM `academic_data.view` to admit `internal_auditor`, which
+had been locked out. Narrowing further to `view_all` would lock the auditor out again unless the two
+were separated. A design note, not a defect, and not this commit's to make.
+
+---
+
 One premise I formed mid-pass and corrected before asserting it, recorded because it would have been
 a confident wrong finding: the `finance_void_requests` maker≠checker rule is created as a **CHECK
 constraint** (`2026_07_25_140000:99-100`), and production is MySQL 5.7, which parses and discards
@@ -433,7 +762,7 @@ path writes no activity row.
 | 1 — no ED approval | The only void path routes through `finance.invoice.void-request.approve`, held by `executive_director` alone. The seam that could relax it (§D) is inert. **Not satisfiable today.** |
 | 2 — corrected bill returns to IA | The release axis exists and defaults correctly: a newly raised invoice has `reviewed_at` NULL (`GenerateInvoice` never writes it), so a replacement is unreleased by construction. `ApproveInvoice` is the sign-off writer. **The mechanism exists; nothing routes a *replacement* into it as a distinct thing.** |
 | 3 — full record | Partial. The **reason for return** exists (column + activity row). **Who and when** exist for return and release. **What the bill said before and says now** does NOT exist as a link — see the absence above; two unlinked invoice rows and their lines are all there is. |
-| 4 — Finance and IA only, never the parent | See §I for the parent half (satisfied). The **Finance** half is not: measured above, no Finance role holds any activity-log ability. |
+| 4 — Finance and IA only, never the parent | See §I for the parent half (satisfied). The **Finance** half is not: measured above, no Finance role holds any activity-log ability. **[CORRECTED 2026-09-06 — partially satisfied, not unsatisfied; see the correction section above.]** |
 
 **The requirement-4 finding, stated plainly.** The activity-log API is gated on `activity_log.view`
 (`routes/api.php:375`) and the page on `activity_log.view_all` (`routes/web.php:1062`). Executing
@@ -444,6 +773,15 @@ either** — not `accounts_officer`, not `finance_lead`, not `accounts_superviso
 history lives in the activity log and nothing else, requirement 4 is missed in **both** directions:
 Finance cannot see it, and a role that is neither Finance nor Internal Audit can. `guardian` holds
 neither, so the "never the parent" half holds.
+
+> **[CORRECTED 2026-09-06.]** Three things. (i) The holder LISTS were right at this document's own
+> merge commit and are now short a role: `origin/staging` has since added `admin_viewer`, holding
+> `view`, `view_all`, `view_own` and `view_sensitive`. (ii) *"Finance cannot see it"* is too wide —
+> `accounts_officer` sees the CURRENT return (reason, returner, timestamp) on
+> `GET /finance/returned-bills`; the other three Finance seats do not. (iii) The `teacher` example is
+> wrong: its `activity_log.view` is self-filtered to its own acts, which cannot include a finance
+> act. The CLAIM that example supported is right, through `admin`, `head_of_school` and
+> `admin_viewer`. See the correction section near the top.
 
 ---
 
@@ -739,6 +1077,14 @@ because it is requirement 4's actual answer: no Finance role holds `activity_log
 `activity_log.view`, so a role that is neither Finance nor IA can read the API. Whatever carries the
 correction history, **the activity log alone does not satisfy requirement 4 today.**
 
+> **[CORRECTED 2026-09-06.]** *"Finance cannot read the return history at all"* is too wide:
+> `accounts_officer` reads the current return on its own screen, though no Finance seat reads the
+> HISTORY. *"A role that is neither Finance nor IA can read the API"* is true of the door and false
+> of the rows FOR `teacher`, which is the seat named — but true of both for `admin`,
+> `head_of_school` and `admin_viewer`, which hold `view_all`. The last sentence survives unchanged:
+> the activity log alone does not satisfy requirement 4, because it is the only carrier of the
+> history and no Finance seat can reach it. See the correction section near the top.
+
 ---
 
 ## THE CONSTRAINTS
@@ -795,6 +1141,10 @@ Derived from what is measured above, not from what seems sensible.
 13. **Requirement 4 is not satisfied by the activity log as currently gated.** No Finance role holds
     `activity_log.view` or `activity_log.view_all`; `teacher` holds the former. Any history placed
     there is invisible to the audience the requirement names and visible to one it excludes.
+    **[CORRECTED 2026-09-06 — both halves stand; the EXAMPLE is wrong. `teacher`'s read is
+    self-filtered to its own acts and it can cause no finance act, so it is not the seat that proves
+    the point. `admin`, `head_of_school` and `admin_viewer` hold `view_all`, are not self-filtered,
+    and are neither Finance nor Internal Audit. See the correction section near the top.]**
 14. **`reviewed_at` and `returned_at` both set is refused by no database object** —
     `2026_09_04_100000:60-69`. `ApproveInvoice.php:174` closed the release direction in application
     code; the trigger arm the migration names as the other option was not added. A correction flow that

@@ -1,6 +1,15 @@
 import { Head, router, useForm } from '@inertiajs/react';
-import { Building2, Plus, Shield } from 'lucide-react';
-import { type FormEvent, useState } from 'react';
+import {
+    Building2,
+    ChevronLeft,
+    ChevronRight,
+    Plus,
+    Search,
+    Shield,
+    X,
+} from 'lucide-react';
+import type { FormEvent } from 'react';
+import { useEffect, useState } from 'react';
 import InputError from '@/components/input-error';
 import { SchoolChecklist } from '@/components/school-access/school-checklist';
 import { Badge } from '@/components/ui/badge';
@@ -15,25 +24,63 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import type { SchoolOption } from '@/types';
 
+type Seat = { role: string; school: string | null };
+
 type AdminRow = {
     uuid: string;
     name: string;
     email: string;
     disabled: boolean;
     schools: SchoolOption[];
+    seats: Seat[];
+};
+
+type Filters = {
+    q: string | null;
+    role: string | null;
+    school: string | null;
+    per_page: number;
+};
+
+type Pagination = {
+    total: number;
+    per_page: number;
+    current_page: number;
+    last_page: number;
+    from: number | null;
+    to: number | null;
 };
 
 type Props = {
     admins: AdminRow[];
     schools: SchoolOption[];
+    /** Echoed back by the server, so the controls show what was actually applied, not what was asked. */
+    filters: Filters;
+    pagination: Pagination;
+    per_page_options: number[];
+    /**
+     * Every role this surface may assign, derived server-side from RbacSeeder::ROLES minus
+     * ProvisionUserRequest::NEVER_ASSIGNABLE. Never hardcoded here: a client-side copy would drift
+     * and, worse, would look authoritative while the server refused.
+     */
+    assignable_roles: string[];
 };
 
-function CreateAdminDialog({
+/** `accounts_officer` → `Accounts officer`. Presentation only; the wire value is the role name. */
+function roleLabel(role: string): string {
+    const spaced = role.replace(/_/g, ' ');
+
+    return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
+function CreateUserDialog({
     schools,
+    assignableRoles,
     open,
     onClose,
 }: {
     schools: SchoolOption[];
+    assignableRoles: string[];
     open: boolean;
     onClose: () => void;
 }) {
@@ -42,12 +89,14 @@ function CreateAdminDialog({
         last_name: string;
         email: string;
         password: string;
+        roles: string[];
         schools: string[];
     }>({
         first_name: '',
         last_name: '',
         email: '',
         password: '',
+        roles: [],
         schools: [],
     });
 
@@ -57,6 +106,15 @@ function CreateAdminDialog({
             data.schools.includes(uuid)
                 ? data.schools.filter((s) => s !== uuid)
                 : [...data.schools, uuid],
+        );
+    };
+
+    const toggleRole = (role: string) => {
+        setData(
+            'roles',
+            data.roles.includes(role)
+                ? data.roles.filter((r) => r !== role)
+                : [...data.roles, role],
         );
     };
 
@@ -75,7 +133,7 @@ function CreateAdminDialog({
         <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
             <DialogContent>
                 <DialogHeader>
-                    <DialogTitle>Create admin</DialogTitle>
+                    <DialogTitle>Provision a user</DialogTitle>
                 </DialogHeader>
 
                 <form onSubmit={submit} className="flex flex-col gap-4">
@@ -85,7 +143,9 @@ function CreateAdminDialog({
                             <Input
                                 id="admin-first-name"
                                 value={data.first_name}
-                                onChange={(e) => setData('first_name', e.target.value)}
+                                onChange={(e) =>
+                                    setData('first_name', e.target.value)
+                                }
                                 required
                             />
                             <InputError message={errors.first_name} />
@@ -95,7 +155,9 @@ function CreateAdminDialog({
                             <Input
                                 id="admin-last-name"
                                 value={data.last_name}
-                                onChange={(e) => setData('last_name', e.target.value)}
+                                onChange={(e) =>
+                                    setData('last_name', e.target.value)
+                                }
                                 required
                             />
                             <InputError message={errors.last_name} />
@@ -111,6 +173,11 @@ function CreateAdminDialog({
                             onChange={(e) => setData('email', e.target.value)}
                             required
                         />
+                        <p className="text-xs text-muted-foreground">
+                            An address that already has an account is granted
+                            the seats below — no second account is created, and
+                            their password is not changed.
+                        </p>
                         <InputError message={errors.email} />
                     </div>
 
@@ -120,10 +187,42 @@ function CreateAdminDialog({
                             id="admin-password"
                             type="password"
                             value={data.password}
-                            onChange={(e) => setData('password', e.target.value)}
-                            required
+                            onChange={(e) =>
+                                setData('password', e.target.value)
+                            }
+                            autoComplete="new-password"
                         />
+                        <p className="text-xs text-muted-foreground">
+                            Required for a new account only. Roles that require
+                            two-factor authentication enrol on first sign-in.
+                        </p>
                         <InputError message={errors.password} />
+                    </div>
+
+                    <div className="space-y-1">
+                        <Label>Roles</Label>
+                        <div className="grid max-h-48 grid-cols-2 gap-1 overflow-y-auto rounded-md border p-2">
+                            {assignableRoles.map((role) => (
+                                <label
+                                    key={role}
+                                    className="flex items-center gap-2 rounded px-2 py-1 text-sm hover:bg-muted"
+                                >
+                                    <input
+                                        type="checkbox"
+                                        className="h-4 w-4"
+                                        checked={data.roles.includes(role)}
+                                        onChange={() => toggleRole(role)}
+                                    />
+                                    {roleLabel(role)}
+                                </label>
+                            ))}
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                            Each selected role is granted in each selected
+                            school. A combination that would let one person both
+                            raise and approve the same thing is refused.
+                        </p>
+                        <InputError message={errors.roles} />
                     </div>
 
                     <div className="space-y-1">
@@ -137,11 +236,15 @@ function CreateAdminDialog({
                     </div>
 
                     <div className="flex justify-end gap-2">
-                        <Button type="button" variant="outline" onClick={onClose}>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={onClose}
+                        >
                             Cancel
                         </Button>
                         <Button type="submit" disabled={processing}>
-                            Create admin
+                            Provision
                         </Button>
                     </div>
                 </form>
@@ -162,6 +265,12 @@ function ManageSchoolsDialog({
     const [selected, setSelected] = useState<string[]>(
         admin.schools.map((s) => s.uuid),
     );
+    // WHICH SEAT is being re-scoped, not just which schools. The endpoint syncs ONE role's school
+    // set; without this the screen would silently send `admin` for a user who is an executive
+    // director, granting a seat nobody chose and revoking one they hold. Defaults to a role they
+    // actually have.
+    const heldRoles = Array.from(new Set(admin.seats.map((s) => s.role)));
+    const [role, setRole] = useState<string>(heldRoles[0] ?? 'admin');
     const [processing, setProcessing] = useState(false);
 
     const toggle = (uuid: string) => {
@@ -177,7 +286,7 @@ function ManageSchoolsDialog({
         setProcessing(true);
         router.put(
             `/super-admin/admins/${admin.uuid}/schools`,
-            { schools: selected },
+            { schools: selected, role },
             {
                 preserveScroll: true,
                 onSuccess: onClose,
@@ -194,6 +303,28 @@ function ManageSchoolsDialog({
                 </DialogHeader>
 
                 <form onSubmit={submit} className="flex flex-col gap-4">
+                    <div className="space-y-1">
+                        <Label htmlFor="seat-role">Seat</Label>
+                        <select
+                            id="seat-role"
+                            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                            value={role}
+                            onChange={(e) => setRole(e.target.value)}
+                        >
+                            {(heldRoles.length > 0 ? heldRoles : ['admin']).map(
+                                (r) => (
+                                    <option key={r} value={r}>
+                                        {roleLabel(r)}
+                                    </option>
+                                ),
+                            )}
+                        </select>
+                        <p className="text-xs text-muted-foreground">
+                            The schools below apply to this seat only. Other
+                            roles this person holds are not changed.
+                        </p>
+                    </div>
+
                     <SchoolChecklist
                         schools={schools}
                         selected={selected}
@@ -201,7 +332,11 @@ function ManageSchoolsDialog({
                     />
 
                     <div className="flex justify-end gap-2">
-                        <Button type="button" variant="outline" onClick={onClose}>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={onClose}
+                        >
                             Cancel
                         </Button>
                         <Button type="submit" disabled={processing}>
@@ -214,25 +349,161 @@ function ManageSchoolsDialog({
     );
 }
 
-export default function SuperAdminAdmins({ admins, schools }: Props) {
+export default function SuperAdminAdmins({
+    admins,
+    schools,
+    assignable_roles: assignableRoles,
+    pagination,
+    filters,
+    per_page_options: perPageOptions,
+}: Props) {
     const [creating, setCreating] = useState(false);
     const [managing, setManaging] = useState<AdminRow | null>(null);
+    const [term, setTerm] = useState(filters.q ?? '');
+
+    /**
+     * Every control routes through here, so the query string is the single source of truth for
+     * what is on screen — a filter held only in component state would disagree with the URL the
+     * moment somebody reloads or shares it.
+     *
+     * `page` is reset by every control EXCEPT an explicit page change. Carrying it over is the
+     * standard bug: filter down to three results while on page 7 and the screen goes blank, which
+     * reads as "no matches" rather than "wrong page".
+     */
+    const go = (next: Partial<Filters & { page: number }>) => {
+        const merged: Record<string, string | number> = {};
+        const base = { ...filters, page: 1, ...next };
+
+        for (const [key, value] of Object.entries(base)) {
+            if (value !== null && value !== undefined && value !== '') {
+                merged[key] = value as string | number;
+            }
+        }
+
+        router.get('/super-admin/admins', merged, {
+            preserveState: true,
+            preserveScroll: true,
+            replace: true,
+        });
+    };
+
+    // Debounced so typing does not fire a request per keystroke. The timer is cleared on every
+    // change and on unmount, so a pending request cannot land after the component is gone.
+    useEffect(() => {
+        if ((filters.q ?? '') === term) {
+            return;
+        }
+
+        const timer = setTimeout(() => go({ q: term || null }), 350);
+
+        return () => clearTimeout(timer);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [term]);
+
+    const activeFilters =
+        (filters.q ? 1 : 0) + (filters.role ? 1 : 0) + (filters.school ? 1 : 0);
 
     return (
         <div className="flex flex-col gap-4 p-4">
-            <Head title="Admins" />
+            <Head title="User management" />
 
             <div className="flex items-center justify-between">
                 <div>
-                    <h1 className="text-xl font-semibold">Admins</h1>
+                    <h1 className="text-xl font-semibold">User management</h1>
                     <p className="text-sm text-muted-foreground">
-                        Create admins and control which schools they can log into.
+                        Create accounts, give them a seat, and control which
+                        schools they can log into.
                     </p>
                 </div>
                 <Button onClick={() => setCreating(true)}>
                     <Plus className="h-4 w-4" />
-                    New admin
+                    Provision user
                 </Button>
+            </div>
+
+            <div className="flex flex-wrap items-end gap-3 rounded-lg border p-3">
+                <div className="min-w-56 flex-1 space-y-1">
+                    <Label htmlFor="user-search">Search</Label>
+                    <div className="relative">
+                        <Search className="absolute top-2.5 left-2 h-4 w-4 text-muted-foreground" />
+                        <Input
+                            id="user-search"
+                            className="pl-8"
+                            placeholder="Name or email"
+                            value={term}
+                            onChange={(e) => setTerm(e.target.value)}
+                        />
+                    </div>
+                </div>
+
+                <div className="space-y-1">
+                    <Label htmlFor="user-role-filter">Role</Label>
+                    <select
+                        id="user-role-filter"
+                        className="h-9 w-48 rounded-md border bg-background px-2 text-sm"
+                        value={filters.role ?? ''}
+                        onChange={(e) => go({ role: e.target.value || null })}
+                    >
+                        <option value="">All roles</option>
+                        {assignableRoles.map((role) => (
+                            <option key={role} value={role}>
+                                {roleLabel(role)}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+
+                <div className="space-y-1">
+                    <Label htmlFor="user-school-filter">School</Label>
+                    <select
+                        id="user-school-filter"
+                        className="h-9 w-48 rounded-md border bg-background px-2 text-sm"
+                        value={filters.school ?? ''}
+                        onChange={(e) => go({ school: e.target.value || null })}
+                    >
+                        <option value="">All schools</option>
+                        {schools.map((school) => (
+                            <option key={school.uuid} value={school.uuid}>
+                                {school.name}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+
+                <div className="space-y-1">
+                    <Label htmlFor="user-per-page">Per page</Label>
+                    <select
+                        id="user-per-page"
+                        className="h-9 w-24 rounded-md border bg-background px-2 text-sm"
+                        value={filters.per_page}
+                        onChange={(e) =>
+                            go({ per_page: Number(e.target.value) })
+                        }
+                    >
+                        {perPageOptions.map((n) => (
+                            <option key={n} value={n}>
+                                {n}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+
+                {activeFilters > 0 && (
+                    <Button
+                        variant="ghost"
+                        onClick={() => {
+                            setTerm('');
+                            router.get(
+                                '/super-admin/admins',
+                                { per_page: filters.per_page },
+                                { preserveScroll: true, replace: true },
+                            );
+                        }}
+                    >
+                        <X className="h-4 w-4" />
+                        Clear
+                    </Button>
+                )}
             </div>
 
             <div className="overflow-x-auto rounded-lg border">
@@ -241,6 +512,7 @@ export default function SuperAdminAdmins({ admins, schools }: Props) {
                         <tr>
                             <th className="px-4 py-3 font-medium">Name</th>
                             <th className="px-4 py-3 font-medium">Email</th>
+                            <th className="px-4 py-3 font-medium">Seats</th>
                             <th className="px-4 py-3 font-medium">Schools</th>
                             <th className="px-4 py-3" />
                         </tr>
@@ -253,7 +525,9 @@ export default function SuperAdminAdmins({ admins, schools }: Props) {
                                         <Shield className="h-4 w-4 text-muted-foreground" />
                                         {admin.name}
                                         {admin.disabled && (
-                                            <Badge variant="destructive">Disabled</Badge>
+                                            <Badge variant="destructive">
+                                                Disabled
+                                            </Badge>
                                         )}
                                     </span>
                                 </td>
@@ -262,8 +536,31 @@ export default function SuperAdminAdmins({ admins, schools }: Props) {
                                 </td>
                                 <td className="px-4 py-3">
                                     <span className="flex flex-wrap gap-1">
+                                        {admin.seats.map((seat, i) => (
+                                            <Badge
+                                                key={`${seat.role}-${seat.school ?? 'global'}-${i}`}
+                                                variant="outline"
+                                            >
+                                                {roleLabel(seat.role)}
+                                                {seat.school
+                                                    ? ` · ${seat.school}`
+                                                    : ''}
+                                            </Badge>
+                                        ))}
+                                        {admin.seats.length === 0 && (
+                                            <span className="text-muted-foreground">
+                                                No seat
+                                            </span>
+                                        )}
+                                    </span>
+                                </td>
+                                <td className="px-4 py-3">
+                                    <span className="flex flex-wrap gap-1">
                                         {admin.schools.map((school) => (
-                                            <Badge key={school.uuid} variant="secondary">
+                                            <Badge
+                                                key={school.uuid}
+                                                variant="secondary"
+                                            >
                                                 {school.name}
                                             </Badge>
                                         ))}
@@ -289,10 +586,12 @@ export default function SuperAdminAdmins({ admins, schools }: Props) {
                         {admins.length === 0 && (
                             <tr>
                                 <td
-                                    colSpan={4}
+                                    colSpan={5}
                                     className="px-4 py-8 text-center text-muted-foreground"
                                 >
-                                    No admins yet.
+                                    {activeFilters > 0
+                                        ? 'No users match these filters.'
+                                        : 'No users provisioned yet.'}
                                 </td>
                             </tr>
                         )}
@@ -300,9 +599,48 @@ export default function SuperAdminAdmins({ admins, schools }: Props) {
                 </table>
             </div>
 
+            <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm text-muted-foreground">
+                    {pagination.total === 0
+                        ? 'No results'
+                        : `Showing ${pagination.from}–${pagination.to} of ${pagination.total}`}
+                </p>
+
+                <div className="flex items-center gap-2">
+                    <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={pagination.current_page <= 1}
+                        onClick={() =>
+                            go({ page: pagination.current_page - 1 })
+                        }
+                    >
+                        <ChevronLeft className="h-4 w-4" />
+                        Previous
+                    </Button>
+                    <span className="text-sm text-muted-foreground">
+                        Page {pagination.current_page} of {pagination.last_page}
+                    </span>
+                    <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={
+                            pagination.current_page >= pagination.last_page
+                        }
+                        onClick={() =>
+                            go({ page: pagination.current_page + 1 })
+                        }
+                    >
+                        Next
+                        <ChevronRight className="h-4 w-4" />
+                    </Button>
+                </div>
+            </div>
+
             {creating && (
-                <CreateAdminDialog
+                <CreateUserDialog
                     schools={schools}
+                    assignableRoles={assignableRoles}
                     open={creating}
                     onClose={() => setCreating(false)}
                 />

@@ -146,6 +146,7 @@ enum PermissionGroup: string
             ],
             self::ROUTE_ACCESS => [
                 Permission::ADMIN_AREA_ACCESS,
+                Permission::ADMIN_AREA_VIEW,
                 Permission::STUDENT_DIRECTORY_VIEW,
                 Permission::RESULT_REVIEW_ACCESS,
                 Permission::REPORT_VIEW,

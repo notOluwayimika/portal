@@ -5,6 +5,7 @@ namespace Database\Seeders;
 use App\Enums\Permission as PermissionEnum;
 use App\Models\Permission;
 use App\Models\Role;
+use App\Support\ReadOnlyAbility;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 use Spatie\Permission\PermissionRegistrar;
@@ -56,8 +57,16 @@ class RbacSeeder extends Seeder
      * (The prior note here said the finance roles were "not seeded (step-0)". That stopped being true
      * with the 2026-08-01 realignment, which put all four in ROLES. Their absence below is now a
      * decision, not a consequence.)
+     *
+     * `admin_viewer` joined 2026-09-06 and is here on purpose, not by symmetry with `admin`.
+     * Read-only is not low-stakes: the seat reads student records, the guardian audit trail and
+     * `activity_log.view_sensitive`. A seat that can change nothing but can SEE everything an admin
+     * sees is exactly the account worth stealing quietly, because its misuse leaves no write behind
+     * to notice. Note the flag binds only at role CREATION, so this line has effect on a fresh
+     * install and on `--fresh`; on an environment where the row already exists it is the matrix
+     * toggle that governs.
      */
-    public const TWO_FACTOR_REQUIRED = ['super_admin', 'admin', 'executive_director'];
+    public const TWO_FACTOR_REQUIRED = ['super_admin', 'admin', 'admin_viewer', 'executive_director'];
 
     /**
      * super_admin's explicit PLATFORM-ADMIN set (ADR 0045 A2/A3, slice B2).
@@ -79,6 +88,10 @@ class RbacSeeder extends Seeder
     public const ROLES = [
         'super_admin',
         'admin',
+        // Read-only admin (2026-09-06). Grants are DERIVED from `admin` in the map below, never
+        // listed beside it. Its door into the admin area is `admin_area.view`, not
+        // `admin_area.access` — see that enum case for why the two are not interchangeable.
+        'admin_viewer',
         'principal',
         'head_of_school',
         'teacher',
@@ -136,6 +149,54 @@ class RbacSeeder extends Seeder
      *     before you add it; {@see \Tests\Feature\Rbac\ForcingMigrationsDoNotStripLaterGrantsTest}.
      */
     public static function grantsMap(): array
+    {
+        $map = self::roleGrants();
+
+        // ── admin_viewer — THE READ-ONLY ADMIN SEAT ─────────────────────────────────────────────
+        //
+        // DERIVED HERE, not written into the map above, and the placement is the whole trick.
+        // `admin`'s grants are read back out of the constructed map, so there is ONE list of them
+        // and this seat tracks it: a read granted to `admin` reaches `admin_viewer` automatically,
+        // and a WRITE granted to `admin` cannot, because ReadOnlyAbility::filter admits only a
+        // terminal `view` / `view_*` segment. Hand-listing the twin would drift silently and in
+        // the dangerous direction.
+        //
+        // WHAT FALLS OUT, worth reading rather than assuming: every `*.manage`, every maker
+        // (`*.submit`, `finance.invoice.generate`), every checker (`*.approve`, `*.reject`),
+        // `academics.rollover`, `rbac.manage_users`, the guardian write set, and — deliberately —
+        // `activity_log.export` and `guardian.export`. An export is a bulk extraction, not a read
+        // of the screen in front of you, and the convention excludes it by construction rather
+        // than by a special case. `activity_log.view_sensitive` IS admitted: it is a read, and the
+        // seat is an oversight seat.
+        //
+        // THE ONE MEMBER THAT CANNOT BE DERIVED is `admin_area.view`, because `admin` does not
+        // hold it. It is the read-only door coined for this seat, `admin_area.access` being the
+        // sole guard on 18 write routes rather than the read gate its name suggests — the
+        // measurement and the ruling are on the enum case.
+        //
+        // ONE HONEST COST OF DERIVING IT HERE: this entry is invisible to the grants-convergence
+        // lint, which reads the seeder's diff and sees no `'admin_viewer' => [ … ]` to read. That
+        // is acceptable because nothing about this set is ever edited directly — it changes only
+        // when `admin`'s does, and the lint sees THAT change and reports it against `admin`.
+        $map['admin_viewer'] = [
+            ...ReadOnlyAbility::filter($map['admin']),
+            PermissionEnum::ADMIN_AREA_VIEW->value,
+        ];
+
+        return $map;
+    }
+
+    /**
+     * The map as it is WRITTEN — every role whose grants are declared by hand.
+     *
+     * Split from {@see grantsMap()} so that `'admin' => [ … ]` stays byte-identical to what it has
+     * always been. That is not tidiness, it is the grants-convergence lint: it reads the DIFF, and
+     * every restructure of this array reads to it as a fresh grant. Lifting admin's six spreads and
+     * its literal tail into a variable — the obvious way to derive `admin_viewer` from them —
+     * produced 23 findings naming permissions `admin` has held for months. Its own guidance is
+     * "Do NOT restructure the seeder to make it go away", so the derivation moved out instead.
+     */
+    private static function roleGrants(): array
     {
         $activityStaff = [
             PermissionEnum::ACTIVITY_LOG_VIEW->value,

@@ -4,6 +4,7 @@ use App\Models\Role;
 use App\Models\School;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
@@ -15,10 +16,10 @@ function ms_makeSuperAdmin(): User
     }
 
     $user = User::forceCreate([
-        'uuid' => (string) \Illuminate\Support\Str::uuid(),
+        'uuid' => (string) Str::uuid(),
         'first_name' => 'Super',
         'last_name' => 'Admin',
-        'email' => \Illuminate\Support\Str::uuid() . '@super.test',
+        'email' => Str::uuid().'@super.test',
         'password' => bcrypt('password'),
     ]);
 
@@ -182,6 +183,11 @@ it('lets a super admin create an admin with school access', function () {
             'last_name' => 'Admin',
             'email' => 'new-admin@example.test',
             'password' => 'secret-password',
+            // `roles` became REQUIRED when this endpoint was generalised beyond admins
+            // (2026-09-06). It used to mean `admin` implicitly, through grantSchoolAccess's default
+            // parameter — which is exactly what a provisioning surface must not do once it can
+            // grant executive_director. Naming the seat is the contract now.
+            'roles' => ['admin'],
             'schools' => [$a->uuid, $b->uuid],
         ])
         ->assertRedirect();

@@ -46,6 +46,17 @@ mechanism you can rely on, which is why there is a second one.
 the branch, not the working directory.** A clone cannot contain another session's
 scratch, so the overlap is zero by construction rather than by discipline.
 
+**Take the clone's `origin` from the AUTHORITATIVE REMOTE (`git remote get-url
+origin` in the project), never from the local path — or use a git worktree, which
+shares the project's refs.** Cloning a local path makes that repo the clone's
+origin, so `origin/staging` inside the clone silently resolves to the local
+BRANCH `staging`, which is usually behind the real remote: isolation is achieved
+and CURRENCY is lost, with no error. Measured 2026-09-06 — a review reported a
+branch's base as unmerged and its new role as riding on an open PR; both were on
+`origin/staging` and the clone's stale ref said otherwise. If the branch under
+review is unpushed, fetch it from the local repo as a SEPARATE named remote and
+keep `origin` pointing at the real one.
+
 **State in the review which of the two you ran against.** The reader needs to
 know whether the isolation was engineered or merely observed — those are
 different strengths of evidence, and the review is the only place that
